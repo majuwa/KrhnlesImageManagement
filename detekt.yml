@@ -1,0 +1,38 @@
+build:
+  maxIssues: 0
+
+complexity:
+  LongMethod:
+    threshold: 60
+    ignoreAnnotated:
+      - "Composable"
+  LongParameterList:
+    functionThreshold: 10
+    constructorThreshold: 10
+    ignoreAnnotated:
+      - "Composable"
+  TooManyFunctions:
+    thresholdInFiles: 25
+    thresholdInClasses: 20
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - "Composable"
+
+style:
+  ReturnCount:
+    max: 5
+    excludeGuardClauses: true
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 120
+  WildcardImport:
+    active: false
+  UnusedPrivateMember:
+    active: true
+    allowedNames: "(_.*)"
+  UnusedParameter:
+    ignoreAnnotated:
+      - "Composable"

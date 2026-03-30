@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive icon foreground — 108×108dp viewport.
+    Safe zone (visible on all launchers): x/y 18–90.
+    All elements kept within that 72dp inner square.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ══ CROWN (y 20–44, x 38–70) ══ -->
+
+    <!-- Crown body -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M38,44 L38,34 L43,24 L49,34 L54,20 L59,34 L65,24 L70,34 L70,44 Z" />
+
+    <!-- Crown sheen -->
+    <path
+        android:fillAlpha="0.20"
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,34 L70,34 L70,40 Q54,37 38,40 Z" />
+
+    <!-- Crown jewel — left spike -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M41,24 A2,2 0 1,0 45,24 A2,2 0 1,0 41,24 Z"
+        android:strokeColor="#D97706"
+        android:strokeWidth="0.5" />
+
+    <!-- Crown jewel — centre spike (larger) -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M51.5,20 A2.5,2.5 0 1,0 56.5,20 A2.5,2.5 0 1,0 51.5,20 Z"
+        android:strokeColor="#D97706"
+        android:strokeWidth="0.5" />
+
+    <!-- Crown jewel — right spike -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M63,24 A2,2 0 1,0 67,24 A2,2 0 1,0 63,24 Z"
+        android:strokeColor="#D97706"
+        android:strokeWidth="0.5" />
+
+    <!-- ══ CAMERA LENS (centre 54,66 — top y 44, bottom y 88) ══ -->
+
+    <!-- Outer dark body -->
+    <path
+        android:fillColor="#111827"
+        android:pathData="M32,66 A22,22 0 1,0 76,66 A22,22 0 1,0 32,66 Z" />
+
+    <!-- Metal lens ring -->
+    <path
+        android:fillColor="#374151"
+        android:pathData="M37,66 A17,17 0 1,0 71,66 A17,17 0 1,0 37,66 Z" />
+
+    <!-- Aperture tick marks (8 short lines around ring) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,49 L54,52 M54,83 L54,80 M37,66 L40,66 M71,66 L68,66 M42.4,51.4 L44.5,53.5 M65.6,80.6 L63.5,78.5 M42.4,80.6 L44.5,78.5 M65.6,51.4 L63.5,53.5"
+        android:strokeColor="#4B5563"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+
+    <!-- Glass element with radial gradient -->
+    <path android:pathData="M42,66 A12,12 0 1,0 66,66 A12,12 0 1,0 42,66 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="66"
+                android:gradientRadius="12"
+                android:type="radial">
+                <item
+                    android:color="#FF93C5FD"
+                    android:offset="0" />
+                <item
+                    android:color="#FF1D4ED8"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Lens reflection highlight -->
+    <path
+        android:fillAlpha="0.40"
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,60 A4,4 0 1,0 52,60 A4,4 0 1,0 44,60 Z" />
+
+    <!-- Centre dot -->
+    <path
+        android:fillColor="#1D4ED8"
+        android:pathData="M52,66 A2,2 0 1,0 56,66 A2,2 0 1,0 52,66 Z" />
+
+</vector>

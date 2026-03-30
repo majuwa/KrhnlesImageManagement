@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="100%" stop-color="#0F0A2A"/>
+    </linearGradient>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FDE68A"/>
+      <stop offset="55%" stop-color="#FB923C"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+    <radialGradient id="lensGrad" cx="38%" cy="38%" r="60%">
+      <stop offset="0%" stop-color="#93C5FD"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </radialGradient>
+    <clipPath id="photoClip">
+      <rect x="106" y="72" width="284" height="248" rx="8"/>
+    </clipPath>
+  </defs>
+
+  <!-- App icon background -->
+  <rect width="512" height="512" rx="80" fill="url(#bgGrad)"/>
+
+  <!-- Polaroid card shadow -->
+  <rect x="94" y="62" width="308" height="372" rx="14" fill="#000000" opacity="0.35"/>
+
+  <!-- Polaroid card -->
+  <rect x="88" y="56" width="308" height="372" rx="14" fill="#FFFFFF"/>
+
+  <!-- Photo area -->
+  <rect x="106" y="72" width="284" height="248" rx="8" fill="url(#skyGrad)"/>
+
+  <!-- Sun -->
+  <circle cx="334" cy="122" r="40" fill="#FEF08A" opacity="0.6"/>
+  <circle cx="334" cy="122" r="26" fill="#FDE047"/>
+
+  <!-- Mountains (back to front, clipped to photo area) -->
+  <polygon points="106,320 210,195 314,320"
+           fill="#EA580C" opacity="0.6" clip-path="url(#photoClip)"/>
+  <polygon points="160,320 270,202 380,320"
+           fill="#C2410C" clip-path="url(#photoClip)"/>
+  <polygon points="86,320 190,240 294,320"
+           fill="#9A3412" clip-path="url(#photoClip)"/>
+  <polygon points="260,320 352,196 444,320"
+           fill="#7C2D12" clip-path="url(#photoClip)"/>
+
+  <!-- Camera lens (bottom-left of photo, on top of mountains) -->
+  <!-- Outer body ring -->
+  <circle cx="152" cy="282" r="34" fill="#111827" opacity="0.88" clip-path="url(#photoClip)"/>
+  <!-- Metal lens ring -->
+  <circle cx="152" cy="282" r="26" fill="#374151" clip-path="url(#photoClip)"/>
+  <!-- Aperture ring markings -->
+  <circle cx="152" cy="282" r="26" fill="none" stroke="#4B5563" stroke-width="2"
+          stroke-dasharray="4 6" clip-path="url(#photoClip)"/>
+  <!-- Glass element -->
+  <circle cx="152" cy="282" r="18" fill="url(#lensGrad)" clip-path="url(#photoClip)"/>
+  <!-- Lens reflection highlight -->
+  <circle cx="145" cy="275" r="7" fill="#FFFFFF" opacity="0.35" clip-path="url(#photoClip)"/>
+  <!-- Tiny center dot -->
+  <circle cx="152" cy="282" r="3" fill="#1D4ED8" clip-path="url(#photoClip)"/>
+
+  <!-- Polaroid label lines -->
+  <line x1="118" y1="352" x2="284" y2="352"
+        stroke="#E5E7EB" stroke-width="3" stroke-linecap="round"/>
+  <line x1="118" y1="374" x2="230" y2="374"
+        stroke="#E5E7EB" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Crown (sitting on top of polaroid card, referencing Kröhnle → Krone) -->
+  <!-- Crown shadow -->
+  <path d="M 207,65 L 207,40 L 218,21 L 230,40 L 242,14 L 254,40 L 266,21 L 277,40 L 277,65 Z"
+        fill="#000000" opacity="0.25" transform="translate(3,3)"/>
+  <!-- Crown body -->
+  <path d="M 207,65 L 207,40 L 218,21 L 230,40 L 242,14 L 254,40 L 266,21 L 277,40 L 277,65 Z"
+        fill="#F59E0B"/>
+  <!-- Crown sheen -->
+  <path d="M 207,40 L 277,40 L 277,50 Q 242,44 207,50 Z"
+        fill="#FFFFFF" opacity="0.18"/>
+  <!-- Jewel dots on spike tips -->
+  <circle cx="218" cy="21" r="6" fill="#FDE047" stroke="#D97706" stroke-width="1.5"/>
+  <circle cx="242" cy="14" r="7" fill="#FDE047" stroke="#D97706" stroke-width="1.5"/>
+  <circle cx="266" cy="21" r="6" fill="#FDE047" stroke="#D97706" stroke-width="1.5"/>
+
+  <!-- Shield badge (bottom-right corner, overlapping card edge) -->
+  <!-- Shadow -->
+  <path d="M 350,362 L 426,362 L 426,412 L 388,450 L 350,412 Z"
+        fill="#000000" opacity="0.3" transform="translate(5,5)"/>
+  <!-- Shield body -->
+  <path d="M 350,362 L 426,362 L 426,412 L 388,450 L 350,412 Z"
+        fill="#F59E0B"/>
+  <!-- Shield inner top sheen -->
+  <path d="M 354,366 L 422,366 L 422,378 Q 388,372 354,378 Z"
+        fill="#FFFFFF" opacity="0.2"/>
+
+  <!-- Lock shackle -->
+  <path d="M 372,410 L 372,392 Q 372,376 388,376 Q 404,376 404,392 L 404,410"
+        fill="none" stroke="#1E1B4B" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Lock body -->
+  <rect x="364" y="408" width="48" height="32" rx="7" fill="#1E1B4B"/>
+
+  <!-- Keyhole -->
+  <circle cx="388" cy="421" r="6" fill="#F59E0B"/>
+  <rect x="385" y="421" width="6" height="9" rx="2" fill="#F59E0B"/>
+</svg>
