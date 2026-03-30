@@ -61,6 +61,7 @@ dependencies {
 
     // Coil (image loading)
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 
     // WorkManager
     implementation(libs.workmanager)
