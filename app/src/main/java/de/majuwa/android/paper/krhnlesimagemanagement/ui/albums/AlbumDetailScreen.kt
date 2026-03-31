@@ -11,8 +11,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FindReplace
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,7 @@ fun AlbumDetailScreen(
     viewModel: AlbumsViewModel,
     albumHref: String,
     onOpenPhoto: (index: Int) -> Unit,
+    onFindDuplicates: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val state by viewModel.detailState.collectAsStateWithLifecycle()
@@ -48,6 +51,15 @@ fun AlbumDetailScreen(
     LaunchedEffect(albumHref) { viewModel.loadAlbum(albumHref) }
 
     Scaffold(
+        floatingActionButton = {
+            if (state.photos.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    onClick = onFindDuplicates,
+                    icon = { Icon(Icons.Default.FindReplace, contentDescription = null) },
+                    text = { Text("Find duplicates") },
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {

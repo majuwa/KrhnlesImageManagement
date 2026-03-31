@@ -7,6 +7,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.util.DuplicateFinder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,27 @@ data class AlbumDetailState(
     val error: String? = null,
 )
 
+sealed interface DuplicatesState {
+    data object Idle : DuplicatesState
+
+    data class Loading(
+        val processed: Int,
+        val total: Int,
+    ) : DuplicatesState
+
+    data class Found(
+        val groups: List<List<RemotePhoto>>,
+    ) : DuplicatesState
+
+    data object NoneFound : DuplicatesState
+
+    data class Error(
+        val message: String,
+    ) : DuplicatesState
+
+    data object Deleting : DuplicatesState
+}
+
 class AlbumsViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
@@ -36,6 +58,9 @@ class AlbumsViewModel(
 
     private val _detailState = MutableStateFlow(AlbumDetailState())
     val detailState: StateFlow<AlbumDetailState> = _detailState.asStateFlow()
+
+    private val _duplicatesState = MutableStateFlow<DuplicatesState>(DuplicatesState.Idle)
+    val duplicatesState: StateFlow<DuplicatesState> = _duplicatesState.asStateFlow()
 
     // Cached repo instance — recreated only when loadAlbums() is called.
     private var repo: AlbumsRepository? = null
@@ -63,7 +88,11 @@ class AlbumsViewModel(
     }
 
     fun loadAlbum(albumHref: String) {
-        val albumName = albumHref.trimEnd('/').substringAfterLast('/')
+        val albumName =
+            java.net.URLDecoder.decode(
+                albumHref.trimEnd('/').substringAfterLast('/'),
+                "UTF-8",
+            )
         _detailState.update { AlbumDetailState(albumName = albumName, isLoading = true) }
         viewModelScope.launch {
             val r = getRepo()
@@ -89,4 +118,83 @@ class AlbumsViewModel(
     }
 
     fun fullImageUrl(photo: RemotePhoto): String = repo?.fullImageUrl(photo) ?: ""
+
+    // ── Duplicate detection ───────────────────────────────────────────────────
+
+    fun findDuplicates() {
+        if (_duplicatesState.value is DuplicatesState.Loading) return
+        val photos = _detailState.value.photos
+        if (photos.isEmpty()) {
+            _duplicatesState.value = DuplicatesState.NoneFound
+            return
+        }
+        viewModelScope.launch {
+            _duplicatesState.value = DuplicatesState.Loading(0, photos.size)
+            try {
+                val r = getRepo()
+                val hashes = mutableMapOf<String, Long>()
+                photos.forEachIndexed { index, photo ->
+                    try {
+                        val url =
+                            _detailState.value.thumbnailUrls[photo.href]
+                                ?: r.thumbnailUrl(photo)
+                        val bitmap = r.downloadBitmapForHash(url)
+                        hashes[photo.href] = DuplicateFinder.computeDHash(bitmap)
+                        bitmap.recycle()
+                    } catch (_: Exception) {
+                        // Skip photos that fail to download or decode
+                    }
+                    _duplicatesState.value = DuplicatesState.Loading(index + 1, photos.size)
+                }
+                val groups = DuplicateFinder.groupDuplicates(photos, hashes)
+                _duplicatesState.value =
+                    if (groups.isEmpty()) {
+                        DuplicatesState.NoneFound
+                    } else {
+                        DuplicatesState.Found(groups)
+                    }
+            } catch (e: IllegalStateException) {
+                _duplicatesState.value =
+                    DuplicatesState.Error(e.message ?: "Failed to analyse duplicates")
+            } catch (e: java.io.IOException) {
+                _duplicatesState.value =
+                    DuplicatesState.Error(e.message ?: "Failed to analyse duplicates")
+            }
+        }
+    }
+
+    /**
+     * Deletes [toDelete] photos from the server, removes them from [detailState], then
+     * resets [duplicatesState] to [DuplicatesState.Idle] and calls [onComplete] with
+     * the number of individual deletion failures.
+     */
+    fun deletePhotos(
+        toDelete: List<RemotePhoto>,
+        onComplete: (failureCount: Int) -> Unit,
+    ) {
+        if (toDelete.isEmpty()) {
+            _duplicatesState.value = DuplicatesState.Idle
+            onComplete(0)
+            return
+        }
+        viewModelScope.launch {
+            _duplicatesState.value = DuplicatesState.Deleting
+            val r = getRepo()
+            var failures = 0
+            toDelete.forEach { photo -> r.deletePhoto(photo).onFailure { failures++ } }
+            val deletedHrefs = toDelete.map { it.href }.toSet()
+            _detailState.update { s ->
+                s.copy(
+                    photos = s.photos.filter { it.href !in deletedHrefs },
+                    thumbnailUrls = s.thumbnailUrls.filterKeys { it !in deletedHrefs },
+                )
+            }
+            _duplicatesState.value = DuplicatesState.Idle
+            onComplete(failures)
+        }
+    }
+
+    fun resetDuplicatesState() {
+        _duplicatesState.value = DuplicatesState.Idle
+    }
 }

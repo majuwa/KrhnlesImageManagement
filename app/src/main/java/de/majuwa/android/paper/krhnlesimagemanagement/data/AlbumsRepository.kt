@@ -1,5 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -92,6 +94,44 @@ class AlbumsRepository(
         return memoriesAvailable == true
     }
 
+    /**
+     * Downloads [url] and decodes it into a [Bitmap] suitable for hash computation.
+     * The returned bitmap must be recycled by the caller.
+     */
+    suspend fun downloadBitmapForHash(url: String): Bitmap =
+        withContext(Dispatchers.IO) {
+            val request =
+                Request
+                    .Builder()
+                    .url(url)
+                    .get()
+                    .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("HTTP ${response.code} for $url")
+                val bytes = response.body?.bytes() ?: error("Empty response for $url")
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    ?: error("Could not decode bitmap for $url")
+            }
+        }
+
+    /** Sends a WebDAV DELETE for [photo]. */
+    suspend fun deletePhoto(photo: RemotePhoto): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val request =
+                    Request
+                        .Builder()
+                        .url("$origin${photo.href}")
+                        .delete()
+                        .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        error("DELETE failed: HTTP ${response.code} for ${photo.href}")
+                    }
+                }
+            }
+        }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     private fun buildUrl(
@@ -164,8 +204,9 @@ class AlbumsRepository(
         val entries = mutableListOf<WebDavEntry>()
 
         for (i in 0 until responses.length) {
-            val resp = responses.item(i) as? Element ?: continue
-            val href = resp.firstTextNS(DAV_NS, "href") ?: continue
+            val resp = responses.item(i) as? Element
+            val href = resp?.firstTextNS(DAV_NS, "href")
+            if (resp == null || href == null) continue
             val displayName =
                 resp.firstTextNS(DAV_NS, "displayname")
                     ?: href.trimEnd('/').substringAfterLast('/')

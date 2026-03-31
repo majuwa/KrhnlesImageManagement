@@ -21,6 +21,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicateReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
@@ -32,6 +33,7 @@ private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_ALBUMS = "albums"
 private const val ROUTE_ALBUM_DETAIL = "albums/detail"
 private const val ROUTE_VIEWER = "albums/viewer"
+private const val ROUTE_DUPLICATES = "albums/duplicates"
 
 @Composable
 fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit) {
@@ -126,6 +128,29 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                             "$ROUTE_VIEWER?href=${android.net.Uri.encode(albumHref)}&index=$index",
                         )
                     },
+                    onFindDuplicates = {
+                        navController.navigate(
+                            "$ROUTE_DUPLICATES?href=${android.net.Uri.encode(albumHref)}",
+                        )
+                    },
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(
+                route = "$ROUTE_DUPLICATES?href={href}",
+                arguments =
+                    listOf(
+                        navArgument("href") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+            ) {
+                val albumsEntry = navController.getBackStackEntry(ROUTE_ALBUMS)
+                val vm: AlbumsViewModel = viewModel(albumsEntry)
+                DuplicateReviewScreen(
+                    viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
