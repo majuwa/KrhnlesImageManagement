@@ -17,16 +17,15 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.first
+import org.json.JSONObject
+import java.io.File
 
 class UploadWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
     companion object {
-        const val KEY_FOLDER_NAME = "folder_name"
-        const val KEY_PHOTO_URIS = "photo_uris"
-        const val KEY_MIME_TYPES = "mime_types"
-        const val KEY_FILE_NAMES = "file_names"
+        const val KEY_QUEUE_FILE = "queue_file"
         const val KEY_PROGRESS = "progress"
         const val KEY_TOTAL = "total"
         const val KEY_UPLOADED_COUNT = "uploaded_count"
@@ -36,15 +35,20 @@ class UploadWorker(
     }
 
     override suspend fun doWork(): Result {
-        val folderName = inputData.getString(KEY_FOLDER_NAME) ?: return Result.failure()
-        val uriStrings = inputData.getStringArray(KEY_PHOTO_URIS) ?: return Result.failure()
-        val mimeTypes = inputData.getStringArray(KEY_MIME_TYPES) ?: return Result.failure()
-        val fileNames = inputData.getStringArray(KEY_FILE_NAMES) ?: return Result.failure()
+        val queueFilePath = inputData.getString(KEY_QUEUE_FILE) ?: return Result.failure()
+        val queueFile = File(queueFilePath)
+        val queue = JSONObject(queueFile.readText())
+        val folderName = queue.getString("folderName")
+        val photosArray = queue.getJSONArray("photos")
+        val uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") }
+        val mimeTypes = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("mimeType") }
+        val fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") }
 
         val credentialStore = CredentialStore(applicationContext)
         val config = credentialStore.webDavConfig.first()
 
         if (!config.isValid) {
+            queueFile.delete()
             return Result.failure(
                 workDataOf("error" to "WebDAV not configured. Please check settings."),
             )
@@ -52,6 +56,7 @@ class UploadWorker(
 
         val remotePath = "${config.uploadPathPrefix}$folderName"
         return executeUpload(config, remotePath, uriStrings, mimeTypes, fileNames)
+            .also { queueFile.delete() }
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {

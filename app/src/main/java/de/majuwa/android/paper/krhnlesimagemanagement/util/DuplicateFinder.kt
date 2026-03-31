@@ -14,8 +14,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 object DuplicateFinder {
     private const val HASH_COLS = 9 // 9 wide → 8 left/right comparisons per row
     private const val HASH_ROWS = 8
-    const val SIMILARITY_THRESHOLD = 5
-    private const val WINDOW_SIZE = 10
+    const val SIMILARITY_THRESHOLD = 18
 
     /** Produces a 64-bit dHash fingerprint from [bitmap]. Recycles the scaled intermediate. */
     fun computeDHash(bitmap: Bitmap): Long {
@@ -41,11 +40,12 @@ object DuplicateFinder {
     ): Int = java.lang.Long.bitCount(h1 xor h2)
 
     /**
-     * Groups [photos] into sets of near-duplicates using a sliding window Union-Find.
+     * Groups [photos] into sets of near-duplicates using an all-pairs Union-Find.
      *
-     * Photos are sorted by [RemotePhoto.displayName] (which mirrors filesystem order /
-     * temporal order for camera rolls) and each photo is compared only to the next
-     * [windowSize] photos to keep complexity linear.
+     * Every photo is compared against every other photo. For typical album sizes the
+     * comparison is a simple Long XOR + bitcount per pair, which is negligible even
+     * for hundreds of photos. A sliding-window approach was tried first but missed
+     * duplicates whose filenames sort far apart on the server.
      *
      * Returns only groups with ≥ 2 members.
      */
@@ -53,17 +53,14 @@ object DuplicateFinder {
         photos: List<RemotePhoto>,
         hashes: Map<String, Long>,
         threshold: Int = SIMILARITY_THRESHOLD,
-        windowSize: Int = WINDOW_SIZE,
     ): List<List<RemotePhoto>> {
-        val sorted = photos.sortedBy { it.displayName }
-        val n = sorted.size
+        val n = photos.size
         val uf = UnionFind(n)
 
         for (i in 0 until n) {
-            val hi = hashes[sorted[i].href] ?: continue
-            val limit = minOf(i + windowSize + 1, n)
-            for (j in i + 1 until limit) {
-                val hj = hashes[sorted[j].href] ?: continue
+            val hi = hashes[photos[i].href] ?: continue
+            for (j in i + 1 until n) {
+                val hj = hashes[photos[j].href] ?: continue
                 if (hammingDistance(hi, hj) <= threshold) {
                     uf.union(i, j)
                 }
@@ -74,7 +71,7 @@ object DuplicateFinder {
             .groups()
             .values
             .filter { it.size >= 2 }
-            .map { indices -> indices.map { sorted[it] } }
+            .map { indices -> indices.map { photos[it] } }
     }
 
     private fun luminance(pixel: Int): Int =

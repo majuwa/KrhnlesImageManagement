@@ -11,6 +11,9 @@ import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,13 +36,29 @@ class MainActivity : ComponentActivity() {
     ) {
         if (photos.isEmpty()) return
 
-        val inputData =
-            workDataOf(
-                UploadWorker.KEY_FOLDER_NAME to occasionName,
-                UploadWorker.KEY_PHOTO_URIS to photos.map { it.uri.toString() }.toTypedArray(),
-                UploadWorker.KEY_MIME_TYPES to photos.map { it.mimeType }.toTypedArray(),
-                UploadWorker.KEY_FILE_NAMES to photos.map { it.displayName }.toTypedArray(),
-            )
+        // WorkManager Data has a 10 KB limit — write photo list to a file instead.
+        val queue =
+            JSONObject().apply {
+                put("folderName", occasionName)
+                put(
+                    "photos",
+                    JSONArray().also { arr ->
+                        photos.forEach { p ->
+                            arr.put(
+                                JSONObject().apply {
+                                    put("uri", p.uri.toString())
+                                    put("mimeType", p.mimeType)
+                                    put("displayName", p.displayName)
+                                },
+                            )
+                        }
+                    },
+                )
+            }
+        val queueFile = File(filesDir, "upload_queue_${System.currentTimeMillis()}.json")
+        queueFile.writeText(queue.toString())
+
+        val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)
 
         val uploadRequest =
             OneTimeWorkRequestBuilder<UploadWorker>()

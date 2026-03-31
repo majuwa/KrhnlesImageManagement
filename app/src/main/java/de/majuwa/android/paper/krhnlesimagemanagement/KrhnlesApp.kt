@@ -1,5 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -10,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -75,8 +78,12 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                 }
             }
         },
-    ) { _ ->
-        NavHost(navController = navController, startDestination = ROUTE_PHOTOS) {
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = ROUTE_PHOTOS,
+            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+        ) {
             composable(ROUTE_PHOTOS) {
                 val vm: PhotoGridViewModel = viewModel()
                 PhotoGridScreen(

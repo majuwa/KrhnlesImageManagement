@@ -32,6 +32,8 @@ After adding a feature or making any code change:
 * do not suppress issues, unless asked to
 * if suppress is best decision ask whether it should be done or an alternative should be found
 * if a lock or something similar is required, use if possible a timeout so that it will be release
+* for every bug request think what are meaningful test can be so that the bug won't happen in the future
+* do not disable test unless you asked for permission
 
 # Docuementation
-* docuement ard in docs/architecture.md
+* document ard in docs/architecture.md
