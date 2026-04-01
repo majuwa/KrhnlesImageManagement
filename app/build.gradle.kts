@@ -69,6 +69,9 @@ dependencies {
     // OkHttp
     implementation(libs.okhttp)
 
+    // ML Kit (object detection for subject-region blur analysis)
+    implementation(libs.mlkitObjectDetection)
+
     // Security
     implementation(libs.security.crypto)
 

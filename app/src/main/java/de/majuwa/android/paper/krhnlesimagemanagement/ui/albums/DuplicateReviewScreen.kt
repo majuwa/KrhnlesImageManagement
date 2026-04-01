@@ -217,7 +217,7 @@ fun DuplicateReviewScreen(
 }
 
 @Composable
-private fun PhotoPreviewDialog(
+internal fun PhotoPreviewDialog(
     url: String,
     onDismiss: () -> Unit,
 ) {

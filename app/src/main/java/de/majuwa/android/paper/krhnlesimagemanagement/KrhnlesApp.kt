@@ -24,6 +24,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicateReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
@@ -37,6 +38,7 @@ private const val ROUTE_ALBUMS = "albums"
 private const val ROUTE_ALBUM_DETAIL = "albums/detail"
 private const val ROUTE_VIEWER = "albums/viewer"
 private const val ROUTE_DUPLICATES = "albums/duplicates"
+private const val ROUTE_BLUR = "albums/blur"
 
 @Composable
 fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit) {
@@ -140,6 +142,11 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                             "$ROUTE_DUPLICATES?href=${android.net.Uri.encode(albumHref)}",
                         )
                     },
+                    onFindBlurry = {
+                        navController.navigate(
+                            "$ROUTE_BLUR?href=${android.net.Uri.encode(albumHref)}",
+                        )
+                    },
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
@@ -157,6 +164,24 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                 val albumsEntry = navController.getBackStackEntry(ROUTE_ALBUMS)
                 val vm: AlbumsViewModel = viewModel(albumsEntry)
                 DuplicateReviewScreen(
+                    viewModel = vm,
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(
+                route = "$ROUTE_BLUR?href={href}",
+                arguments =
+                    listOf(
+                        navArgument("href") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+            ) {
+                val albumsEntry = navController.getBackStackEntry(ROUTE_ALBUMS)
+                val vm: AlbumsViewModel = viewModel(albumsEntry)
+                BlurReviewScreen(
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )

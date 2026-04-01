@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -62,6 +63,7 @@ fun AlbumDetailScreen(
     albumHref: String,
     onOpenPhoto: (index: Int) -> Unit,
     onFindDuplicates: () -> Unit,
+    onFindBlurry: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val state by viewModel.detailState.collectAsStateWithLifecycle()
@@ -98,11 +100,21 @@ fun AlbumDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             if (state.photos.isNotEmpty() && !selectionMode && !isDeletingPhotos) {
-                ExtendedFloatingActionButton(
-                    onClick = onFindDuplicates,
-                    icon = { Icon(Icons.Default.FindReplace, contentDescription = null) },
-                    text = { Text("Find duplicates") },
-                )
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ExtendedFloatingActionButton(
+                        onClick = onFindBlurry,
+                        icon = { Icon(Icons.Default.BlurOn, contentDescription = null) },
+                        text = { Text("Find blurry") },
+                    )
+                    ExtendedFloatingActionButton(
+                        onClick = onFindDuplicates,
+                        icon = { Icon(Icons.Default.FindReplace, contentDescription = null) },
+                        text = { Text("Find duplicates") },
+                    )
+                }
             }
         },
         topBar = {
