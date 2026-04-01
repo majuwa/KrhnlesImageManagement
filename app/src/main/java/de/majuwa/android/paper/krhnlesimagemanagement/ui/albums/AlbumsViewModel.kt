@@ -19,6 +19,7 @@ data class AlbumsState(
     val albums: List<RemoteAlbum> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
+    val isDeletingAlbum: Boolean = false,
 )
 
 data class AlbumDetailState(
@@ -27,7 +28,13 @@ data class AlbumDetailState(
     val thumbnailUrls: Map<String, String> = emptyMap(),
     val isLoading: Boolean = false,
     val error: String? = null,
-)
+) {
+    internal fun withPhotosDeleted(hrefs: Set<String>): AlbumDetailState =
+        copy(
+            photos = photos.filter { it.href !in hrefs },
+            thumbnailUrls = thumbnailUrls.filterKeys { it !in hrefs },
+        )
+}
 
 sealed interface DuplicatesState {
     data object Idle : DuplicatesState
@@ -61,6 +68,9 @@ class AlbumsViewModel(
 
     private val _duplicatesState = MutableStateFlow<DuplicatesState>(DuplicatesState.Idle)
     val duplicatesState: StateFlow<DuplicatesState> = _duplicatesState.asStateFlow()
+
+    private val _isDeletingPhotos = MutableStateFlow(false)
+    val isDeletingPhotos: StateFlow<Boolean> = _isDeletingPhotos.asStateFlow()
 
     // Cached repo instance — recreated only when loadAlbums() is called.
     private var repo: AlbumsRepository? = null
@@ -183,14 +193,62 @@ class AlbumsViewModel(
             var failures = 0
             toDelete.forEach { photo -> r.deletePhoto(photo).onFailure { failures++ } }
             val deletedHrefs = toDelete.map { it.href }.toSet()
-            _detailState.update { s ->
-                s.copy(
-                    photos = s.photos.filter { it.href !in deletedHrefs },
-                    thumbnailUrls = s.thumbnailUrls.filterKeys { it !in deletedHrefs },
-                )
-            }
+            _detailState.update { s -> s.withPhotosDeleted(deletedHrefs) }
             _duplicatesState.value = DuplicatesState.Idle
             onComplete(failures)
+        }
+    }
+
+    /**
+     * Deletes [toDelete] photos directly from the album view (not via the duplicates flow).
+     * Updates [isDeletingPhotos] during the operation and calls [onComplete] with the number
+     * of individual deletion failures.
+     */
+    fun deleteSelectedPhotos(
+        toDelete: List<RemotePhoto>,
+        onComplete: (failureCount: Int) -> Unit,
+    ) {
+        if (toDelete.isEmpty()) {
+            onComplete(0)
+            return
+        }
+        viewModelScope.launch {
+            _isDeletingPhotos.value = true
+            val r = getRepo()
+            var failures = 0
+            toDelete.forEach { photo -> r.deletePhoto(photo).onFailure { failures++ } }
+            val deletedHrefs = toDelete.map { it.href }.toSet()
+            _detailState.update { s -> s.withPhotosDeleted(deletedHrefs) }
+            _isDeletingPhotos.value = false
+            onComplete(failures)
+        }
+    }
+
+    /**
+     * Deletes the entire [album] from the server and removes it from [albumsState].
+     * Calls [onComplete] with `true` on success, `false` on failure.
+     */
+    fun deleteAlbum(
+        album: RemoteAlbum,
+        onComplete: (success: Boolean) -> Unit,
+    ) {
+        viewModelScope.launch {
+            _albumsState.update { it.copy(isDeletingAlbum = true) }
+            val r = getRepo()
+            r
+                .deleteAlbum(album)
+                .onSuccess {
+                    _albumsState.update { s ->
+                        s.copy(
+                            albums = s.albums.filter { it.href != album.href },
+                            isDeletingAlbum = false,
+                        )
+                    }
+                    onComplete(true)
+                }.onFailure {
+                    _albumsState.update { it.copy(isDeletingAlbum = false) }
+                    onComplete(false)
+                }
         }
     }
 

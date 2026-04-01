@@ -10,9 +10,13 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.
 - **WebDAV & Nextcloud Native:** Direct integration with your self-hosted storage.
 - **Secure Login:** Nextcloud Login Flow v2 (browser-based) or manual WebDAV configuration. Credentials are encrypted at rest.
+- **Cloud Album Browser:** Browse albums (folders) stored on your WebDAV/Nextcloud server.
+- **Cloud Duplicate Detector:** Scan an album for near-duplicate images and bulk-delete the extras.
+- **Delete Photos from Album:** Long-press any photo in an album to enter selection mode. Select multiple photos, then tap the delete icon in the top bar. A confirmation dialog is shown before any server deletion.
+- **Delete Entire Album:** Long-press an album in the Albums tab to delete the whole album (and all its photos) from the server, with a confirmation dialog.
 
 ## 🔮 Future Roadmap
-- **Cloud Duplicate Detector:** Scan your WebDAV folder for duplicate images and choose which ones to keep or discard directly from the app.
+- **Blurry/Bad Photo Detection:** Smart suggestions to clean up low-quality photos and save cloud space.
 - **Blurry/Bad Photo Detection:** Smart suggestions to clean up low-quality photos and save cloud space.
 
 ## 🛠️ Tech Stack

@@ -132,6 +132,24 @@ class AlbumsRepository(
             }
         }
 
+    /** Sends a WebDAV DELETE for [album], removing the entire directory from the server. */
+    suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val request =
+                    Request
+                        .Builder()
+                        .url("$origin${album.href}")
+                        .delete()
+                        .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        error("DELETE failed: HTTP ${response.code} for ${album.href}")
+                    }
+                }
+            }
+        }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     private fun buildUrl(
