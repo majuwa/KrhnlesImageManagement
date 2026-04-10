@@ -114,7 +114,9 @@ fun BlurReviewScreen(
             label = "blur-content",
         ) { state ->
             when (state) {
-                is BlurState.Scanning -> BlurScanningContent(state)
+                is BlurState.Scanning -> {
+                    BlurScanningContent(state)
+                }
 
                 is BlurState.NoneFound -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

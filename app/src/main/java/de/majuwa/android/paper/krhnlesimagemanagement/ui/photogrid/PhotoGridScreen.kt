@@ -265,11 +265,13 @@ private fun InnerContent(
                 onRequestPermission = onRequestPermission,
             )
         }
+
         uiState.isLoading -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
+
         uiState.error != null -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -278,6 +280,7 @@ private fun InnerContent(
                 )
             }
         }
+
         else -> {
             PhotoGrid(
                 photosByDate = uiState.photosByDate,

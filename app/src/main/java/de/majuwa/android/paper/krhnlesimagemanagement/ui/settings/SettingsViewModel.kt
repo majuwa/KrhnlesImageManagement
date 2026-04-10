@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.NextcloudAuthRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
@@ -33,10 +34,11 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     application: Application,
+    private val credentialStore: CredentialRepository =
+        CredentialStore(application),
+    private val authRepository: NextcloudAuthRepository =
+        NextcloudAuthRepository(),
 ) : AndroidViewModel(application) {
-    private val credentialStore = CredentialStore(application)
-    private val authRepository = NextcloudAuthRepository()
-
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 

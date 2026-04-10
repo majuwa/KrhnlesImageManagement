@@ -5,8 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,11 +40,13 @@ data class PhotoGridUiState(
 
 class PhotoGridViewModel(
     application: Application,
+    private val mediaRepository: MediaRepositoryContract =
+        MediaRepository(application.contentResolver),
+    private val credentialStore: CredentialRepository =
+        CredentialStore(application),
+    private val workManager: WorkManager =
+        WorkManager.getInstance(application),
 ) : AndroidViewModel(application) {
-    private val mediaRepository = MediaRepository(application.contentResolver)
-    private val credentialStore = CredentialStore(application)
-    private val workManager = WorkManager.getInstance(application)
-
     private val _uiState = MutableStateFlow(PhotoGridUiState())
     val uiState: StateFlow<PhotoGridUiState> = _uiState.asStateFlow()
 

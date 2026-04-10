@@ -210,6 +210,7 @@ private fun LoginContent(
                 }
             }
         }
+
         else -> {
             Button(
                 onClick = { viewModel.startLoginFlow() },

@@ -11,8 +11,8 @@ import java.time.ZoneId
 
 class MediaRepository(
     private val contentResolver: ContentResolver,
-) {
-    suspend fun loadPhotos(): List<Photo> =
+) : MediaRepositoryContract {
+    override suspend fun loadPhotos(): List<Photo> =
         withContext(Dispatchers.IO) {
             val photos = mutableListOf<Photo>()
             val projection =

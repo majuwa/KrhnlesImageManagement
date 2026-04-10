@@ -4,9 +4,12 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurAnalyzer
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurDetector
 import de.majuwa.android.paper.krhnlesimagemanagement.util.DuplicateFinder
@@ -83,6 +86,10 @@ sealed interface BlurState {
 
 class AlbumsViewModel(
     application: Application,
+    private val credentialRepo: CredentialRepository =
+        CredentialStore(application),
+    private val repoFactory: (WebDavConfig) -> AlbumsRepositoryContract =
+        { config -> AlbumsRepository(config) },
 ) : AndroidViewModel(application) {
     private val _albumsState = MutableStateFlow(AlbumsState())
     val albumsState: StateFlow<AlbumsState> = _albumsState.asStateFlow()
@@ -100,12 +107,12 @@ class AlbumsViewModel(
     val isDeletingPhotos: StateFlow<Boolean> = _isDeletingPhotos.asStateFlow()
 
     // Cached repo instance — recreated only when loadAlbums() is called.
-    private var repo: AlbumsRepository? = null
+    private var repo: AlbumsRepositoryContract? = null
 
-    private suspend fun getRepo(): AlbumsRepository =
+    private suspend fun getRepo(): AlbumsRepositoryContract =
         repo ?: run {
-            val config = CredentialStore(getApplication<Application>()).webDavConfig.first()
-            AlbumsRepository(config).also { repo = it }
+            val config = credentialRepo.webDavConfig.first()
+            repoFactory(config).also { repo = it }
         }
 
     fun loadAlbums() {

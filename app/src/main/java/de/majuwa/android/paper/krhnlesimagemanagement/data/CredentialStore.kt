@@ -18,7 +18,7 @@ private val Context.credentialDataStore: DataStore<Preferences> by preferencesDa
 
 class CredentialStore(
     private val context: Context,
-) {
+) : CredentialRepository {
     private companion object {
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_USERNAME = stringPreferencesKey("username")
@@ -40,13 +40,13 @@ class CredentialStore(
     val username: Flow<String?> = context.credentialDataStore.data.map { it[KEY_USERNAME] }
     val baseFolder: Flow<String> = context.credentialDataStore.data.map { it[KEY_BASE_FOLDER] ?: "" }
 
-    val isConfigured: Flow<Boolean> =
+    override val isConfigured: Flow<Boolean> =
         context.credentialDataStore.data.map { prefs ->
             val url = prefs[KEY_SERVER_URL]
             !url.isNullOrBlank() && !password().isNullOrBlank()
         }
 
-    val webDavConfig: Flow<WebDavConfig> =
+    override val webDavConfig: Flow<WebDavConfig> =
         context.credentialDataStore.data.map { prefs ->
             WebDavConfig(
                 url = prefs[KEY_SERVER_URL] ?: "",
@@ -56,9 +56,9 @@ class CredentialStore(
             )
         }
 
-    fun password(): String? = encryptedPrefs.getString("password", null)
+    override fun password(): String? = encryptedPrefs.getString("password", null)
 
-    suspend fun save(
+    override suspend fun save(
         serverUrl: String,
         username: String,
         password: String,
@@ -70,14 +70,14 @@ class CredentialStore(
         encryptedPrefs.edit().putString("password", password).apply()
     }
 
-    suspend fun saveBaseFolder(folder: String) {
+    override suspend fun saveBaseFolder(folder: String) {
         context.credentialDataStore.edit { it[KEY_BASE_FOLDER] = folder.trim('/') }
     }
 
-    suspend fun clear() {
+    override suspend fun clear() {
         context.credentialDataStore.edit { it.clear() }
         encryptedPrefs.edit().clear().apply()
     }
 
-    fun isLoggedIn(): Boolean = !password().isNullOrBlank()
+    override fun isLoggedIn(): Boolean = !password().isNullOrBlank()
 }

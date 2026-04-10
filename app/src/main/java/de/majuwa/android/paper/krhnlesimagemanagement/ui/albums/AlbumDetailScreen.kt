@@ -201,12 +201,16 @@ private fun AlbumDetailContent(
     onPhotoLongClick: (href: String) -> Unit,
 ) {
     when {
-        isDeletingPhotos -> DeletingContent(modifier = modifier)
+        isDeletingPhotos -> {
+            DeletingContent(modifier = modifier)
+        }
+
         state.isLoading -> {
             Box(modifier = modifier, contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
+
         state.error != null -> {
             Box(modifier = modifier, contentAlignment = Alignment.Center) {
                 Text(
@@ -217,11 +221,13 @@ private fun AlbumDetailContent(
                 )
             }
         }
+
         state.photos.isEmpty() -> {
             Box(modifier = modifier, contentAlignment = Alignment.Center) {
                 Text("No photos in this album.", style = MaterialTheme.typography.bodyLarge)
             }
         }
+
         else -> {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),

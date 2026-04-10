@@ -6,7 +6,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -203,27 +207,40 @@ private fun ZoomablePage(
                     translationX = offset.x,
                     translationY = offset.y,
                 ).pointerInput(Unit) {
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val oldScale = scale
-                        val newScale = (oldScale * zoom).coerceIn(1f, MAX_ZOOM)
-                        val center = Offset(size.width / 2f, size.height / 2f)
-                        // Keep the pinch focal point fixed: derive offset from centroid position.
-                        val focalOffset = (centroid - center) * (1f - zoom) + offset * zoom
-                        // Add intentional pan scaled by oldScale for 1:1 content feel.
-                        val newOffset = focalOffset + pan * oldScale
-                        scale = newScale
-                        offset =
-                            if (newScale > 1f) {
-                                val maxX = size.width * (newScale - 1) / 2f
-                                val maxY = size.height * (newScale - 1) / 2f
-                                Offset(
-                                    newOffset.x.coerceIn(-maxX, maxX),
-                                    newOffset.y.coerceIn(-maxY, maxY),
-                                )
-                            } else {
-                                Offset.Zero
+                    // Custom gesture handler: only consume events for pinch-zoom or when
+                    // already zoomed in. Single-finger swipes at scale==1 pass through to
+                    // the HorizontalPager so page-swiping continues to work.
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            val isMultiTouch = event.changes.size >= 2
+                            if (isMultiTouch || scale > 1f) {
+                                val zoomChange = event.calculateZoom()
+                                val panChange = event.calculatePan()
+                                val centroid = event.calculateCentroid(useCurrent = false)
+                                val oldScale = scale
+                                val newScale = (oldScale * zoomChange).coerceIn(1f, MAX_ZOOM)
+                                val center = Offset(size.width / 2f, size.height / 2f)
+                                val focalOffset =
+                                    (centroid - center) * (1f - zoomChange) + offset * zoomChange
+                                val newOffset = focalOffset + panChange * oldScale
+                                scale = newScale
+                                offset =
+                                    if (newScale > 1f) {
+                                        val maxX = size.width * (newScale - 1) / 2f
+                                        val maxY = size.height * (newScale - 1) / 2f
+                                        Offset(
+                                            newOffset.x.coerceIn(-maxX, maxX),
+                                            newOffset.y.coerceIn(-maxY, maxY),
+                                        )
+                                    } else {
+                                        Offset.Zero
+                                    }
+                                onZoomedChange(newScale > 1f)
+                                event.changes.forEach { it.consume() }
                             }
-                        onZoomedChange(newScale > 1f)
+                        } while (event.changes.any { it.pressed })
                     }
                 },
         loading = {

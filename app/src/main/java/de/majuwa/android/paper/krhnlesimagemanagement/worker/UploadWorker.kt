@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.Build
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
@@ -179,7 +181,7 @@ class UploadWorker(
                 .setContentText(text)
                 .setOngoing(false)
                 .build()
-        NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+        notifyIfPermitted(notification)
     }
 
     private fun showFailureNotification(message: String) {
@@ -191,7 +193,7 @@ class UploadWorker(
                 .setContentText(message)
                 .setOngoing(false)
                 .build()
-        NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+        notifyIfPermitted(notification)
     }
 
     private fun createNotificationChannel() {
@@ -205,5 +207,21 @@ class UploadWorker(
             }
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
+    }
+
+    private fun notifyIfPermitted(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ActivityCompat.checkSelfPermission(
+                    applicationContext,
+                    android.Manifest.permission.POST_NOTIFICATIONS,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                NotificationManagerCompat
+                    .from(applicationContext)
+                    .notify(NOTIFICATION_ID, notification)
+            }
+        } else {
+            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+        }
     }
 }

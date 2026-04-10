@@ -105,6 +105,7 @@ fun AlbumsScreen(
                     CircularProgressIndicator()
                 }
             }
+
             state.error != null -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(padding),
@@ -118,6 +119,7 @@ fun AlbumsScreen(
                     )
                 }
             }
+
             state.albums.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(padding),
@@ -126,6 +128,7 @@ fun AlbumsScreen(
                     Text("No albums found.", style = MaterialTheme.typography.bodyLarge)
                 }
             }
+
             else -> {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
