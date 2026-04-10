@@ -185,7 +185,7 @@ fun photoGridScreen(
         ) {
             AnimatedVisibility(visible = uploadProgress != null) {
                 uploadProgress?.let { progress ->
-                    UploadProgressBanner(progress.current, progress.total)
+                    uploadProgressBanner(progress.current, progress.total)
                 }
             }
             Box(modifier = Modifier.weight(1f)) {
@@ -223,7 +223,7 @@ fun photoGridScreen(
 }
 
 @Composable
-private fun UploadProgressBanner(
+private fun uploadProgressBanner(
     current: Int,
     total: Int,
 ) {

@@ -120,7 +120,7 @@ fun fullscreenViewerScreen(
             ) { page ->
                 val photo = photos[page]
                 val url = viewModel.fullImageUrl(photo)
-                ZoomablePage(
+                zoomablePage(
                     url = url,
                     contentDescription = photo.displayName,
                     onZoomedChange = { zoomed ->
@@ -177,7 +177,7 @@ fun fullscreenViewerScreen(
 }
 
 @Composable
-private fun ZoomablePage(
+private fun zoomablePage(
     url: String,
     contentDescription: String,
     onZoomedChange: (Boolean) -> Unit,

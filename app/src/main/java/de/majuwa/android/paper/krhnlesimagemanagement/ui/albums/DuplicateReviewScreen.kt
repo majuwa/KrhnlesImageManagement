@@ -106,7 +106,7 @@ fun duplicateReviewScreen(
     var previewUrl by remember { mutableStateOf<String?>(null) }
 
     previewUrl?.let { url ->
-        PhotoPreviewDialog(url = url, onDismiss = { previewUrl = null })
+        photoPreviewDialog(url = url, onDismiss = { previewUrl = null })
     }
 
     Scaffold(
@@ -217,7 +217,7 @@ fun duplicateReviewScreen(
 }
 
 @Composable
-internal fun PhotoPreviewDialog(
+internal fun photoPreviewDialog(
     url: String,
     onDismiss: () -> Unit,
 ) {

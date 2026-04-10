@@ -140,7 +140,7 @@ fun albumsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(state.albums, key = { it.href }) { album ->
-                        AlbumCard(
+                        albumCard(
                             album = album,
                             onClick = { onOpenAlbum(album.href) },
                             onLongClick = { albumToDelete = album },
@@ -154,7 +154,7 @@ fun albumsScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AlbumCard(
+private fun albumCard(
     album: RemoteAlbum,
     onClick: () -> Unit,
     onLongClick: () -> Unit,

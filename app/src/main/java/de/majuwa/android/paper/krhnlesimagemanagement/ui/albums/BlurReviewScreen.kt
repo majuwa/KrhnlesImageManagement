@@ -83,7 +83,7 @@ fun blurReviewScreen(
     }
 
     previewUrl?.let { url ->
-        PhotoPreviewDialog(url = url, onDismiss = { previewUrl = null })
+        photoPreviewDialog(url = url, onDismiss = { previewUrl = null })
     }
 
     Scaffold(
@@ -115,7 +115,7 @@ fun blurReviewScreen(
         ) { state ->
             when (state) {
                 is BlurState.Scanning -> {
-                    BlurScanningContent(state)
+                    blurScanningContent(state)
                 }
 
                 is BlurState.NoneFound -> {
@@ -192,7 +192,7 @@ fun blurReviewScreen(
 }
 
 @Composable
-private fun BlurScanningContent(state: BlurState.Scanning) {
+private fun blurScanningContent(state: BlurState.Scanning) {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,

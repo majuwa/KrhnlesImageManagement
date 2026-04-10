@@ -119,7 +119,7 @@ fun albumDetailScreen(
         },
         topBar = {
             if (selectionMode) {
-                SelectionTopBar(
+                selectionTopBar(
                     selectedCount = selectedHrefs.size,
                     onClearSelection = { selectedHrefs = emptySet() },
                     onDeleteClick = { showDeleteConfirmation = true },
@@ -166,7 +166,7 @@ fun albumDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SelectionTopBar(
+private fun selectionTopBar(
     selectedCount: Int,
     onClearSelection: () -> Unit,
     onDeleteClick: () -> Unit,

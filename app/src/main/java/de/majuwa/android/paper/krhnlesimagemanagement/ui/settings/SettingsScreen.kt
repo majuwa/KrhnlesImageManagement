@@ -82,7 +82,7 @@ fun settingsScreen(
                     .verticalScroll(rememberScrollState()),
         ) {
             if (uiState.isLoggedIn) {
-                LoggedInContent(uiState, viewModel)
+                loggedInContent(uiState, viewModel)
             } else {
                 LoginContent(uiState, viewModel)
             }
@@ -91,7 +91,7 @@ fun settingsScreen(
 }
 
 @Composable
-private fun LoggedInContent(
+private fun loggedInContent(
     uiState: SettingsUiState,
     viewModel: SettingsViewModel,
 ) {
