@@ -28,7 +28,7 @@ private val LightColorScheme =
     )
 
 @Composable
-fun KrhnlesImageManagementTheme(
+fun krhnlesImageManagementTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,

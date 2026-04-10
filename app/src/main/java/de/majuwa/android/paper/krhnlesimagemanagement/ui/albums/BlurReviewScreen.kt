@@ -61,7 +61,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BlurReviewScreen(
+fun blurReviewScreen(
     viewModel: AlbumsViewModel,
     onNavigateBack: () -> Unit,
 ) {

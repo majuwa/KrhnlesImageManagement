@@ -10,9 +10,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.albumsScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.krhnlesImageManagementTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -45,8 +45,8 @@ class AlbumsScreenTest {
     fun `shows Albums title in top bar`() {
         val viewModel = createViewModel()
         composeTestRule.setContent {
-            KrhnlesImageManagementTheme {
-                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            krhnlesImageManagementTheme {
+                albumsScreen(viewModel = viewModel, onOpenAlbum = {})
             }
         }
         composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
@@ -65,8 +65,8 @@ class AlbumsScreenTest {
         val viewModel = createViewModel(fakeRepo)
 
         composeTestRule.setContent {
-            KrhnlesImageManagementTheme {
-                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            krhnlesImageManagementTheme {
+                albumsScreen(viewModel = viewModel, onOpenAlbum = {})
             }
         }
 
@@ -82,8 +82,8 @@ class AlbumsScreenTest {
         val viewModel = createViewModel(fakeRepo)
 
         composeTestRule.setContent {
-            KrhnlesImageManagementTheme {
-                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            krhnlesImageManagementTheme {
+                albumsScreen(viewModel = viewModel, onOpenAlbum = {})
             }
         }
 
@@ -98,8 +98,8 @@ class AlbumsScreenTest {
         val viewModel = createViewModel(fakeRepo)
 
         composeTestRule.setContent {
-            KrhnlesImageManagementTheme {
-                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            krhnlesImageManagementTheme {
+                albumsScreen(viewModel = viewModel, onOpenAlbum = {})
             }
         }
 
@@ -118,8 +118,8 @@ class AlbumsScreenTest {
         var openedHref = ""
 
         composeTestRule.setContent {
-            KrhnlesImageManagementTheme {
-                AlbumsScreen(viewModel = viewModel, onOpenAlbum = { openedHref = it })
+            krhnlesImageManagementTheme {
+                albumsScreen(viewModel = viewModel, onOpenAlbum = { openedHref = it })
             }
         }
 
@@ -132,8 +132,8 @@ class AlbumsScreenTest {
     fun `has reload button in top bar`() {
         val viewModel = createViewModel()
         composeTestRule.setContent {
-            KrhnlesImageManagementTheme {
-                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            krhnlesImageManagementTheme {
+                albumsScreen(viewModel = viewModel, onOpenAlbum = {})
             }
         }
         composeTestRule.onNodeWithContentDescription("Reload").assertIsDisplayed()

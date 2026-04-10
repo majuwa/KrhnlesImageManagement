@@ -38,7 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
+fun settingsScreen(
     viewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
 ) {

@@ -23,16 +23,17 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurReviewScreen
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicateReviewScreen
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.albumDetailScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.albumsScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.blurReviewScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.duplicateReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.photoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.settingsScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.krhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.fullscreenViewerScreen
 
 private const val ROUTE_PHOTOS = "photos"
 private const val ROUTE_SETTINGS = "settings"
@@ -43,7 +44,7 @@ private const val ROUTE_DUPLICATES = "albums/duplicates"
 private const val ROUTE_BLUR = "albums/blur"
 
 @Composable
-fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit) {
+fun krhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
@@ -90,7 +91,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
         ) {
             composable(ROUTE_PHOTOS) {
                 val vm: PhotoGridViewModel = viewModel()
-                PhotoGridScreen(
+                photoGridScreen(
                     viewModel = vm,
                     onNavigateToSettings = { navController.navigate(ROUTE_SETTINGS) },
                     onStartUpload = onStartUpload,
@@ -99,7 +100,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
 
             composable(ROUTE_SETTINGS) {
                 val vm: SettingsViewModel = viewModel()
-                SettingsScreen(
+                settingsScreen(
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )
@@ -109,7 +110,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
 
             composable(ROUTE_ALBUMS) {
                 val vm: AlbumsViewModel = viewModel()
-                AlbumsScreen(
+                albumsScreen(
                     viewModel = vm,
                     onOpenAlbum = { href ->
                         navController.navigate("$ROUTE_ALBUM_DETAIL?href=${android.net.Uri.encode(href)}")
@@ -134,7 +135,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                         navController.getBackStackEntry(ROUTE_ALBUMS)
                     }
                 val vm: AlbumsViewModel = viewModel(albumsEntry)
-                AlbumDetailScreen(
+                albumDetailScreen(
                     viewModel = vm,
                     albumHref = albumHref,
                     onOpenPhoto = { index ->
@@ -172,7 +173,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                         navController.getBackStackEntry(ROUTE_ALBUMS)
                     }
                 val vm: AlbumsViewModel = viewModel(albumsEntry)
-                DuplicateReviewScreen(
+                duplicateReviewScreen(
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )
@@ -194,7 +195,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                         navController.getBackStackEntry(ROUTE_ALBUMS)
                     }
                 val vm: AlbumsViewModel = viewModel(albumsEntry)
-                BlurReviewScreen(
+                blurReviewScreen(
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )
@@ -220,7 +221,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                         navController.getBackStackEntry(ROUTE_ALBUMS)
                     }
                 val vm: AlbumsViewModel = viewModel(albumsEntry)
-                FullscreenViewerScreen(
+                fullscreenViewerScreen(
                     viewModel = vm,
                     initialIndex = initialIndex,
                     onNavigateBack = { navController.popBackStack() },

@@ -74,7 +74,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DuplicateReviewScreen(
+fun duplicateReviewScreen(
     viewModel: AlbumsViewModel,
     onNavigateBack: () -> Unit,
 ) {

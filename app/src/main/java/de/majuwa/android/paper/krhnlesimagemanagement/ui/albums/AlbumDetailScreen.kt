@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumDetailScreen(
+fun albumDetailScreen(
     viewModel: AlbumsViewModel,
     albumHref: String,
     onOpenPhoto: (index: Int) -> Unit,

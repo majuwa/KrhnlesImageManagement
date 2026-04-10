@@ -59,7 +59,7 @@ private const val CONTROLS_HIDE_DELAY_MS = 3_000L
 private const val MAX_ZOOM = 8f
 
 @Composable
-fun FullscreenViewerScreen(
+fun fullscreenViewerScreen(
     viewModel: AlbumsViewModel,
     initialIndex: Int,
     onNavigateBack: () -> Unit,

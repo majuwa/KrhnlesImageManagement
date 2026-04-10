@@ -73,7 +73,7 @@ import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PhotoGridScreen(
+fun photoGridScreen(
     viewModel: PhotoGridViewModel,
     onNavigateToSettings: () -> Unit,
     onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit,
