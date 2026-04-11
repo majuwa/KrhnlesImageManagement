@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,7 +13,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -191,6 +195,11 @@ private fun LoginContent(
         modifier = Modifier.fillMaxWidth(),
     )
 
+    if (uiState.httpWarning) {
+        Spacer(modifier = Modifier.height(4.dp))
+        HttpWarningBanner()
+    }
+
     Spacer(modifier = Modifier.height(16.dp))
 
     when {
@@ -259,6 +268,11 @@ private fun ManualConfigContent(
         modifier = Modifier.fillMaxWidth(),
     )
 
+    if (uiState.httpWarning) {
+        Spacer(modifier = Modifier.height(4.dp))
+        HttpWarningBanner()
+    }
+
     Spacer(modifier = Modifier.height(8.dp))
 
     OutlinedTextField(
@@ -287,5 +301,33 @@ private fun ManualConfigContent(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text("Save & Connect")
+    }
+}
+
+@Composable
+private fun HttpWarningBanner() {
+    Card(
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(modifier = Modifier.padding(4.dp))
+            Text(
+                text = "Insecure connection — credentials will be sent in plaintext. Use HTTPS.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
     }
 }

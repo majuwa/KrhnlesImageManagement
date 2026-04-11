@@ -66,6 +66,12 @@ class NextcloudAuthRepository {
             val pollEndpoint = json.getJSONObject("poll").getString("endpoint")
             val loginUrl = json.getString("login")
 
+            val originError = validateSameOrigin(baseUrl, pollEndpoint, loginUrl)
+            if (originError != null) {
+                emit(LoginFlowState.Failed(originError))
+                return@flow
+            }
+
             emit(LoginFlowState.WaitingForBrowser(loginUrl))
 
             while (true) {
@@ -95,4 +101,24 @@ class NextcloudAuthRepository {
         }.catch { e ->
             emit(LoginFlowState.Failed(e.message ?: "Unexpected error"))
         }.flowOn(Dispatchers.IO)
+
+    /**
+     * Returns an error message if [pollEndpoint] or [loginUrl] do not share the same
+     * origin as [baseUrl], or null when all origins match.
+     * Prevents token theft and phishing via a compromised server response.
+     */
+    private fun validateSameOrigin(
+        baseUrl: String,
+        pollEndpoint: String,
+        loginUrl: String,
+    ): String? {
+        val serverOrigin = buildOrigin(baseUrl)
+        if (serverOrigin.isBlank() || buildOrigin(pollEndpoint) != serverOrigin) {
+            return "Poll endpoint origin does not match server"
+        }
+        if (buildOrigin(loginUrl) != serverOrigin) {
+            return "Login URL origin does not match server"
+        }
+        return null
+    }
 }

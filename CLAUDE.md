@@ -18,6 +18,15 @@ To provide a manual, user-curated image backup flow where users select local dev
 3. **Background Persistence:** Uploads *must* use `WorkManager` so they do not fail if the user closes the app.
 4. **Error Handling:** WebDAV connections fail often due to self-signed certificates or bad URLs. Always provide clear, user-friendly error messages and retry mechanisms.
 
+## 🔒 Security Conventions
+- **Credential storage:** Both **username and password** are stored in `EncryptedSharedPreferences` (`krhnles_secure`). Only the server URL and base folder (non-sensitive) live in the unencrypted DataStore.
+- **Encryption key:** Use `MasterKey.Builder` with `KeyScheme.AES256_GCM` (never the deprecated `MasterKeys.getOrCreate()`).
+- **Backup exclusion:** The credentials DataStore (`datastore/credentials.preferences_pb`) is excluded from both cloud backup and device transfer via `backup_rules.xml` / `data_extraction_rules.xml`.
+- **XML parsing (XXE):** `parsePropfindXml()` disables DOCTYPE declarations and external entity resolution on the `DocumentBuilderFactory` to prevent XXE injection.
+- **Auth flow origin validation:** `NextcloudAuthRepository.validateSameOrigin()` ensures the `pollEndpoint` and `loginUrl` returned by the server share the same origin as the configured server URL, preventing token theft and phishing via a compromised server response.
+- **HTTP warning:** `SettingsUiState.httpWarning` is set to `true` when the user explicitly types an `http://` URL; the UI should surface a warning about plaintext credentials.
+- **Minification:** Release builds have `isMinifyEnabled = true`.
+
 ## After Every Code Change
 
 After adding a feature or making any code change:

@@ -315,4 +315,41 @@ class WebDavXmlParserTest {
             buildNextcloudBase("https://cloud.example.com:8080/remote.php/dav/files/user/"),
         )
     }
+
+    // ── Security: XXE injection prevention ──────────────────────────────────
+
+    @Test
+    fun `rejects XML with DOCTYPE declaration to prevent XXE`() {
+        // A malicious server could return XML with an external entity reference.
+        // The parser must throw rather than silently process the DOCTYPE.
+        val xxeXml =
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+            <d:multistatus xmlns:d="DAV:">
+              <d:response>
+                <d:href>&xxe;</d:href>
+              </d:response>
+            </d:multistatus>
+            """.trimIndent()
+
+        try {
+            parsePropfindXml(xxeXml)
+            // If no exception, the DOCTYPE must have been ignored (also acceptable if entries are empty)
+        } catch (_: Exception) {
+            // Expected: parser throws when DOCTYPE is disallowed
+        }
+        // The key assertion: file contents were not read.
+        // We verify this indirectly by ensuring no entry contains a filesystem path.
+        val entries =
+            try {
+                parsePropfindXml(xxeXml)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        assertTrue(
+            "XXE payload must not produce entries with filesystem paths",
+            entries.none { it.href.contains("/etc/") || it.href.contains("root:") },
+        )
+    }
 }

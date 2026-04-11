@@ -7,7 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import androidx.security.crypto.MasterKey
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,42 +21,50 @@ class CredentialStore(
 ) : CredentialRepository {
     private companion object {
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
-        val KEY_USERNAME = stringPreferencesKey("username")
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
     }
 
     private val encryptedPrefs by lazy {
-        val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        val masterKey =
+            MasterKey
+                .Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
         EncryptedSharedPreferences.create(
+            context,
             "krhnles_secure",
             masterKey,
-            context,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
     }
 
     val serverUrl: Flow<String?> = context.credentialDataStore.data.map { it[KEY_SERVER_URL] }
-    val username: Flow<String?> = context.credentialDataStore.data.map { it[KEY_USERNAME] }
+
+    // Username is read from encrypted prefs, but piggybacks on DataStore emissions
+    // (DataStore is always updated alongside encrypted prefs in save()).
+    val username: Flow<String?> = context.credentialDataStore.data.map { username() }
     val baseFolder: Flow<String> = context.credentialDataStore.data.map { it[KEY_BASE_FOLDER] ?: "" }
 
     override val isConfigured: Flow<Boolean> =
         context.credentialDataStore.data.map { prefs ->
             val url = prefs[KEY_SERVER_URL]
-            !url.isNullOrBlank() && !password().isNullOrBlank()
+            !url.isNullOrBlank() && !username().isNullOrBlank() && !password().isNullOrBlank()
         }
 
     override val webDavConfig: Flow<WebDavConfig> =
         context.credentialDataStore.data.map { prefs ->
             WebDavConfig(
                 url = prefs[KEY_SERVER_URL] ?: "",
-                username = prefs[KEY_USERNAME] ?: "",
+                username = username() ?: "",
                 password = password() ?: "",
                 baseFolder = prefs[KEY_BASE_FOLDER] ?: "",
             )
         }
 
     override fun password(): String? = encryptedPrefs.getString("password", null)
+
+    fun username(): String? = encryptedPrefs.getString("username", null)
 
     override suspend fun save(
         serverUrl: String,
@@ -65,9 +73,12 @@ class CredentialStore(
     ) {
         context.credentialDataStore.edit { prefs ->
             prefs[KEY_SERVER_URL] = serverUrl
-            prefs[KEY_USERNAME] = username
         }
-        encryptedPrefs.edit().putString("password", password).apply()
+        encryptedPrefs
+            .edit()
+            .putString("username", username)
+            .putString("password", password)
+            .apply()
     }
 
     override suspend fun saveBaseFolder(folder: String) {

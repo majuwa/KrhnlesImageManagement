@@ -30,6 +30,8 @@ data class SettingsUiState(
     val manualUrl: String = "",
     val manualUsername: String = "",
     val manualPassword: String = "",
+    /** True when the entered URL explicitly uses plain HTTP (credentials sent in cleartext). */
+    val httpWarning: Boolean = false,
 )
 
 class SettingsViewModel(
@@ -61,7 +63,7 @@ class SettingsViewModel(
     }
 
     fun onServerUrlChange(value: String) {
-        _uiState.update { it.copy(serverUrl = value, error = null) }
+        _uiState.update { it.copy(serverUrl = value, error = null, httpWarning = isExplicitHttp(value)) }
     }
 
     fun onBaseFolderChange(value: String) {
@@ -125,7 +127,7 @@ class SettingsViewModel(
     }
 
     fun onManualUrlChange(value: String) {
-        _uiState.update { it.copy(manualUrl = value, error = null) }
+        _uiState.update { it.copy(manualUrl = value, error = null, httpWarning = isExplicitHttp(value)) }
     }
 
     fun onManualUsernameChange(value: String) {
@@ -187,4 +189,6 @@ class SettingsViewModel(
         val trimmed = url.trim()
         return if (trimmed.isNotBlank() && "://" !in trimmed) "https://$trimmed" else trimmed
     }
+
+    private fun isExplicitHttp(url: String): Boolean = url.trim().lowercase().startsWith("http://")
 }

@@ -1,11 +1,15 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import de.majuwa.android.paper.krhnlesimagemanagement.data.NextcloudAuthRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.LoginFlowState
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -214,5 +218,93 @@ class NextcloudAuthFlowTest {
 
             // Assert
             assertTrue(shouldRefresh)
+        }
+
+    // ── Security: origin validation ─────────────────────────────────────────
+
+    @Test
+    fun `loginFlow fails when pollEndpoint origin differs from server`() =
+        runTest {
+            // A malicious server returns a pollEndpoint on a third-party host.
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody(
+                    """
+                    {
+                      "poll": {
+                        "token": "tok123",
+                        "endpoint": "https://evil.attacker.com/poll"
+                      },
+                      "login": "${mockWebServer.url("/login")}"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            val repo = NextcloudAuthRepository()
+            val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
+
+            val failed = states.filterIsInstance<LoginFlowState.Failed>()
+            assertTrue("Expected a Failed state for mismatched poll origin", failed.isNotEmpty())
+            assertTrue(failed.first().message.contains("Poll endpoint origin", ignoreCase = true))
+        }
+
+    @Test
+    fun `loginFlow fails when loginUrl origin differs from server`() =
+        runTest {
+            // A malicious server returns a loginUrl pointing to a phishing page.
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody(
+                    """
+                    {
+                      "poll": {
+                        "token": "tok123",
+                        "endpoint": "${mockWebServer.url("/poll")}"
+                      },
+                      "login": "https://phishing.example.com/fake-login"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            val repo = NextcloudAuthRepository()
+            val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
+
+            val failed = states.filterIsInstance<LoginFlowState.Failed>()
+            assertTrue("Expected a Failed state for mismatched login URL origin", failed.isNotEmpty())
+            assertTrue(failed.first().message.contains("Login URL origin", ignoreCase = true))
+        }
+
+    @Test
+    fun `loginFlow succeeds when both poll endpoint and login URL share server origin`() =
+        runTest {
+            val pollUrl = mockWebServer.url("/poll").toString()
+            val loginUrl = mockWebServer.url("/login").toString()
+
+            // Init response with matching origins
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody(
+                    """
+                    {
+                      "poll": {"token": "tok123", "endpoint": "$pollUrl"},
+                      "login": "$loginUrl"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+            // Poll response: credentials granted
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody(
+                    """{"server":"${mockWebServer.url("")}","loginName":"alice","appPassword":"app-pw"}""",
+                ),
+            )
+
+            val repo = NextcloudAuthRepository()
+            val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
+
+            assertFalse(
+                "Should not fail for same-origin URLs",
+                states.any { it is LoginFlowState.Failed },
+            )
+            assertTrue(states.any { it is LoginFlowState.Authenticated })
         }
 }

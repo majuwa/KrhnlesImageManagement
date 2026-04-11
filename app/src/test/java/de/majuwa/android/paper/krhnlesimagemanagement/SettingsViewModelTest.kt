@@ -173,4 +173,38 @@ class SettingsViewModelTest {
             assertFalse(viewModel.uiState.value.isLoggedIn)
             assertEquals("", viewModel.uiState.value.webDavUrl)
         }
+
+    // ── Security: HTTP warning ───────────────────────────────────────────────
+
+    @Test
+    fun `onServerUrlChange sets httpWarning for explicit http scheme`() {
+        viewModel.onServerUrlChange("http://mycloud.local")
+        assertTrue(viewModel.uiState.value.httpWarning)
+    }
+
+    @Test
+    fun `onServerUrlChange clears httpWarning for https`() {
+        viewModel.onServerUrlChange("http://mycloud.local")
+        viewModel.onServerUrlChange("https://mycloud.local")
+        assertFalse(viewModel.uiState.value.httpWarning)
+    }
+
+    @Test
+    fun `onServerUrlChange no warning when no scheme provided`() {
+        viewModel.onServerUrlChange("mycloud.local")
+        assertFalse(viewModel.uiState.value.httpWarning)
+    }
+
+    @Test
+    fun `onManualUrlChange sets httpWarning for explicit http scheme`() {
+        viewModel.onManualUrlChange("http://192.168.1.1/dav")
+        assertTrue(viewModel.uiState.value.httpWarning)
+    }
+
+    @Test
+    fun `onManualUrlChange clears httpWarning for https`() {
+        viewModel.onManualUrlChange("http://192.168.1.1/dav")
+        viewModel.onManualUrlChange("https://192.168.1.1/dav")
+        assertFalse(viewModel.uiState.value.httpWarning)
+    }
 }
