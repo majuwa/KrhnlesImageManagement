@@ -217,29 +217,42 @@ private fun ZoomablePage(
                             val event = awaitPointerEvent()
                             val isMultiTouch = event.changes.size >= 2
                             if (isMultiTouch || scale > 1f) {
-                                val zoomChange = event.calculateZoom()
-                                val panChange = event.calculatePan()
-                                val centroid = event.calculateCentroid(useCurrent = false)
-                                val oldScale = scale
-                                val newScale = (oldScale * zoomChange).coerceIn(1f, MAX_ZOOM)
-                                val center = Offset(size.width / 2f, size.height / 2f)
-                                val focalOffset =
-                                    (centroid - center) * (1f - zoomChange) + offset * zoomChange
-                                val newOffset = focalOffset + panChange * oldScale
-                                scale = newScale
-                                offset =
-                                    if (newScale > 1f) {
-                                        val maxX = size.width * (newScale - 1) / 2f
-                                        val maxY = size.height * (newScale - 1) / 2f
-                                        Offset(
-                                            newOffset.x.coerceIn(-maxX, maxX),
-                                            newOffset.y.coerceIn(-maxY, maxY),
-                                        )
-                                    } else {
-                                        Offset.Zero
-                                    }
-                                onZoomedChange(newScale > 1f)
-                                event.changes.forEach { it.consume() }
+                                // Only update state on actual pointer movement, not on
+                                // pure pointer-up events (where positionChanged() is false).
+                                // This matches detectTransformGestures behaviour and prevents
+                                // spurious resets on the final up event.
+                                if (event.changes.any { it.positionChanged() }) {
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+                                    val centroid = event.calculateCentroid(useCurrent = false)
+                                    val oldScale = scale
+                                    val newScale = (oldScale * zoomChange).coerceIn(1f, MAX_ZOOM)
+                                    val center = Offset(size.width / 2f, size.height / 2f)
+                                    val focalOffset =
+                                        (centroid - center) * (1f - zoomChange) + offset * zoomChange
+                                    val newOffset = focalOffset + panChange * oldScale
+                                    scale = newScale
+                                    offset =
+                                        if (newScale > 1f) {
+                                            val maxX = size.width * (newScale - 1) / 2f
+                                            val maxY = size.height * (newScale - 1) / 2f
+                                            Offset(
+                                                newOffset.x.coerceIn(-maxX, maxX),
+                                                newOffset.y.coerceIn(-maxY, maxY),
+                                            )
+                                        } else {
+                                            Offset.Zero
+                                        }
+                                    onZoomedChange(newScale > 1f)
+                                }
+                                // Only consume events where the pointer actually moved.
+                                // Pointer-up events (positionChanged() == false) are left
+                                // unconsumed so the HorizontalPager can properly close out
+                                // the gesture-tracking state it opened on the initial down
+                                // event, preventing the blank-screen artefact after zoom.
+                                event.changes.forEach { change ->
+                                    if (change.positionChanged()) change.consume()
+                                }
                             }
                         } while (event.changes.any { it.pressed })
                     }

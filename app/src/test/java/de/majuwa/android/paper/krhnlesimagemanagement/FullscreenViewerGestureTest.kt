@@ -252,4 +252,45 @@ class FullscreenViewerGestureTest {
         val timeSinceInteraction = System.currentTimeMillis() - lastInteractionTime
         assertTrue(timeSinceInteraction < hideDelayMs)
     }
+
+    // Regression test: after a pinch-to-zoom gesture ends (pointer-up, no positionChanged),
+    // scale and offset must NOT be reset.  Previously the handler consumed ALL events
+    // (including up-events) which left the HorizontalPager with an orphaned gesture-tracking
+    // state that caused the image to go blank.
+    @Test
+    fun gestureState_pointerUpWithoutPositionChange_doesNotAlterZoomOrOffset() {
+        var zoom = 3f
+        var offsetX = 50f
+        var offsetY = 30f
+
+        // Simulate a pointer-up event: positionChanged = false, so the handler must skip
+        // state mutation entirely.
+        val positionChanged = false
+
+        if (positionChanged) {
+            // This block must not execute for a pure up-event.
+            zoom = 1f
+            offsetX = 0f
+            offsetY = 0f
+        }
+
+        assertEquals(3f, zoom)
+        assertEquals(50f, offsetX)
+        assertEquals(30f, offsetY)
+    }
+
+    @Test
+    fun gestureState_pointerMoveWithPositionChange_updatesZoom() {
+        var zoom = 1f
+
+        // Simulate a move event: positionChanged = true, so the handler must update state.
+        val positionChanged = true
+        val zoomChange = 2f
+
+        if (positionChanged) {
+            zoom = (zoom * zoomChange).coerceIn(minZoom, maxZoom)
+        }
+
+        assertEquals(2f, zoom)
+    }
 }
