@@ -47,18 +47,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun albumDetailScreen(
+fun AlbumDetailScreen(
     viewModel: AlbumsViewModel,
     albumHref: String,
     onOpenPhoto: (index: Int) -> Unit,
@@ -70,6 +74,7 @@ fun albumDetailScreen(
     val isDeletingPhotos by viewModel.isDeletingPhotos.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val resources = LocalResources.current
 
     var selectedHrefs by remember { mutableStateOf(emptySet<String>()) }
     val selectionMode = selectedHrefs.isNotEmpty()
@@ -88,7 +93,13 @@ fun albumDetailScreen(
                     selectedHrefs = emptySet()
                     if (failures > 0) {
                         scope.launch {
-                            snackbarHostState.showSnackbar("$failures photo(s) could not be deleted.")
+                            snackbarHostState.showSnackbar(
+                                resources.getQuantityString(
+                                    R.plurals.snackbar_delete_failures,
+                                    failures,
+                                    failures,
+                                ),
+                            )
                         }
                     }
                 }
@@ -107,19 +118,19 @@ fun albumDetailScreen(
                     ExtendedFloatingActionButton(
                         onClick = onFindBlurry,
                         icon = { Icon(Icons.Default.BlurOn, contentDescription = null) },
-                        text = { Text("Find blurry") },
+                        text = { Text(stringResource(R.string.action_find_blurry)) },
                     )
                     ExtendedFloatingActionButton(
                         onClick = onFindDuplicates,
                         icon = { Icon(Icons.Default.FindReplace, contentDescription = null) },
-                        text = { Text("Find duplicates") },
+                        text = { Text(stringResource(R.string.action_find_duplicates)) },
                     )
                 }
             }
         },
         topBar = {
             if (selectionMode) {
-                selectionTopBar(
+                SelectionTopBar(
                     selectedCount = selectedHrefs.size,
                     onClearSelection = { selectedHrefs = emptySet() },
                     onDeleteClick = { showDeleteConfirmation = true },
@@ -128,13 +139,16 @@ fun albumDetailScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = state.albumName.ifBlank { "Album" },
+                            text = state.albumName.ifBlank { stringResource(R.string.title_album_default) },
                             maxLines = 1,
                         )
                     },
                     navigationIcon = {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back),
+                            )
                         }
                     },
                     colors =
@@ -166,21 +180,21 @@ fun albumDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun selectionTopBar(
+private fun SelectionTopBar(
     selectedCount: Int,
     onClearSelection: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     TopAppBar(
-        title = { Text("$selectedCount selected") },
+        title = { Text(pluralStringResource(R.plurals.selected_count, selectedCount, selectedCount)) },
         navigationIcon = {
             IconButton(onClick = onClearSelection) {
-                Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_cancel_selection))
             }
         },
         actions = {
             IconButton(onClick = onDeleteClick) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete_selected))
             }
         },
         colors =
@@ -214,7 +228,7 @@ private fun AlbumDetailContent(
         state.error != null -> {
             Box(modifier = modifier, contentAlignment = Alignment.Center) {
                 Text(
-                    text = state.error ?: "",
+                    text = state.error,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(16.dp),
                     textAlign = TextAlign.Center,
@@ -224,7 +238,7 @@ private fun AlbumDetailContent(
 
         state.photos.isEmpty() -> {
             Box(modifier = modifier, contentAlignment = Alignment.Center) {
-                Text("No photos in this album.", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.empty_album_photos), style = MaterialTheme.typography.bodyLarge)
             }
         }
 
@@ -255,7 +269,7 @@ private fun DeletingContent(modifier: Modifier = Modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Deleting photos…")
+            Text(stringResource(R.string.status_deleting_photos))
         }
     }
 }
@@ -322,20 +336,17 @@ private fun DeletePhotosDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete photos?") },
+        title = { Text(stringResource(R.string.dialog_delete_photos_title)) },
         text = {
-            Text(
-                "Permanently delete $count photo${if (count != 1) "s" else ""} from the server?" +
-                    " This cannot be undone.",
-            )
+            Text(pluralStringResource(R.plurals.dialog_delete_photos_message, count, count))
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Delete", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }

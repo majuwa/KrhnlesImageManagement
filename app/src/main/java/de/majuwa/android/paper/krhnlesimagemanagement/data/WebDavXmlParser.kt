@@ -15,17 +15,20 @@ internal data class WebDavEntry(
     val fileId: String?,
 )
 
+// Strips DOCTYPE declarations (including internal subsets) to prevent XXE injection.
+// Android's Harmony/Expat parser doesn't support the standard SAX security features
+// (external-general-entities, external-parameter-entities), so we strip DOCTYPE
+// before parsing and disable entity expansion as defense-in-depth.
+private val DOCTYPE_PATTERN = Regex("""<!DOCTYPE[^\[>]*(\[[^\]]*])?\s*>""")
+
 internal fun parsePropfindXml(xml: String): List<WebDavEntry> {
+    val sanitized = DOCTYPE_PATTERN.replace(xml, "")
     val factory =
         DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
-            // Prevent XXE: disallow DOCTYPE declarations and external entity resolution
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
             isExpandEntityReferences = false
         }
-    val doc = factory.newDocumentBuilder().parse(xml.byteInputStream())
+    val doc = factory.newDocumentBuilder().parse(sanitized.byteInputStream())
     val responses = doc.getElementsByTagNameNS(DAV_NS, "response")
     val entries = mutableListOf<WebDavEntry>()
 

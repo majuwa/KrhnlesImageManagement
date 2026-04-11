@@ -39,16 +39,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun albumsScreen(
+fun AlbumsScreen(
     viewModel: AlbumsViewModel,
     onOpenAlbum: (albumHref: String) -> Unit,
 ) {
@@ -82,10 +84,10 @@ fun albumsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Albums") },
+                title = { Text(stringResource(R.string.title_albums)) },
                 actions = {
                     IconButton(onClick = { viewModel.loadAlbums() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reload")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.cd_reload))
                     }
                 },
                 colors =
@@ -125,7 +127,7 @@ fun albumsScreen(
                     modifier = Modifier.fillMaxSize().padding(padding),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("No albums found.", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.empty_albums), style = MaterialTheme.typography.bodyLarge)
                 }
             }
 
@@ -140,7 +142,7 @@ fun albumsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(state.albums, key = { it.href }) { album ->
-                        albumCard(
+                        AlbumCard(
                             album = album,
                             onClick = { onOpenAlbum(album.href) },
                             onLongClick = { albumToDelete = album },
@@ -154,7 +156,7 @@ fun albumsScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun albumCard(
+private fun AlbumCard(
     album: RemoteAlbum,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -197,20 +199,17 @@ private fun DeleteAlbumDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete album?") },
+        title = { Text(stringResource(R.string.dialog_delete_album_title)) },
         text = {
-            Text(
-                "Permanently delete the album \"$albumName\" and all its photos from the server?" +
-                    " This cannot be undone.",
-            )
+            Text(stringResource(R.string.dialog_delete_album_message, albumName))
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Delete", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }

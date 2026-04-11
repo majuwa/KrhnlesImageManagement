@@ -2,6 +2,8 @@ package de.majuwa.android.paper.krhnlesimagemanagement.util
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.core.graphics.get
+import androidx.core.graphics.scale
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 
 /**
@@ -18,12 +20,12 @@ object DuplicateFinder {
 
     /** Produces a 64-bit dHash fingerprint from [bitmap]. Recycles the scaled intermediate. */
     fun computeDHash(bitmap: Bitmap): Long {
-        val resized = Bitmap.createScaledBitmap(bitmap, HASH_COLS, HASH_ROWS, true)
+        val resized = bitmap.scale(HASH_COLS, HASH_ROWS, filter = true)
         var hash = 0L
         for (y in 0 until HASH_ROWS) {
             for (x in 0 until HASH_ROWS) { // 8 comparisons: x in 0..7, accessing x and x+1
-                val grayLeft = luminance(resized.getPixel(x, y))
-                val grayRight = luminance(resized.getPixel(x + 1, y))
+                val grayLeft = luminance(resized[x, y])
+                val grayRight = luminance(resized[x + 1, y])
                 if (grayLeft > grayRight) {
                     hash = hash or (1L shl (y * HASH_ROWS + x))
                 }

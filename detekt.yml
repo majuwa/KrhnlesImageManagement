@@ -36,3 +36,66 @@ style:
   UnusedParameter:
     ignoreAnnotated:
       - "Composable"
+
+potential-bugs:
+  CastToNullableType:
+    active: true
+  Deprecation:
+    active: true
+  DoubleMutabilityForCollection:
+    active: true
+  ExitOutsideMain:
+    active: true
+  HasPlatformType:
+    active: true
+  IgnoredReturnValue:
+    active: true
+  ImplicitUnitReturnType:
+    active: true
+  MapGetWithNotNullAssertionOperator:
+    active: true
+  NullCheckOnMutableProperty:
+    active: true
+  NullableToStringCall:
+    active: true
+  UnconditionalJumpStatementInLoop:
+    active: true
+  UnnecessaryNotNullCheck:
+    active: true
+  UnnecessaryNotNullOperator:
+    active: true
+  UnsafeCallOnNullableType:
+    active: true
+
+exceptions:
+  NotImplementedDeclaration:
+    active: true
+  ObjectExtendsThrowable:
+    active: true
+  SwallowedException:
+    active: true
+    allowedExceptionNameRegex: "(_|(ignore|expected).*)"
+  TooGenericExceptionCaught:
+    active: true
+    allowedExceptionNameRegex: "(_|(ignore|expected).*)"
+    exceptionNames:
+      - "Error"
+      - "Throwable"
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - "Error"
+      - "Throwable"
+
+performance:
+  CouldBeSequence:
+    active: true
+    threshold: 3
+  ForEachOnRange:
+    active: true
+  SpreadOperator:
+    active: true
+  UnnecessaryPartOfBinaryExpression:
+    active: true
+  UnnecessaryTemporaryInstantiation:
+    active: true

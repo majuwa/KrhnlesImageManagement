@@ -1,7 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,13 +35,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun settingsScreen(
+fun SettingsScreen(
     viewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
 ) {
@@ -52,7 +54,7 @@ fun settingsScreen(
 
     LaunchedEffect(browserUrl) {
         browserUrl?.let { url ->
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
             viewModel.consumeBrowserEvent()
         }
     }
@@ -60,12 +62,12 @@ fun settingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.title_settings)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.cd_back),
                         )
                     }
                 },
@@ -86,7 +88,7 @@ fun settingsScreen(
                     .verticalScroll(rememberScrollState()),
         ) {
             if (uiState.isLoggedIn) {
-                loggedInContent(uiState, viewModel)
+                LoggedInContent(uiState, viewModel)
             } else {
                 LoginContent(uiState, viewModel)
             }
@@ -95,15 +97,15 @@ fun settingsScreen(
 }
 
 @Composable
-private fun loggedInContent(
+private fun LoggedInContent(
     uiState: SettingsUiState,
     viewModel: SettingsViewModel,
 ) {
-    Text("Connected", style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.status_connected), style = MaterialTheme.typography.titleMedium)
     Spacer(modifier = Modifier.height(8.dp))
-    Text("User: ${uiState.username}", style = MaterialTheme.typography.bodyMedium)
+    Text(stringResource(R.string.label_user, uiState.username), style = MaterialTheme.typography.bodyMedium)
     Text(
-        "WebDAV: ${uiState.webDavUrl}",
+        stringResource(R.string.label_webdav_url, uiState.webDavUrl),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -113,9 +115,9 @@ private fun loggedInContent(
     OutlinedTextField(
         value = uiState.baseFolder,
         onValueChange = { viewModel.onBaseFolderChange(it) },
-        label = { Text("Base upload folder") },
-        placeholder = { Text("Photos/KrohnSync") },
-        supportingText = { Text("All uploads go inside this folder. Leave empty for root.") },
+        label = { Text(stringResource(R.string.label_base_folder)) },
+        placeholder = { Text(stringResource(R.string.placeholder_base_folder)) },
+        supportingText = { Text(stringResource(R.string.hint_base_folder)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -126,7 +128,7 @@ private fun loggedInContent(
         onClick = { viewModel.saveBaseFolder() },
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text("Save folder")
+        Text(stringResource(R.string.action_save_folder))
     }
 
     Spacer(modifier = Modifier.height(16.dp))
@@ -139,7 +141,7 @@ private fun loggedInContent(
         if (uiState.isTesting) {
             CircularProgressIndicator(modifier = Modifier.height(20.dp), strokeWidth = 2.dp)
         } else {
-            Text("Test Connection")
+            Text(stringResource(R.string.action_test_connection))
         }
     }
 
@@ -163,7 +165,7 @@ private fun loggedInContent(
         onClick = { viewModel.logout() },
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text("Disconnect")
+        Text(stringResource(R.string.action_disconnect))
     }
 }
 
@@ -173,12 +175,12 @@ private fun LoginContent(
     viewModel: SettingsViewModel,
 ) {
     Text(
-        text = "Connect to Nextcloud",
+        text = stringResource(R.string.title_connect_nextcloud),
         style = MaterialTheme.typography.titleMedium,
     )
     Spacer(modifier = Modifier.height(8.dp))
     Text(
-        text = "Sign in via your browser for a secure connection.",
+        text = stringResource(R.string.subtitle_connect_nextcloud),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -188,8 +190,8 @@ private fun LoginContent(
     OutlinedTextField(
         value = uiState.serverUrl,
         onValueChange = { viewModel.onServerUrlChange(it) },
-        label = { Text("Nextcloud URL") },
-        placeholder = { Text("https://nextcloud.example.com") },
+        label = { Text(stringResource(R.string.label_nextcloud_url)) },
+        placeholder = { Text(stringResource(R.string.placeholder_nextcloud_url)) },
         singleLine = true,
         enabled = !uiState.isLoading && !uiState.isWaitingForBrowser,
         modifier = Modifier.fillMaxWidth(),
@@ -212,7 +214,7 @@ private fun LoginContent(
                 if (uiState.isWaitingForBrowser) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Waiting for browser login...",
+                        text = stringResource(R.string.status_waiting_browser),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -225,7 +227,7 @@ private fun LoginContent(
                 onClick = { viewModel.startLoginFlow() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Connect via Browser")
+                Text(stringResource(R.string.action_connect_browser))
             }
         }
     }
@@ -244,7 +246,9 @@ private fun LoginContent(
     Spacer(modifier = Modifier.height(16.dp))
 
     TextButton(onClick = { viewModel.toggleManualConfig() }) {
-        Text(if (uiState.useManualConfig) "Hide manual config" else "Manual WebDAV config")
+        val resId =
+            if (uiState.useManualConfig) R.string.action_hide_manual_config else R.string.action_show_manual_config
+        Text(stringResource(resId))
     }
 
     if (uiState.useManualConfig) {
@@ -262,8 +266,8 @@ private fun ManualConfigContent(
     OutlinedTextField(
         value = uiState.manualUrl,
         onValueChange = { viewModel.onManualUrlChange(it) },
-        label = { Text("WebDAV URL") },
-        placeholder = { Text("https://cloud.example.com/remote.php/dav/files/user/") },
+        label = { Text(stringResource(R.string.label_webdav_url_input)) },
+        placeholder = { Text(stringResource(R.string.placeholder_webdav_url)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -278,7 +282,7 @@ private fun ManualConfigContent(
     OutlinedTextField(
         value = uiState.manualUsername,
         onValueChange = { viewModel.onManualUsernameChange(it) },
-        label = { Text("Username") },
+        label = { Text(stringResource(R.string.label_username)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -288,7 +292,7 @@ private fun ManualConfigContent(
     OutlinedTextField(
         value = uiState.manualPassword,
         onValueChange = { viewModel.onManualPasswordChange(it) },
-        label = { Text("Password / App Token") },
+        label = { Text(stringResource(R.string.label_password)) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
@@ -300,7 +304,7 @@ private fun ManualConfigContent(
         onClick = { viewModel.saveManualConfig() },
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text("Save & Connect")
+        Text(stringResource(R.string.action_save_connect))
     }
 }
 
@@ -324,7 +328,7 @@ private fun HttpWarningBanner() {
             )
             Spacer(modifier = Modifier.padding(4.dp))
             Text(
-                text = "Insecure connection — credentials will be sent in plaintext. Use HTTPS.",
+                text = stringResource(R.string.warning_http_insecure),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )

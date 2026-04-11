@@ -59,7 +59,7 @@ private const val CONTROLS_HIDE_DELAY_MS = 3_000L
 private const val MAX_ZOOM = 8f
 
 @Composable
-fun fullscreenViewerScreen(
+fun FullscreenViewerScreen(
     viewModel: AlbumsViewModel,
     initialIndex: Int,
     onNavigateBack: () -> Unit,
@@ -71,7 +71,8 @@ fun fullscreenViewerScreen(
 
     // Hide system bars for true immersive fullscreen; restore when leaving.
     DisposableEffect(Unit) {
-        val window = (context as Activity).window
+        val activity = context as? Activity ?: return@DisposableEffect onDispose {}
+        val window = activity.window
         val controller = WindowCompat.getInsetsController(window, view)
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior =
@@ -120,7 +121,7 @@ fun fullscreenViewerScreen(
             ) { page ->
                 val photo = photos[page]
                 val url = viewModel.fullImageUrl(photo)
-                zoomablePage(
+                ZoomablePage(
                     url = url,
                     contentDescription = photo.displayName,
                     onZoomedChange = { zoomed ->
@@ -177,7 +178,7 @@ fun fullscreenViewerScreen(
 }
 
 @Composable
-private fun zoomablePage(
+private fun ZoomablePage(
     url: String,
     contentDescription: String,
     onZoomedChange: (Boolean) -> Unit,

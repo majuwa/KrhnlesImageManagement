@@ -1,3 +1,148 @@
 <resources>
     <string name="app_name">Kröhnle\'s Image Management</string>
+
+    <!-- Common actions -->
+    <string name="action_clear">Clear</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_upload">Upload</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_configure">Configure</string>
+    <string name="action_setup_later">Set up later</string>
+    <string name="action_grant_permission">Grant Permission</string>
+    <string name="action_save_folder">Save folder</string>
+    <string name="action_test_connection">Test Connection</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_connect_browser">Connect via Browser</string>
+    <string name="action_save_connect">Save &amp; Connect</string>
+    <string name="action_hide_manual_config">Hide manual config</string>
+    <string name="action_show_manual_config">Manual WebDAV config</string>
+    <string name="action_find_blurry">Find blurry</string>
+    <string name="action_find_duplicates">Find duplicates</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_settings">Settings</string>
+    <string name="cd_upload">Upload</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_reload">Reload</string>
+    <string name="cd_selected">Selected</string>
+    <string name="cd_not_selected">Not selected</string>
+    <string name="cd_cancel_selection">Cancel selection</string>
+    <string name="cd_delete_selected">Delete selected</string>
+    <string name="cd_selected_for_deletion">Selected for deletion</string>
+    <string name="cd_marked_for_deletion">Marked for deletion</string>
+    <string name="cd_close_preview">Close preview</string>
+
+    <!-- Titles -->
+    <string name="title_settings">Settings</string>
+    <string name="title_albums">Albums</string>
+    <string name="title_album_default">Album</string>
+    <string name="title_blurry_photos">Blurry photos</string>
+    <string name="title_find_duplicates">Find duplicates</string>
+
+    <!-- Format strings -->
+    <plurals name="selected_count">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="photo_count">
+        <item quantity="one">%d photo</item>
+        <item quantity="other">%d photos</item>
+    </plurals>
+    <string name="upload_progress">Uploading %1$d / %2$d</string>
+
+    <!-- Permission -->
+    <string name="permission_rationale">Photo access is required to browse your images.</string>
+
+    <!-- No-server dialog -->
+    <string name="dialog_no_server_title">No server configured</string>
+    <string name="dialog_no_server_message">You haven\'t connected a WebDAV or Nextcloud server yet. Configure one now to start uploading photos.</string>
+
+    <!-- Upload dialog -->
+    <string name="dialog_upload_title">Upload Photos</string>
+    <string name="dialog_upload_message">Enter the occasion or folder name for the upload:</string>
+    <string name="label_occasion_name">Occasion / Folder Name</string>
+
+    <!-- Settings screen — logged-in -->
+    <string name="status_connected">Connected</string>
+    <string name="label_user">User: %s</string>
+    <string name="label_webdav_url">WebDAV: %s</string>
+    <string name="label_base_folder">Base upload folder</string>
+    <string name="placeholder_base_folder">Photos/KrohnSync</string>
+    <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
+
+    <!-- Settings screen — login -->
+    <string name="title_connect_nextcloud">Connect to Nextcloud</string>
+    <string name="subtitle_connect_nextcloud">Sign in via your browser for a secure connection.</string>
+    <string name="label_nextcloud_url">Nextcloud URL</string>
+    <string name="placeholder_nextcloud_url">https://nextcloud.example.com</string>
+    <string name="status_waiting_browser">Waiting for browser login…</string>
+
+    <!-- Settings screen — manual config -->
+    <string name="label_webdav_url_input">WebDAV URL</string>
+    <string name="placeholder_webdav_url">https://cloud.example.com/remote.php/dav/files/user/</string>
+    <string name="label_username">Username</string>
+    <string name="label_password">Password / App Token</string>
+    <string name="warning_http_insecure">Insecure connection — credentials will be sent in plaintext. Use HTTPS.</string>
+
+    <!-- Albums -->
+    <string name="empty_albums">No albums found.</string>
+    <string name="dialog_delete_album_title">Delete album?</string>
+    <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos from the server? This cannot be undone.</string>
+
+    <!-- Album detail -->
+    <string name="empty_album_photos">No photos in this album.</string>
+    <string name="status_deleting_photos">Deleting photos…</string>
+    <string name="dialog_delete_photos_title">Delete photos?</string>
+    <plurals name="dialog_delete_photos_message">
+        <item quantity="one">Permanently delete %1$d photo from the server? This cannot be undone.</item>
+        <item quantity="other">Permanently delete %1$d photos from the server? This cannot be undone.</item>
+    </plurals>
+    <plurals name="snackbar_delete_failures">
+        <item quantity="one">%d photo could not be deleted.</item>
+        <item quantity="other">%d photos could not be deleted.</item>
+    </plurals>
+
+    <!-- Blur review -->
+    <string name="empty_blurry">No blurry photos detected in this album.</string>
+    <string name="status_scanning_blur">Scanning for blurry photos… %1$d / %2$d</string>
+    <plurals name="blur_results_summary">
+        <item quantity="one">%1$d blurry photo found. Tap to toggle · Long-press to preview.</item>
+        <item quantity="other">%1$d blurry photos found. Tap to toggle · Long-press to preview.</item>
+    </plurals>
+    <plurals name="delete_n_photos">
+        <item quantity="one">Delete %d photo</item>
+        <item quantity="other">Delete %d photos</item>
+    </plurals>
+    <string name="nothing_selected">Nothing selected</string>
+
+    <!-- Duplicate review -->
+    <string name="empty_duplicates">No duplicates found in this album.</string>
+    <string name="status_analyzing">Analysing photos… %1$d / %2$d</string>
+    <plurals name="duplicates_results_summary">
+        <item quantity="one">%1$d duplicate group found. Tap to toggle · Long-press to preview.</item>
+        <item quantity="other">%1$d duplicate groups found. Tap to toggle · Long-press to preview.</item>
+    </plurals>
+    <plurals name="group_label">
+        <item quantity="one">Group %1$d — %2$d similar photo</item>
+        <item quantity="other">Group %1$d — %2$d similar photos</item>
+    </plurals>
+    <string name="hint_pinch_drag">Pinch to zoom · Drag to pan</string>
+    <string name="hint_pinch_tap">Pinch to zoom · Tap outside to close</string>
+
+    <!-- Notifications (UploadWorker) -->
+    <string name="notification_preparing">Preparing…</string>
+    <string name="notification_uploading_title">Uploading photos</string>
+    <string name="notification_upload_complete">Upload complete</string>
+    <plurals name="notification_upload_success">
+        <item quantity="one">%d photo uploaded successfully.</item>
+        <item quantity="other">%d photos uploaded successfully.</item>
+    </plurals>
+    <plurals name="notification_upload_partial">
+        <item quantity="one">%1$d uploaded, %2$d failed.</item>
+        <item quantity="other">%1$d uploaded, %2$d failed.</item>
+    </plurals>
+    <string name="notification_upload_failed">Upload failed</string>
+    <string name="channel_name_uploads">Photo Uploads</string>
+    <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
 </resources>

@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
-    <!-- Exclude the credentials DataStore to prevent server URL leaking via cloud backup -->
+    <!-- Exclude credentials from cloud backup and device transfer -->
     <cloud-backup>
         <exclude domain="file" path="datastore/credentials.preferences_pb"/>
+        <exclude domain="sharedpref" path="krhnles_secure.xml"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="datastore/credentials.preferences_pb"/>
+        <exclude domain="sharedpref" path="krhnles_secure.xml"/>
     </device-transfer>
 </data-extraction-rules>

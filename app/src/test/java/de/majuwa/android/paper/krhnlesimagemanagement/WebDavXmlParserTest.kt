@@ -319,9 +319,7 @@ class WebDavXmlParserTest {
     // ── Security: XXE injection prevention ──────────────────────────────────
 
     @Test
-    fun `rejects XML with DOCTYPE declaration to prevent XXE`() {
-        // A malicious server could return XML with an external entity reference.
-        // The parser must throw rather than silently process the DOCTYPE.
+    fun `blocks external entity resolution to prevent XXE`() {
         val xxeXml =
             """
             <?xml version="1.0" encoding="utf-8"?>
@@ -333,14 +331,8 @@ class WebDavXmlParserTest {
             </d:multistatus>
             """.trimIndent()
 
-        try {
-            parsePropfindXml(xxeXml)
-            // If no exception, the DOCTYPE must have been ignored (also acceptable if entries are empty)
-        } catch (_: Exception) {
-            // Expected: parser throws when DOCTYPE is disallowed
-        }
-        // The key assertion: file contents were not read.
-        // We verify this indirectly by ensuring no entry contains a filesystem path.
+        // External entities are disabled so the reference is either rejected or produces
+        // an empty/unexpanded value — never actual file contents.
         val entries =
             try {
                 parsePropfindXml(xxeXml)
@@ -351,5 +343,31 @@ class WebDavXmlParserTest {
             "XXE payload must not produce entries with filesystem paths",
             entries.none { it.href.contains("/etc/") || it.href.contains("root:") },
         )
+    }
+
+    @Test
+    fun `parses response with benign DOCTYPE declaration`() {
+        // Some WebDAV servers include a DOCTYPE in their response.
+        // The parser must accept it as long as no external entities are referenced.
+        val xml =
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE multistatus>
+            <d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+              <d:response>
+                <d:href>/remote.php/dav/files/user/Photos/</d:href>
+                <d:propstat>
+                  <d:prop>
+                    <d:displayname>Photos</d:displayname>
+                    <d:resourcetype><d:collection/></d:resourcetype>
+                  </d:prop>
+                </d:propstat>
+              </d:response>
+            </d:multistatus>
+            """.trimIndent()
+
+        val entries = parsePropfindXml(xml)
+        assertEquals(1, entries.size)
+        assertEquals("Photos", entries[0].displayName)
     }
 }

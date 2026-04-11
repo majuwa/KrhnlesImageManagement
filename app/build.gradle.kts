@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.spotless)
     alias(libs.plugins.detekt)
+    jacoco
 }
 
 android {
@@ -44,6 +45,17 @@ android {
             isIncludeAndroidResources = true
         }
     }
+    lint {
+        warningsAsErrors = true
+        abortOnError = true
+        htmlReport = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
 }
 
 dependencies {
@@ -76,9 +88,6 @@ dependencies {
 
     // ML Kit (object detection for subject-region blur analysis)
     implementation(libs.mlkitObjectDetection)
-
-    // Security
-    implementation(libs.security.crypto)
 
     // DataStore
     implementation(libs.datastore.preferences)
@@ -116,4 +125,46 @@ spotless {
 detekt {
     config.setFrom(files("$rootDir/detekt.yml"))
     buildUponDefaultConfig = true
+}
+
+android {
+    buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
+    }
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    dependsOn("testDebugUnitTest")
+    group = "verification"
+    description = "Generate JaCoCo coverage report for debug unit tests."
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+
+    val mainSrc = "$projectDir/src/main/java"
+    val debugTree = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+        exclude(
+            "**/R.class",
+            "**/R\$*.class",
+            "**/BuildConfig.*",
+            "**/Manifest*.*",
+            "**/*_Factory.*",
+            "**/*_MembersInjector.*",
+            // Compose-generated
+            "**/*ComposableSingletons*",
+        )
+    }
+
+    sourceDirectories.setFrom(files(mainSrc))
+    classDirectories.setFrom(debugTree)
+    executionData.setFrom(
+        fileTree(layout.buildDirectory) {
+            include("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec")
+        },
+    )
 }

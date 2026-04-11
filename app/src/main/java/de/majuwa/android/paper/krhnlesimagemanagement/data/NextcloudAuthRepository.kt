@@ -55,11 +55,7 @@ class NextcloudAuthRepository {
                 emit(LoginFlowState.Failed("Server responded ${initResponse.code}"))
                 return@flow
             }
-            val initBody =
-                initResponse.body?.string() ?: run {
-                    emit(LoginFlowState.Failed("Empty response from server"))
-                    return@flow
-                }
+            val initBody = initResponse.body.string()
 
             val json = JSONObject(initBody)
             val pollToken = json.getJSONObject("poll").getString("token")
@@ -86,7 +82,7 @@ class NextcloudAuthRepository {
                         ).build()
                 val pollResponse = httpClient.newCall(pollRequest).execute()
                 if (pollResponse.isSuccessful) {
-                    val body = pollResponse.body?.string() ?: continue
+                    val body = pollResponse.body.string()
                     val creds = JSONObject(body)
                     emit(
                         LoginFlowState.Authenticated(

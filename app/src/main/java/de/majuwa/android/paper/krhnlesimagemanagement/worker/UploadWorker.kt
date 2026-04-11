@@ -5,11 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
-import android.net.Uri
-import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
@@ -110,7 +109,7 @@ class UploadWorker(
         var failed = 0
 
         for (i in uriStrings.indices) {
-            val uri = Uri.parse(uriStrings[i])
+            val uri = uriStrings[i].toUri()
             val inputStream = applicationContext.contentResolver.openInputStream(uri)
             if (inputStream == null) {
                 failed++
@@ -151,11 +150,16 @@ class UploadWorker(
         current: Int,
         total: Int,
     ): Notification {
-        val text = if (total == 0) "Preparing…" else "$current / $total"
+        val text =
+            if (total == 0) {
+                applicationContext.getString(R.string.notification_preparing)
+            } else {
+                "$current / $total"
+            }
         return NotificationCompat
             .Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Uploading photos")
+            .setContentTitle(applicationContext.getString(R.string.notification_uploading_title))
             .setContentText(text)
             .setProgress(total, current, total == 0)
             .setOngoing(true)
@@ -169,15 +173,24 @@ class UploadWorker(
     ) {
         val text =
             if (failed == 0) {
-                "$uploaded photos uploaded successfully."
+                applicationContext.resources.getQuantityString(
+                    R.plurals.notification_upload_success,
+                    uploaded,
+                    uploaded,
+                )
             } else {
-                "$uploaded uploaded, $failed failed."
+                applicationContext.resources.getQuantityString(
+                    R.plurals.notification_upload_partial,
+                    uploaded,
+                    uploaded,
+                    failed,
+                )
             }
         val notification =
             NotificationCompat
                 .Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Upload complete")
+                .setContentTitle(applicationContext.getString(R.string.notification_upload_complete))
                 .setContentText(text)
                 .setOngoing(false)
                 .build()
@@ -189,7 +202,7 @@ class UploadWorker(
             NotificationCompat
                 .Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Upload failed")
+                .setContentTitle(applicationContext.getString(R.string.notification_upload_failed))
                 .setContentText(message)
                 .setOngoing(false)
                 .build()
@@ -200,28 +213,24 @@ class UploadWorker(
         val channel =
             NotificationChannel(
                 CHANNEL_ID,
-                "Photo Uploads",
+                applicationContext.getString(R.string.channel_name_uploads),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shows upload progress for photo backups"
+                description = applicationContext.getString(R.string.channel_desc_uploads)
             }
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
     }
 
     private fun notifyIfPermitted(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ActivityCompat.checkSelfPermission(
-                    applicationContext,
-                    android.Manifest.permission.POST_NOTIFICATIONS,
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                NotificationManagerCompat
-                    .from(applicationContext)
-                    .notify(NOTIFICATION_ID, notification)
-            }
-        } else {
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+        if (ActivityCompat.checkSelfPermission(
+                applicationContext,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            NotificationManagerCompat
+                .from(applicationContext)
+                .notify(NOTIFICATION_ID, notification)
         }
     }
 }

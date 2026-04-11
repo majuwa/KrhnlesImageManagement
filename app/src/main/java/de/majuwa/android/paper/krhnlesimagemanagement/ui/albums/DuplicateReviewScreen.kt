@@ -59,6 +59,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -69,12 +72,13 @@ import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun duplicateReviewScreen(
+fun DuplicateReviewScreen(
     viewModel: AlbumsViewModel,
     onNavigateBack: () -> Unit,
 ) {
@@ -82,6 +86,7 @@ fun duplicateReviewScreen(
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val resources = LocalResources.current
 
     // Start analysis when the screen first appears
     LaunchedEffect(Unit) { viewModel.findDuplicates() }
@@ -106,20 +111,20 @@ fun duplicateReviewScreen(
     var previewUrl by remember { mutableStateOf<String?>(null) }
 
     previewUrl?.let { url ->
-        photoPreviewDialog(url = url, onDismiss = { previewUrl = null })
+        PhotoPreviewDialog(url = url, onDismiss = { previewUrl = null })
     }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Find duplicates") },
+                title = { Text(stringResource(R.string.title_find_duplicates)) },
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.resetDuplicatesState()
                         onNavigateBack()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 colors =
@@ -144,7 +149,7 @@ fun duplicateReviewScreen(
                 is DuplicatesState.NoneFound -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "No duplicates found in this album.",
+                            stringResource(R.string.empty_duplicates),
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(32.dp),
@@ -171,7 +176,11 @@ fun duplicateReviewScreen(
                                 if (failures > 0) {
                                     scope.launch {
                                         snackbarHostState.showSnackbar(
-                                            "$failures photo(s) could not be deleted.",
+                                            resources.getQuantityString(
+                                                R.plurals.snackbar_delete_failures,
+                                                failures,
+                                                failures,
+                                            ),
                                         )
                                     }
                                 }
@@ -194,7 +203,7 @@ fun duplicateReviewScreen(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(16.dp))
-                        Button(onClick = { viewModel.findDuplicates() }) { Text("Retry") }
+                        Button(onClick = { viewModel.findDuplicates() }) { Text(stringResource(R.string.action_retry)) }
                     }
                 }
 
@@ -203,7 +212,7 @@ fun duplicateReviewScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(16.dp))
-                            Text("Deleting photos…")
+                            Text(stringResource(R.string.status_deleting_photos))
                         }
                     }
                 }
@@ -217,7 +226,7 @@ fun duplicateReviewScreen(
 }
 
 @Composable
-internal fun photoPreviewDialog(
+internal fun PhotoPreviewDialog(
     url: String,
     onDismiss: () -> Unit,
 ) {
@@ -295,7 +304,7 @@ internal fun photoPreviewDialog(
             ) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "Close preview",
+                    contentDescription = stringResource(R.string.cd_close_preview),
                     tint = Color.White,
                     modifier =
                         Modifier
@@ -306,7 +315,12 @@ internal fun photoPreviewDialog(
                 )
             }
             // Hint label at the bottom
-            val hint = if (scale > 1f) "Pinch to zoom · Drag to pan" else "Pinch to zoom · Tap outside to close"
+            val hint =
+                if (scale > 1f) {
+                    stringResource(R.string.hint_pinch_drag)
+                } else {
+                    stringResource(R.string.hint_pinch_tap)
+                }
             Text(
                 hint,
                 style = MaterialTheme.typography.labelSmall,
@@ -325,7 +339,7 @@ private fun LoadingContent(state: DuplicatesState.Loading) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Analysing photos… ${state.processed} / ${state.total}",
+            stringResource(R.string.status_analyzing, state.processed, state.total),
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(16.dp))
@@ -358,9 +372,7 @@ private fun GroupsContent(
     ) {
         item {
             Text(
-                text =
-                    "${groups.size} duplicate group${if (groups.size != 1) "s" else ""} found. " +
-                        "Tap to toggle · Long-press to preview.",
+                text = pluralStringResource(R.plurals.duplicates_results_summary, groups.size, groups.size),
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -370,7 +382,7 @@ private fun GroupsContent(
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        "Group ${index + 1} — ${group.size} similar photos",
+                        pluralStringResource(R.plurals.group_label, group.size, index + 1, group.size),
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
@@ -429,7 +441,7 @@ private fun GroupsContent(
                                     ) {
                                         Icon(
                                             Icons.Default.Close,
-                                            contentDescription = "Marked for deletion",
+                                            contentDescription = stringResource(R.string.cd_marked_for_deletion),
                                             tint = MaterialTheme.colorScheme.error,
                                             modifier =
                                                 Modifier
@@ -467,9 +479,9 @@ private fun GroupsContent(
                 )
                 val label =
                     if (deleteCount > 0) {
-                        "Delete $deleteCount photo${if (deleteCount != 1) "s" else ""}"
+                        pluralStringResource(R.plurals.delete_n_photos, deleteCount, deleteCount)
                     } else {
-                        "Nothing selected"
+                        stringResource(R.string.nothing_selected)
                     }
                 Text(label)
             }

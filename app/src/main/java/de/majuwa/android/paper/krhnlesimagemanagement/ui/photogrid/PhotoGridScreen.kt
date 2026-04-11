@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -73,7 +74,7 @@ import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun photoGridScreen(
+fun PhotoGridScreen(
     viewModel: PhotoGridViewModel,
     onNavigateToSettings: () -> Unit,
     onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit,
@@ -82,14 +83,18 @@ fun photoGridScreen(
     val isConfigured by viewModel.isConfigured.collectAsStateWithLifecycle()
     val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var hasPermission by remember {
-        mutableStateOf(
+
+    fun hasPhotoAccess(): Boolean =
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_MEDIA_IMAGES,
+        ) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(
                 context,
-                Manifest.permission.READ_MEDIA_IMAGES,
-            ) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ) == PackageManager.PERMISSION_GRANTED
+
+    var hasPermission by remember { mutableStateOf(hasPhotoAccess()) }
     var hasNotificationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -101,8 +106,9 @@ fun photoGridScreen(
 
     val permissionLauncher =
         rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission(),
-        ) { granted ->
+            ActivityResultContracts.RequestMultiplePermissions(),
+        ) { permissions ->
+            val granted = permissions.any { it.value }
             hasPermission = granted
             if (granted) viewModel.loadPhotos()
         }
@@ -114,11 +120,17 @@ fun photoGridScreen(
             hasNotificationPermission = granted
         }
 
+    val photoPermissions =
+        arrayOf(
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        )
+
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
             viewModel.loadPhotos()
         } else {
-            permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
+            permissionLauncher.launch(photoPermissions)
         }
     }
 
@@ -140,7 +152,13 @@ fun photoGridScreen(
             TopAppBar(
                 title = {
                     if (uiState.selectedPhotoIds.isNotEmpty()) {
-                        Text("${uiState.selectedPhotoIds.size} selected")
+                        Text(
+                            pluralStringResource(
+                                R.plurals.selected_count,
+                                uiState.selectedPhotoIds.size,
+                                uiState.selectedPhotoIds.size,
+                            ),
+                        )
                     } else {
                         Text(stringResource(R.string.app_name))
                     }
@@ -148,11 +166,11 @@ fun photoGridScreen(
                 actions = {
                     if (uiState.selectedPhotoIds.isNotEmpty()) {
                         TextButton(onClick = { viewModel.clearSelection() }) {
-                            Text("Clear")
+                            Text(stringResource(R.string.action_clear))
                         }
                     }
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.cd_settings))
                     }
                 },
                 colors =
@@ -172,7 +190,7 @@ fun photoGridScreen(
                     onClick = { viewModel.onUploadRequested() },
                     containerColor = MaterialTheme.colorScheme.primary,
                 ) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = "Upload")
+                    Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.cd_upload))
                 }
             }
         },
@@ -185,14 +203,14 @@ fun photoGridScreen(
         ) {
             AnimatedVisibility(visible = uploadProgress != null) {
                 uploadProgress?.let { progress ->
-                    uploadProgressBanner(progress.current, progress.total)
+                    UploadProgressBanner(progress.current, progress.total)
                 }
             }
             Box(modifier = Modifier.weight(1f)) {
                 InnerContent(
                     hasPermission = hasPermission,
                     uiState = uiState,
-                    onRequestPermission = { permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES) },
+                    onRequestPermission = { permissionLauncher.launch(photoPermissions) },
                     onPhotoClick = { viewModel.togglePhotoSelection(it) },
                     onDateHeaderClick = { viewModel.toggleDateSelection(it) },
                 )
@@ -223,7 +241,7 @@ fun photoGridScreen(
 }
 
 @Composable
-private fun uploadProgressBanner(
+private fun UploadProgressBanner(
     current: Int,
     total: Int,
 ) {
@@ -235,7 +253,7 @@ private fun uploadProgressBanner(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
-            text = "Uploading $current / $total",
+            text = stringResource(R.string.upload_progress, current, total),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
@@ -359,7 +377,7 @@ private fun DateHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "$photoCount photos",
+                text = pluralStringResource(R.plurals.photo_count, photoCount, photoCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
@@ -404,7 +422,7 @@ private fun PhotoItem(
         }
         Icon(
             imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-            contentDescription = if (isSelected) "Selected" else "Not selected",
+            contentDescription = stringResource(if (isSelected) R.string.cd_selected else R.string.cd_not_selected),
             tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f),
             modifier =
                 Modifier
@@ -435,12 +453,12 @@ private fun PermissionDeniedContent(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Photo access is required to browse your images.",
+            text = stringResource(R.string.permission_rationale),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(16.dp),
         )
         TextButton(onClick = onRequestPermission) {
-            Text("Grant Permission")
+            Text(stringResource(R.string.action_grant_permission))
         }
     }
 }
@@ -459,21 +477,18 @@ private fun NotConfiguredDialog(
                 tint = MaterialTheme.colorScheme.error,
             )
         },
-        title = { Text("No server configured") },
+        title = { Text(stringResource(R.string.dialog_no_server_title)) },
         text = {
-            Text(
-                "You haven't connected a WebDAV or Nextcloud server yet. " +
-                    "Configure one now to start uploading photos.",
-            )
+            Text(stringResource(R.string.dialog_no_server_message))
         },
         confirmButton = {
             TextButton(onClick = onConfigure) {
-                Text("Configure")
+                Text(stringResource(R.string.action_configure))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Set up later")
+                Text(stringResource(R.string.action_setup_later))
             }
         },
     )
@@ -488,14 +503,14 @@ private fun OccasionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Upload Photos") },
+        title = { Text(stringResource(R.string.dialog_upload_title)) },
         text = {
             Column {
-                Text("Enter the occasion or folder name for the upload:")
+                Text(stringResource(R.string.dialog_upload_message))
                 OutlinedTextField(
                     value = occasionName,
                     onValueChange = { occasionName = it },
-                    label = { Text("Occasion / Folder Name") },
+                    label = { Text(stringResource(R.string.label_occasion_name)) },
                     singleLine = true,
                     modifier =
                         Modifier
@@ -506,15 +521,15 @@ private fun OccasionDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(occasionName) },
+                onClick = { onConfirm(occasionName.trim()) },
                 enabled = occasionName.isNotBlank(),
             ) {
-                Text("Upload")
+                Text(stringResource(R.string.action_upload))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )

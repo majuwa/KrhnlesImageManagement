@@ -9,7 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.krhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import org.json.JSONArray
 import org.json.JSONObject
@@ -20,8 +20,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            krhnlesImageManagementTheme {
-                krhnlesApp(
+            KrhnlesImageManagementTheme {
+                KrhnlesApp(
                     onStartUpload = { occasionName, photos ->
                         enqueueUpload(occasionName, photos)
                     },
@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
         // WorkManager Data has a 10 KB limit — write photo list to a file instead.
         val queue =
             JSONObject().apply {
-                put("folderName", occasionName)
+                put("folderName", occasionName.trim())
                 put(
                     "photos",
                     JSONArray().also { arr ->

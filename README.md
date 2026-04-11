@@ -25,7 +25,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Image Loading:** Coil
 - **Background Processing:** Android WorkManager
 - **Networking:** OkHttp (WebDAV via PROPFIND/MKCOL/PUT)
-- **Security:** EncryptedSharedPreferences for credential storage
+- **Security:** Android Keystore (AES-256-GCM) encrypted credential storage
 
 ## ⚙️ Setup & Installation
 

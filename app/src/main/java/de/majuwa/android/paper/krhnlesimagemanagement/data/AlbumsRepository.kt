@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -68,7 +69,7 @@ class AlbumsRepository(
             runCatching {
                 propfind("$origin${albumHref.trimEnd('/')}")
                     .drop(1)
-                    .filter { it.contentType.startsWith("image/") }
+                    .filter { isImage(it) }
                     .map { RemotePhoto(it.displayName, it.href, it.fileId, it.contentType) }
             }
         }
@@ -104,7 +105,7 @@ class AlbumsRepository(
                     .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) error("HTTP ${response.code} for $url")
-                val bytes = response.body?.bytes() ?: error("Empty response for $url")
+                val bytes = response.body.bytes()
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     ?: error("Could not decode bitmap for $url")
             }
@@ -184,7 +185,8 @@ class AlbumsRepository(
                         .get()
                         .build()
                 client.newCall(req).execute().use { it.code == 200 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w("AlbumsRepository", "Memories API check failed", e)
                 false
             }
         }
@@ -203,7 +205,7 @@ class AlbumsRepository(
                 if (!response.isSuccessful && response.code != 207) {
                     error("PROPFIND failed: HTTP ${response.code}")
                 }
-                response.body?.string() ?: error("Empty PROPFIND response")
+                response.body.string()
             }
         return parsePropfindXml(xml)
     }
@@ -213,6 +215,22 @@ class AlbumsRepository(
         const val THUMB_SIZE = 512
         const val FULL_SIZE = 2048
         const val MEMORIES_CHECK_TIMEOUT_MS = 5_000L
+
+        val IMAGE_EXTENSIONS =
+            setOf(
+                "jpg",
+                "jpeg",
+                "png",
+                "gif",
+                "webp",
+                "bmp",
+                "heic",
+                "heif",
+                "tiff",
+                "tif",
+                "svg",
+                "avif",
+            )
 
         val PROPFIND_BODY =
             """
@@ -226,5 +244,17 @@ class AlbumsRepository(
               </d:prop>
             </d:propfind>
             """.trimIndent()
+
+        /** True when the entry is an image — by content type or file extension fallback. */
+        fun isImage(entry: WebDavEntry): Boolean {
+            if (entry.contentType.startsWith("image/")) return true
+            if (entry.isDirectory) return false
+            val ext =
+                entry.href
+                    .trimEnd('/')
+                    .substringAfterLast('.')
+                    .lowercase()
+            return ext in IMAGE_EXTENSIONS
+        }
     }
 }

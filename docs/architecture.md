@@ -17,7 +17,7 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   └── UploadState.kt       # Sealed interface for upload progress states
 ├── data/
 │   ├── MediaRepository.kt         # Queries device photos via ContentResolver
-│   ├── CredentialStore.kt         # Encrypted credential storage (DataStore + EncryptedSharedPreferences)
+│   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
 │   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT) via OkHttp
 ├── ui/
@@ -41,7 +41,7 @@ Two authentication methods are supported:
 
 Credentials are stored securely:
 - URL and username in DataStore Preferences
-- Password/app token in `EncryptedSharedPreferences` (AES-256-GCM)
+- Password/app token encrypted via Android Keystore (AES-256-GCM) in standard SharedPreferences
 
 ## Data Flow
 
@@ -66,7 +66,8 @@ Result: `https://nextcloud.example.com/remote.php/dav/files/user/Photos/KrohnSyn
 ## Key Decisions
 
 - **WorkManager** for uploads ensures they survive app closure
-- **EncryptedSharedPreferences** for secure credential storage
+- **Android Keystore** for secure credential encryption (replaced deprecated EncryptedSharedPreferences)
+- **EncryptedSharedPreferences** — removed (deprecated in security-crypto 1.1.0)
 - **Nextcloud Login Flow v2** for browser-based auth (no password handling in-app)
 - **OkHttp** directly for WebDAV (no Retrofit needed for simple PUT/MKCOL/PROPFIND)
 - **Coil 3** for efficient image loading in the grid

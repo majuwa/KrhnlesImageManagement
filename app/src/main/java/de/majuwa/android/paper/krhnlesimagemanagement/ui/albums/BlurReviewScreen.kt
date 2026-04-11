@@ -50,18 +50,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun blurReviewScreen(
+fun BlurReviewScreen(
     viewModel: AlbumsViewModel,
     onNavigateBack: () -> Unit,
 ) {
@@ -69,6 +73,7 @@ fun blurReviewScreen(
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val resources = LocalResources.current
 
     LaunchedEffect(Unit) { viewModel.findBlurryPhotos() }
 
@@ -83,20 +88,20 @@ fun blurReviewScreen(
     }
 
     previewUrl?.let { url ->
-        photoPreviewDialog(url = url, onDismiss = { previewUrl = null })
+        PhotoPreviewDialog(url = url, onDismiss = { previewUrl = null })
     }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Blurry photos") },
+                title = { Text(stringResource(R.string.title_blurry_photos)) },
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.resetBlurState()
                         onNavigateBack()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 colors =
@@ -115,13 +120,13 @@ fun blurReviewScreen(
         ) { state ->
             when (state) {
                 is BlurState.Scanning -> {
-                    blurScanningContent(state)
+                    BlurScanningContent(state)
                 }
 
                 is BlurState.NoneFound -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "No blurry photos detected in this album.",
+                            stringResource(R.string.empty_blurry),
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(32.dp),
@@ -146,7 +151,11 @@ fun blurReviewScreen(
                                 if (failures > 0) {
                                     scope.launch {
                                         snackbarHostState.showSnackbar(
-                                            "$failures photo(s) could not be deleted.",
+                                            resources.getQuantityString(
+                                                R.plurals.snackbar_delete_failures,
+                                                failures,
+                                                failures,
+                                            ),
                                         )
                                     }
                                 }
@@ -169,7 +178,9 @@ fun blurReviewScreen(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(16.dp))
-                        Button(onClick = { viewModel.findBlurryPhotos() }) { Text("Retry") }
+                        Button(onClick = { viewModel.findBlurryPhotos() }) {
+                            Text(stringResource(R.string.action_retry))
+                        }
                     }
                 }
 
@@ -178,7 +189,7 @@ fun blurReviewScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(16.dp))
-                            Text("Deleting photos…")
+                            Text(stringResource(R.string.status_deleting_photos))
                         }
                     }
                 }
@@ -192,14 +203,14 @@ fun blurReviewScreen(
 }
 
 @Composable
-private fun blurScanningContent(state: BlurState.Scanning) {
+private fun BlurScanningContent(state: BlurState.Scanning) {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Scanning for blurry photos… ${state.processed} / ${state.total}",
+            stringResource(R.string.status_scanning_blur, state.processed, state.total),
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(16.dp))
@@ -228,9 +239,7 @@ private fun BlurResultsContent(
 
     Column(Modifier.fillMaxSize()) {
         Text(
-            text =
-                "${photos.size} blurry photo${if (photos.size != 1) "s" else ""} found. " +
-                    "Tap to toggle · Long-press to preview.",
+            text = pluralStringResource(R.plurals.blur_results_summary, photos.size, photos.size),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
@@ -297,7 +306,7 @@ private fun BlurResultsContent(
                         ) {
                             Icon(
                                 Icons.Default.CheckCircle,
-                                contentDescription = "Selected for deletion",
+                                contentDescription = stringResource(R.string.cd_selected_for_deletion),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(4.dp).size(24.dp),
                             )
@@ -342,9 +351,9 @@ private fun BlurResultsContent(
             )
             val label =
                 if (deleteCount > 0) {
-                    "Delete $deleteCount photo${if (deleteCount != 1) "s" else ""}"
+                    pluralStringResource(R.plurals.delete_n_photos, deleteCount, deleteCount)
                 } else {
-                    "Nothing selected"
+                    stringResource(R.string.nothing_selected)
                 }
             Text(label)
         }

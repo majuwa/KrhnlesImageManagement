@@ -1,20 +1,33 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 private val Context.credentialDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "credentials",
 )
+
+private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
+private const val KEY_ALIAS = "krhnles_master_key"
+private const val CIPHER_TRANSFORMATION = "AES/GCM/NoPadding"
+private const val GCM_TAG_LENGTH_BITS = 128
+private const val PREFS_FILE_NAME = "krhnles_secure"
 
 class CredentialStore(
     private val context: Context,
@@ -24,19 +37,8 @@ class CredentialStore(
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
     }
 
-    private val encryptedPrefs by lazy {
-        val masterKey =
-            MasterKey
-                .Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-        EncryptedSharedPreferences.create(
-            context,
-            "krhnles_secure",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    private val securePrefs: SharedPreferences by lazy {
+        context.getSharedPreferences(PREFS_FILE_NAME, Context.MODE_PRIVATE)
     }
 
     val serverUrl: Flow<String?> = context.credentialDataStore.data.map { it[KEY_SERVER_URL] }
@@ -62,9 +64,9 @@ class CredentialStore(
             )
         }
 
-    override fun password(): String? = encryptedPrefs.getString("password", null)
+    override fun password(): String? = decryptValue(securePrefs.getString("password", null))
 
-    fun username(): String? = encryptedPrefs.getString("username", null)
+    fun username(): String? = decryptValue(securePrefs.getString("username", null))
 
     override suspend fun save(
         serverUrl: String,
@@ -74,10 +76,10 @@ class CredentialStore(
         context.credentialDataStore.edit { prefs ->
             prefs[KEY_SERVER_URL] = serverUrl
         }
-        encryptedPrefs
+        securePrefs
             .edit()
-            .putString("username", username)
-            .putString("password", password)
+            .putString("username", encryptValue(username))
+            .putString("password", encryptValue(password))
             .apply()
     }
 
@@ -87,8 +89,51 @@ class CredentialStore(
 
     override suspend fun clear() {
         context.credentialDataStore.edit { it.clear() }
-        encryptedPrefs.edit().clear().apply()
+        securePrefs.edit().clear().apply()
     }
 
     override fun isLoggedIn(): Boolean = !password().isNullOrBlank()
+
+    // ── Keystore encryption helpers ─────────────────────────────────────────
+
+    private fun getOrCreateKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+        keyStore.getEntry(KEY_ALIAS, null)?.let { entry ->
+            return (entry as KeyStore.SecretKeyEntry).secretKey
+        }
+        val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
+        keyGen.init(
+            KeyGenParameterSpec
+                .Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build(),
+        )
+        return keyGen.generateKey()
+    }
+
+    private fun encryptValue(plaintext: String): String {
+        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val iv = cipher.iv
+        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+        // Layout: [ivLen (1 byte)] [iv] [ciphertext]
+        val combined = ByteArray(1 + iv.size + ciphertext.size)
+        combined[0] = iv.size.toByte()
+        iv.copyInto(combined, destinationOffset = 1)
+        ciphertext.copyInto(combined, destinationOffset = 1 + iv.size)
+        return Base64.encodeToString(combined, Base64.NO_WRAP)
+    }
+
+    private fun decryptValue(encoded: String?): String? {
+        if (encoded == null) return null
+        val combined = Base64.decode(encoded, Base64.NO_WRAP)
+        val ivLen = combined[0].toInt() and 0xFF
+        val iv = combined.copyOfRange(1, 1 + ivLen)
+        val ciphertext = combined.copyOfRange(1 + ivLen, combined.size)
+        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
+        return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+    }
 }

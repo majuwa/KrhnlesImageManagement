@@ -194,6 +194,55 @@ class AlbumsRepositoryTest {
             assertEquals("image/png", photos[1].contentType)
         }
 
+    @Test
+    fun `listPhotos includes images without content type via extension fallback`() =
+        runTest {
+            repo = createRepo()
+            val xml =
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/NewAlbum/</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>NewAlbum</d:displayname>
+                      <d:resourcetype><d:collection/></d:resourcetype>
+                    </d:prop></d:propstat>
+                  </d:response>
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/NewAlbum/photo.jpg</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>photo.jpg</d:displayname>
+                      <d:resourcetype/>
+                      <d:getcontenttype/>
+                    </d:prop></d:propstat>
+                  </d:response>
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/NewAlbum/shot.HEIC</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>shot.HEIC</d:displayname>
+                      <d:resourcetype/>
+                    </d:prop></d:propstat>
+                  </d:response>
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/NewAlbum/doc.pdf</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>doc.pdf</d:displayname>
+                      <d:resourcetype/>
+                    </d:prop></d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """.trimIndent()
+            server.enqueue(propfindResponse(xml))
+
+            val result = repo.listPhotos("/remote.php/dav/files/user/NewAlbum/")
+            assertTrue(result.isSuccess)
+            val photos = result.getOrThrow()
+            assertEquals(2, photos.size)
+            assertEquals("photo.jpg", photos[0].displayName)
+            assertEquals("shot.HEIC", photos[1].displayName)
+        }
+
     // ── deletePhoto ─────────────────────────────────────────────────────────
 
     @Test

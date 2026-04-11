@@ -9,9 +9,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.settingsScreen
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.krhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,8 +48,8 @@ class SettingsScreenTest {
     @Test
     fun `shows Settings title`() {
         composeTestRule.setContent {
-            krhnlesImageManagementTheme {
-                settingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
             }
         }
         composeTestRule.onNodeWithText("Settings").assertIsDisplayed()
@@ -58,8 +58,8 @@ class SettingsScreenTest {
     @Test
     fun `shows Connected status when logged in`() {
         composeTestRule.setContent {
-            krhnlesImageManagementTheme {
-                settingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
             }
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
@@ -70,8 +70,8 @@ class SettingsScreenTest {
     @Test
     fun `shows Test Connection and Disconnect buttons when logged in`() {
         composeTestRule.setContent {
-            krhnlesImageManagementTheme {
-                settingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
             }
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
@@ -82,8 +82,8 @@ class SettingsScreenTest {
     @Test
     fun `shows Save folder button when logged in`() {
         composeTestRule.setContent {
-            krhnlesImageManagementTheme {
-                settingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
             }
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
@@ -95,8 +95,8 @@ class SettingsScreenTest {
     @Test
     fun `shows login prompt when not connected`() {
         composeTestRule.setContent {
-            krhnlesImageManagementTheme {
-                settingsScreen(viewModel = createLoggedOutViewModel(), onNavigateBack = {})
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedOutViewModel(), onNavigateBack = {})
             }
         }
         composeTestRule.waitForIdle()
@@ -107,8 +107,8 @@ class SettingsScreenTest {
     @Test
     fun `shows manual config section on toggle`() {
         composeTestRule.setContent {
-            krhnlesImageManagementTheme {
-                settingsScreen(viewModel = createLoggedOutViewModel(), onNavigateBack = {})
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedOutViewModel(), onNavigateBack = {})
             }
         }
         composeTestRule.waitUntilAtLeastOneExists(

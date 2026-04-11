@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.util
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.core.graphics.scale
 
 /**
  * Lightweight blur detection using Laplacian variance.
@@ -107,7 +108,7 @@ object BlurDetector {
         val scale = MAX_ANALYSIS_SIZE.toFloat() / maxDim
         val w = (bitmap.width * scale).toInt().coerceAtLeast(1)
         val h = (bitmap.height * scale).toInt().coerceAtLeast(1)
-        return Bitmap.createScaledBitmap(bitmap, w, h, false)
+        return bitmap.scale(w, h, filter = false)
     }
 
     /** Applies the 3×3 Laplacian kernel centred at ([cx], [cy]). */
