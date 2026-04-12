@@ -9,15 +9,13 @@ plugins {
 android {
     namespace = "de.majuwa.android.paper.krhnlesimagemanagement"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version = release(37)
     }
 
     defaultConfig {
         applicationId = "de.majuwa.android.paper.krhnlesimagemanagement"
         minSdk = 35
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
