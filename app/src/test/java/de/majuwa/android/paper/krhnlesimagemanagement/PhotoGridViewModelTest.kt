@@ -206,6 +206,57 @@ class PhotoGridViewModelTest {
             assertFalse(vm.uiState.value.showOccasionDialog)
         }
 
+    // ── refreshPhotos ───────────────────────────────────────────────────────
+
+    @Test
+    fun `refreshPhotos updates photos and clears isRefreshing`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.refreshPhotos()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertFalse(state.isRefreshing)
+            assertFalse(state.isLoading)
+            assertEquals(2, state.photosByDate[today]!!.size)
+        }
+
+    @Test
+    fun `refreshPhotos does not touch isLoading flag`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            fakeMedia.photosToReturn = listOf(photo(2, "b.jpg", today))
+            viewModel.refreshPhotos()
+            advanceUntilIdle()
+
+            // isLoading must never be set during a pull-to-refresh cycle
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertFalse(viewModel.uiState.value.isRefreshing)
+        }
+
+    @Test
+    fun `refreshPhotos sets error and clears isRefreshing on failure`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            fakeMedia.shouldThrow = RuntimeException("disk error")
+            viewModel.refreshPhotos()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertFalse(state.isRefreshing)
+            assertEquals("disk error", state.error)
+        }
+
     // ── dismissDialogs ──────────────────────────────────────────────────────
 
     @Test

@@ -32,6 +32,7 @@ data class PhotoGridUiState(
     val photosByDate: Map<LocalDate, List<Photo>> = emptyMap(),
     val selectedPhotoIds: Set<Long> = emptySet(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val error: String? = null,
     val showOccasionDialog: Boolean = false,
     val showNotConfiguredDialog: Boolean = false,
@@ -138,6 +139,27 @@ class PhotoGridViewModel
 
         fun dismissNotConfiguredDialog() {
             _uiState.update { it.copy(showNotConfiguredDialog = false) }
+        }
+
+        fun refreshPhotos() {
+            viewModelScope.launch {
+                _uiState.update { it.copy(isRefreshing = true, error = null) }
+                val result = runCatching { mediaRepository.loadPhotos() }
+                result
+                    .onSuccess { photos ->
+                        val grouped =
+                            photos
+                                .groupBy { it.dateTaken }
+                                .toSortedMap(compareByDescending { it })
+                        _uiState.update {
+                            it.copy(photosByDate = grouped, isRefreshing = false)
+                        }
+                    }.onFailure { throwable ->
+                        _uiState.update {
+                            it.copy(isRefreshing = false, error = throwable.message ?: "Failed to load photos")
+                        }
+                    }
+            }
         }
 
         fun getSelectedPhotos(): List<Photo> {

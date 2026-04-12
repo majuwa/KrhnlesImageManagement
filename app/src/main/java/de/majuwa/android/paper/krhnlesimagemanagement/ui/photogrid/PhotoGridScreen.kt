@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -213,6 +214,7 @@ fun PhotoGridScreen(
                     onRequestPermission = { permissionLauncher.launch(photoPermissions) },
                     onPhotoClick = { viewModel.togglePhotoSelection(it) },
                     onDateHeaderClick = { viewModel.toggleDateSelection(it) },
+                    onRefresh = { viewModel.refreshPhotos() },
                 )
             }
         }
@@ -268,6 +270,7 @@ private fun UploadProgressBanner(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InnerContent(
     hasPermission: Boolean,
@@ -275,6 +278,7 @@ private fun InnerContent(
     onRequestPermission: () -> Unit,
     onPhotoClick: (Long) -> Unit,
     onDateHeaderClick: (LocalDate) -> Unit,
+    onRefresh: () -> Unit,
 ) {
     when {
         !hasPermission -> {
@@ -291,22 +295,34 @@ private fun InnerContent(
         }
 
         uiState.error != null -> {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = uiState.error,
-                    color = MaterialTheme.colorScheme.error,
-                )
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = uiState.error,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
 
         else -> {
-            PhotoGrid(
-                photosByDate = uiState.photosByDate,
-                selectedPhotoIds = uiState.selectedPhotoIds,
-                onPhotoClick = onPhotoClick,
-                onDateHeaderClick = onDateHeaderClick,
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize(),
-            )
+            ) {
+                PhotoGrid(
+                    photosByDate = uiState.photosByDate,
+                    selectedPhotoIds = uiState.selectedPhotoIds,
+                    onPhotoClick = onPhotoClick,
+                    onDateHeaderClick = onDateHeaderClick,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
