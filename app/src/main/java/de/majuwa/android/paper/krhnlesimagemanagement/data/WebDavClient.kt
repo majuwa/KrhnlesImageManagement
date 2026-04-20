@@ -41,9 +41,6 @@ class WebDavClient(
     private val baseUrl: String
         get() = config.url.trimEnd('/')
 
-    private val baseHttpUrl: HttpUrl =
-        requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
-
     suspend fun testConnection(): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -119,11 +116,14 @@ class WebDavClient(
         }
 
     private fun buildPathUrl(segments: List<String>): HttpUrl =
-        baseHttpUrl
+        requireBaseHttpUrl()
             .newBuilder()
             .apply {
                 segments.forEach(::addPathSegment)
             }.build()
+
+    private fun requireBaseHttpUrl(): HttpUrl =
+        requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
     private fun validatePathSegment(segment: String) {
         require(segment.isNotBlank()) { "Invalid path segment: blank" }

@@ -40,15 +40,16 @@ Two authentication methods are supported:
 2. **Manual WebDAV config**: Direct URL, username, and password/app token entry for non-Nextcloud WebDAV servers.
 
 Credentials are stored securely:
-- URL and username in DataStore Preferences
-- Password/app token encrypted via Android Keystore (AES-256-GCM) in standard SharedPreferences
+- URL and base folder in DataStore Preferences
+- Username and password/app token encrypted via Android Keystore (AES-256-GCM) in standard SharedPreferences
+- Corrupted encrypted values fail closed (treated as missing credentials) to avoid crashes
 
 ## Data Flow
 
 1. **Photo Loading**: `MediaRepository` queries `MediaStore.Images` → photos grouped by date in `PhotoGridViewModel`
 2. **Selection**: User taps photos or date headers → selection state in ViewModel
 3. **Upload Trigger**: FAB → occasion dialog → `WorkManager.enqueue(UploadWorker)`
-4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()`
+4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy)
 5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
 
 ## Upload Path Construction
@@ -62,6 +63,7 @@ Given:
 Result: `https://nextcloud.example.com/remote.php/dav/files/user/Photos/KrohnSync/Summer 2026/photo.jpg`
 
 `WebDavClient.createDirectory()` walks each segment in order (MKCOL per segment, 405=already exists is OK), so nested paths are created safely regardless of what already exists on the server.
+All path segments are validated (`.` / `..` rejected) and URL-encoded via `HttpUrl` segment builders to prevent path traversal and malformed path injection.
 
 ## Key Decisions
 
@@ -69,6 +71,7 @@ Result: `https://nextcloud.example.com/remote.php/dav/files/user/Photos/KrohnSyn
 - **Android Keystore** for secure credential encryption (replaced deprecated EncryptedSharedPreferences)
 - **EncryptedSharedPreferences** — removed (deprecated in security-crypto 1.1.0)
 - **Nextcloud Login Flow v2** for browser-based auth (no password handling in-app)
+- **Nextcloud login polling timeout** so auth does not run forever if approval never happens
 - **OkHttp** directly for WebDAV (no Retrofit needed for simple PUT/MKCOL/PROPFIND)
 - **Coil 3** for efficient image loading in the grid
 - **LazyVerticalGrid** with `GridItemSpan` for date headers spanning full width
