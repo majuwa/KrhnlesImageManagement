@@ -138,11 +138,15 @@ class WebDavClient(
         override fun contentType(): MediaType = mediaType
 
         override fun writeTo(sink: BufferedSink) {
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read == -1) break
-                sink.write(buffer, 0, read)
+            try {
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    sink.write(buffer, 0, read)
+                }
+            } finally {
+                input.close()
             }
         }
     }

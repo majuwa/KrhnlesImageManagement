@@ -132,7 +132,7 @@ class CredentialStore(
             val combined = Base64.decode(encoded, Base64.NO_WRAP)
             if (combined.size < 2) return null
             val ivLen = combined[0].toInt() and 0xFF
-            if (ivLen !in 12..16) return null
+            if (ivLen != 12) return null
             val ciphertextStart = 1 + ivLen
             if (combined.size <= ciphertextStart) return null
             val iv = combined.copyOfRange(1, ciphertextStart)
