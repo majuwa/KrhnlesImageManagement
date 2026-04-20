@@ -128,12 +128,18 @@ class CredentialStore(
 
     private fun decryptValue(encoded: String?): String? {
         if (encoded == null) return null
-        val combined = Base64.decode(encoded, Base64.NO_WRAP)
-        val ivLen = combined[0].toInt() and 0xFF
-        val iv = combined.copyOfRange(1, 1 + ivLen)
-        val ciphertext = combined.copyOfRange(1 + ivLen, combined.size)
-        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
-        return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+        return runCatching {
+            val combined = Base64.decode(encoded, Base64.NO_WRAP)
+            if (combined.size < 2) return null
+            val ivLen = combined[0].toInt() and 0xFF
+            if (ivLen !in 12..16) return null
+            val ciphertextStart = 1 + ivLen
+            if (combined.size <= ciphertextStart) return null
+            val iv = combined.copyOfRange(1, ciphertextStart)
+            val ciphertext = combined.copyOfRange(ciphertextStart, combined.size)
+            val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
+            String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+        }.getOrNull()
     }
 }

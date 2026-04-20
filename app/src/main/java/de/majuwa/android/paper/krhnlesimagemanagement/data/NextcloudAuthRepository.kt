@@ -8,18 +8,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 private const val POLL_INTERVAL_MS = 2_000L
+private const val MAX_POLL_DURATION_MS = 120_000L
 private const val CONNECT_TIMEOUT_SECONDS = 30L
 private const val READ_TIMEOUT_SECONDS = 30L
 
-class NextcloudAuthRepository {
+class NextcloudAuthRepository(
+    private val pollIntervalMs: Long = POLL_INTERVAL_MS,
+    private val maxPollDurationMs: Long = MAX_POLL_DURATION_MS,
+) {
     private val userAgent = "Kroehnles-Image-Management/1.0 (Android; ${Build.MANUFACTURER} ${Build.MODEL})"
 
     private val httpClient: OkHttpClient =
@@ -46,16 +49,18 @@ class NextcloudAuthRepository {
                 Request
                     .Builder()
                     .url("$baseUrl/index.php/login/v2")
-                    .post("".toRequestBody())
+                    .post(FormBody.Builder().build())
                     .header("OCS-APIREQUEST", "true")
                     .build()
 
-            val initResponse = httpClient.newCall(initRequest).execute()
-            if (!initResponse.isSuccessful) {
-                emit(LoginFlowState.Failed("Server responded ${initResponse.code}"))
-                return@flow
-            }
-            val initBody = initResponse.body.string()
+            val initBody =
+                httpClient.newCall(initRequest).execute().use { initResponse ->
+                    if (!initResponse.isSuccessful) {
+                        emit(LoginFlowState.Failed("Server responded ${initResponse.code}"))
+                        return@flow
+                    }
+                    initResponse.body.string()
+                }
 
             val json = JSONObject(initBody)
             val pollToken = json.getJSONObject("poll").getString("token")
@@ -70,30 +75,35 @@ class NextcloudAuthRepository {
 
             emit(LoginFlowState.WaitingForBrowser(loginUrl))
 
-            while (true) {
-                delay(POLL_INTERVAL_MS)
+            val startedAt = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startedAt < maxPollDurationMs) {
+                delay(pollIntervalMs)
                 val pollRequest =
                     Request
                         .Builder()
                         .url(pollEndpoint)
                         .post(
-                            "token=$pollToken"
-                                .toRequestBody("application/x-www-form-urlencoded".toMediaType()),
+                            FormBody
+                                .Builder()
+                                .add("token", pollToken)
+                                .build(),
                         ).build()
-                val pollResponse = httpClient.newCall(pollRequest).execute()
-                if (pollResponse.isSuccessful) {
-                    val body = pollResponse.body.string()
-                    val creds = JSONObject(body)
-                    emit(
-                        LoginFlowState.Authenticated(
-                            server = creds.getString("server").trimEnd('/'),
-                            loginName = creds.getString("loginName"),
-                            appPassword = creds.getString("appPassword"),
-                        ),
-                    )
-                    return@flow
+                httpClient.newCall(pollRequest).execute().use { pollResponse ->
+                    if (pollResponse.isSuccessful) {
+                        val body = pollResponse.body.string()
+                        val creds = JSONObject(body)
+                        emit(
+                            LoginFlowState.Authenticated(
+                                server = creds.getString("server").trimEnd('/'),
+                                loginName = creds.getString("loginName"),
+                                appPassword = creds.getString("appPassword"),
+                            ),
+                        )
+                        return@flow
+                    }
                 }
             }
+            emit(LoginFlowState.Failed("Login timed out. Please try again."))
         }.catch { e ->
             emit(LoginFlowState.Failed(e.message ?: "Unexpected error"))
         }.flowOn(Dispatchers.IO)

@@ -5,6 +5,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.LoginFlowState
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -306,5 +307,36 @@ class NextcloudAuthFlowTest {
                 states.any { it is LoginFlowState.Failed },
             )
             assertTrue(states.any { it is LoginFlowState.Authenticated })
+        }
+
+    @Test
+    fun `loginFlow fails with timeout when poll never succeeds`() =
+        runTest {
+            val pollUrl = mockWebServer.url("/poll").toString()
+            val loginUrl = mockWebServer.url("/login").toString()
+
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody(
+                    """
+                    {
+                      "poll": {"token": "tok123", "endpoint": "$pollUrl"},
+                      "login": "$loginUrl"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+            repeat(10) {
+                mockWebServer.enqueue(MockResponse().setResponseCode(404))
+            }
+
+            val repo = NextcloudAuthRepository(pollIntervalMs = 10, maxPollDurationMs = 50)
+            val states =
+                withTimeout(3_000) {
+                    repo.loginFlow(mockWebServer.url("").toString()).toList()
+                }
+
+            val failed = states.filterIsInstance<LoginFlowState.Failed>()
+            assertTrue("Expected timeout failure state", failed.isNotEmpty())
+            assertTrue(failed.last().message.contains("timed out", ignoreCase = true))
         }
 }
