@@ -68,9 +68,9 @@ class WebDavClient(
         withContext(Dispatchers.IO) {
             runCatching {
                 val segments = folderPath.split("/").filter { it.isNotBlank() }
+                segments.forEach(::validatePathSegment)
                 val cumulativeSegments = mutableListOf<String>()
                 for (segment in segments) {
-                    validatePathSegment(segment)
                     cumulativeSegments += segment
                     val request =
                         Request
@@ -81,7 +81,9 @@ class WebDavClient(
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful && response.code != 405) {
                             error(
-                                "Failed to create directory '${cumulativeSegments.joinToString("/")}': HTTP ${response.code} ${response.message}",
+                                "Failed to create directory '${cumulativeSegments.joinToString(
+                                    "/",
+                                )}': HTTP ${response.code} ${response.message}",
                             )
                         }
                     }
@@ -122,11 +124,11 @@ class WebDavClient(
                 segments.forEach(::addPathSegment)
             }.build()
 
-    private fun requireBaseHttpUrl(): HttpUrl =
-        requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
+    private fun requireBaseHttpUrl(): HttpUrl = requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
     private fun validatePathSegment(segment: String) {
         require(segment.isNotBlank()) { "Invalid path segment: blank" }
+        require('/' !in segment) { "Invalid path segment: '$segment'" }
         require(segment != "." && segment != "..") { "Invalid path segment: '$segment'" }
         require('\u0000' !in segment) { "Invalid path segment contains NUL byte" }
     }

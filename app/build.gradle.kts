@@ -8,9 +8,7 @@ plugins {
 
 android {
     namespace = "de.majuwa.android.paper.krhnlesimagemanagement"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "de.majuwa.android.paper.krhnlesimagemanagement"
@@ -25,6 +23,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -32,8 +31,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures {
         compose = true
@@ -47,12 +46,6 @@ android {
         warningsAsErrors = true
         abortOnError = true
         htmlReport = true
-    }
-}
-
-kotlin {
-    compilerOptions {
-        allWarningsAsErrors.set(true)
     }
 }
 
@@ -123,6 +116,12 @@ spotless {
 detekt {
     config.setFrom(files("$rootDir/detekt.yml"))
     buildUponDefaultConfig = true
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
 }
 
 android {

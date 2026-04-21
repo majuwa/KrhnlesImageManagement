@@ -5,7 +5,6 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.LoginFlowState
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -330,10 +329,7 @@ class NextcloudAuthFlowTest {
             }
 
             val repo = NextcloudAuthRepository(pollIntervalMs = 10, maxPollDurationMs = 50)
-            val states =
-                withTimeout(3_000) {
-                    repo.loginFlow(mockWebServer.url("").toString()).toList()
-                }
+            val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
 
             val failed = states.filterIsInstance<LoginFlowState.Failed>()
             assertTrue("Expected timeout failure state", failed.isNotEmpty())

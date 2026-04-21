@@ -45,16 +45,8 @@ class NextcloudAuthRepository(
             val normalized = serverUrl.trim()
             val baseUrl = (if ("://" !in normalized) "https://$normalized" else normalized).trimEnd('/')
 
-            val initRequest =
-                Request
-                    .Builder()
-                    .url("$baseUrl/index.php/login/v2")
-                    .post(FormBody.Builder().build())
-                    .header("OCS-APIREQUEST", "true")
-                    .build()
-
             val initBody =
-                httpClient.newCall(initRequest).execute().use { initResponse ->
+                httpClient.newCall(buildInitRequest(baseUrl)).execute().use { initResponse ->
                     if (!initResponse.isSuccessful) {
                         emit(LoginFlowState.Failed("Server responded ${initResponse.code}"))
                         return@flow
@@ -78,20 +70,9 @@ class NextcloudAuthRepository(
             val startedAt = System.currentTimeMillis()
             while (System.currentTimeMillis() - startedAt < maxPollDurationMs) {
                 delay(pollIntervalMs)
-                val pollRequest =
-                    Request
-                        .Builder()
-                        .url(pollEndpoint)
-                        .post(
-                            FormBody
-                                .Builder()
-                                .add("token", pollToken)
-                                .build(),
-                        ).build()
-                httpClient.newCall(pollRequest).execute().use { pollResponse ->
+                httpClient.newCall(buildPollRequest(pollEndpoint, pollToken)).execute().use { pollResponse ->
                     if (pollResponse.isSuccessful) {
-                        val body = pollResponse.body.string()
-                        val creds = JSONObject(body)
+                        val creds = JSONObject(pollResponse.body.string())
                         emit(
                             LoginFlowState.Authenticated(
                                 server = creds.getString("server").trimEnd('/'),
@@ -107,6 +88,24 @@ class NextcloudAuthRepository(
         }.catch { e ->
             emit(LoginFlowState.Failed(e.message ?: "Unexpected error"))
         }.flowOn(Dispatchers.IO)
+
+    private fun buildInitRequest(baseUrl: String): Request =
+        Request
+            .Builder()
+            .url("$baseUrl/index.php/login/v2")
+            .post(FormBody.Builder().build())
+            .header("OCS-APIREQUEST", "true")
+            .build()
+
+    private fun buildPollRequest(
+        pollEndpoint: String,
+        pollToken: String,
+    ): Request =
+        Request
+            .Builder()
+            .url(pollEndpoint)
+            .post(FormBody.Builder().add("token", pollToken).build())
+            .build()
 
     /**
      * Returns an error message if [pollEndpoint] or [loginUrl] do not share the same
