@@ -24,8 +24,10 @@ To provide a manual, user-curated image backup flow where users select local dev
 - **Backup exclusion:** The credentials DataStore (`datastore/credentials.preferences_pb`) is excluded from both cloud backup and device transfer via `backup_rules.xml` / `data_extraction_rules.xml`.
 - **XML parsing (XXE):** `parsePropfindXml()` strips DOCTYPE declarations before parsing and sets `isExpandEntityReferences = false`. Android's Harmony/Expat parser doesn't support the standard SAX security features, so DOCTYPE stripping is the primary XXE defense.
 - **Auth flow origin validation:** `NextcloudAuthRepository.validateSameOrigin()` ensures the `pollEndpoint` and `loginUrl` returned by the server share the same origin as the configured server URL, preventing token theft and phishing via a compromised server response.
+- **Auth polling timeout:** `NextcloudAuthRepository.loginFlow()` enforces a maximum polling duration and fails with a user-facing timeout message instead of polling forever.
 - **HTTP warning:** `SettingsUiState.httpWarning` is set to `true` when the user explicitly types an `http://` URL; the UI should surface a warning about plaintext credentials.
 - **Minification:** Release builds have `isMinifyEnabled = true`.
+- **WebDAV path hardening:** `WebDavClient` validates path segments (`.` / `..` forbidden) and uses `HttpUrl` path-segment encoding to prevent traversal and malformed URL injection.
 
 ## After Every Code Change
 

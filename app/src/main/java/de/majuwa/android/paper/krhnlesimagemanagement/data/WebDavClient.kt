@@ -5,10 +5,14 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody
+import okio.BufferedSink
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
@@ -64,19 +68,23 @@ class WebDavClient(
         withContext(Dispatchers.IO) {
             runCatching {
                 val segments = folderPath.split("/").filter { it.isNotBlank() }
-                var cumulative = ""
+                segments.forEach(::validatePathSegment)
+                val cumulativeSegments = mutableListOf<String>()
                 for (segment in segments) {
-                    cumulative = if (cumulative.isEmpty()) segment else "$cumulative/$segment"
-                    val url = "$baseUrl/$cumulative"
+                    cumulativeSegments += segment
                     val request =
                         Request
                             .Builder()
-                            .url(url)
+                            .url(buildPathUrl(cumulativeSegments))
                             .method("MKCOL", null)
                             .build()
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful && response.code != 405) {
-                            error("Failed to create directory '$cumulative': HTTP ${response.code} ${response.message}")
+                            error(
+                                "Failed to create directory '${cumulativeSegments.joinToString(
+                                    "/",
+                                )}': HTTP ${response.code} ${response.message}",
+                            )
                         }
                     }
                 }
@@ -91,13 +99,14 @@ class WebDavClient(
     ): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val bytes = inputStream.readBytes()
-                val url = "$baseUrl/$folderName/$fileName"
-                val body = bytes.toRequestBody(mimeType.toMediaType())
+                val folderSegments = folderName.split("/").filter { it.isNotBlank() }
+                folderSegments.forEach(::validatePathSegment)
+                validatePathSegment(fileName)
+                val body = InputStreamRequestBody(mimeType.toMediaType(), inputStream)
                 val request =
                     Request
                         .Builder()
-                        .url(url)
+                        .url(buildPathUrl(folderSegments + fileName))
                         .put(body)
                         .build()
                 client.newCall(request).execute().use { response ->
@@ -107,4 +116,40 @@ class WebDavClient(
                 }
             }
         }
+
+    private fun buildPathUrl(segments: List<String>): HttpUrl =
+        requireBaseHttpUrl()
+            .newBuilder()
+            .apply {
+                segments.forEach(::addPathSegment)
+            }.build()
+
+    private fun requireBaseHttpUrl(): HttpUrl = requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
+
+    private fun validatePathSegment(segment: String) {
+        require(segment.isNotBlank()) { "Invalid path segment: blank" }
+        require('/' !in segment) { "Invalid path segment: '$segment'" }
+        require(segment != "." && segment != "..") { "Invalid path segment: '$segment'" }
+        require('\u0000' !in segment) { "Invalid path segment contains NUL byte" }
+    }
+
+    private class InputStreamRequestBody(
+        private val mediaType: MediaType,
+        private val input: InputStream,
+    ) : RequestBody() {
+        override fun contentType(): MediaType = mediaType
+
+        override fun writeTo(sink: BufferedSink) {
+            try {
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    sink.write(buffer, 0, read)
+                }
+            } finally {
+                input.close()
+            }
+        }
+    }
 }

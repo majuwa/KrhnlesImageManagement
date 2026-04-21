@@ -248,4 +248,46 @@ class WebDavClientTest {
             val request = server.takeRequest()
             assertEquals("image/jpeg", request.getHeader("Content-Type"))
         }
+
+    @Test
+    fun `createDirectory rejects path traversal segments`() =
+        runTest {
+            val result = client.createDirectory("Photos/../Private")
+            assertTrue(result.isFailure)
+            assertTrue(result.exceptionOrNull()!!.message!!.contains("Invalid path segment"))
+        }
+
+    @Test
+    fun `uploadFile rejects path traversal filename`() =
+        runTest {
+            val result =
+                client.uploadFile(
+                    "Photos/Summer",
+                    "../secrets.txt",
+                    "text/plain",
+                    ByteArrayInputStream("x".toByteArray()),
+                )
+            assertTrue(result.isFailure)
+            assertTrue(result.exceptionOrNull()!!.message!!.contains("Invalid path segment"))
+        }
+
+    @Test
+    fun `uploadFile URL-encodes path segments`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(201))
+            val content = "data".toByteArray()
+
+            val result =
+                client.uploadFile(
+                    "Photos/Summer 2026",
+                    "beach photo.jpg",
+                    "image/jpeg",
+                    ByteArrayInputStream(content),
+                )
+
+            assertTrue(result.isSuccess)
+            val request = server.takeRequest()
+            assertTrue(request.path!!.contains("Summer%202026"))
+            assertTrue(request.path!!.contains("beach%20photo.jpg"))
+        }
 }

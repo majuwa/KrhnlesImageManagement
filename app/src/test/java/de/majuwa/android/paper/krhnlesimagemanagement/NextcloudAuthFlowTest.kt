@@ -307,4 +307,32 @@ class NextcloudAuthFlowTest {
             )
             assertTrue(states.any { it is LoginFlowState.Authenticated })
         }
+
+    @Test
+    fun `loginFlow fails with timeout when poll never succeeds`() =
+        runTest {
+            val pollUrl = mockWebServer.url("/poll").toString()
+            val loginUrl = mockWebServer.url("/login").toString()
+
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody(
+                    """
+                    {
+                      "poll": {"token": "tok123", "endpoint": "$pollUrl"},
+                      "login": "$loginUrl"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+            repeat(10) {
+                mockWebServer.enqueue(MockResponse().setResponseCode(404))
+            }
+
+            val repo = NextcloudAuthRepository(pollIntervalMs = 10, maxPollDurationMs = 50)
+            val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
+
+            val failed = states.filterIsInstance<LoginFlowState.Failed>()
+            assertTrue("Expected timeout failure state", failed.isNotEmpty())
+            assertTrue(failed.last().message.contains("timed out", ignoreCase = true))
+        }
 }
