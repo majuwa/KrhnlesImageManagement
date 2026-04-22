@@ -1,7 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
-import de.majuwa.android.paper.krhnlesimagemanagement.data.NextcloudAuthRepository
-import de.majuwa.android.paper.krhnlesimagemanagement.model.LoginFlowState
+import de.majuwa.android.nextcloudlogin.LoginFlowState
+import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.flow.toList
@@ -12,10 +12,6 @@ import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-
-@RunWith(RobolectricTestRunner::class)
 class NextcloudAuthFlowTest {
     private lateinit var mockWebServer: MockWebServer
     private val serverUrl: String
@@ -240,7 +236,7 @@ class NextcloudAuthFlowTest {
                 ),
             )
 
-            val repo = NextcloudAuthRepository()
+            val repo = NextcloudLoginFlow()
             val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
 
             val failed = states.filterIsInstance<LoginFlowState.Failed>()
@@ -266,7 +262,7 @@ class NextcloudAuthFlowTest {
                 ),
             )
 
-            val repo = NextcloudAuthRepository()
+            val repo = NextcloudLoginFlow()
             val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
 
             val failed = states.filterIsInstance<LoginFlowState.Failed>()
@@ -298,7 +294,7 @@ class NextcloudAuthFlowTest {
                 ),
             )
 
-            val repo = NextcloudAuthRepository()
+            val repo = NextcloudLoginFlow()
             val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
 
             assertFalse(
@@ -328,7 +324,7 @@ class NextcloudAuthFlowTest {
                 mockWebServer.enqueue(MockResponse().setResponseCode(404))
             }
 
-            val repo = NextcloudAuthRepository(pollIntervalMs = 10, maxPollDurationMs = 50)
+            val repo = NextcloudLoginFlow(pollIntervalMs = 10, maxPollDurationMs = 50)
             val states = repo.loginFlow(mockWebServer.url("").toString()).toList()
 
             val failed = states.filterIsInstance<LoginFlowState.Failed>()

@@ -5,10 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
-import de.majuwa.android.paper.krhnlesimagemanagement.data.NextcloudAuthRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
-import de.majuwa.android.paper.krhnlesimagemanagement.model.LoginFlowState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.nextcloudlogin.LoginFlowState
+import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,8 +40,8 @@ class SettingsViewModel
         application: Application,
         private val credentialStore: CredentialRepository =
             CredentialStore(application),
-        private val authRepository: NextcloudAuthRepository =
-            NextcloudAuthRepository(),
+        private val authRepository: NextcloudLoginFlow =
+            NextcloudLoginFlow(),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
