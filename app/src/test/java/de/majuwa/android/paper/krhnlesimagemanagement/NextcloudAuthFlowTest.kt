@@ -12,6 +12,7 @@ import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
+
 class NextcloudAuthFlowTest {
     private lateinit var mockWebServer: MockWebServer
     private val serverUrl: String

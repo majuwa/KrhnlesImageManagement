@@ -19,16 +19,14 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url = uri("https://maven.pkg.github.com/majuwa/login-flow-nextcloud")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("GITHUB_ACTOR")
-                password = providers.gradleProperty("gpr.token").orNull ?: System.getenv("GITHUB_TOKEN")
-            }
-        }
     }
 }
 
 rootProject.name = "Kröhnle's Image Management"
 include(":app")
+includeBuild("libs/login-flow-nextcloud") {
+    dependencySubstitution {
+        substitute(module("de.majuwa.android:login-flow-nextcloud")).using(project(":lib"))
+    }
+}
  

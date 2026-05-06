@@ -1,0 +1,3 @@
+[submodule "libs/login-flow-nextcloud"]
+	path = libs/login-flow-nextcloud
+	url = https://github.com/majuwa/login-flow-nextcloud

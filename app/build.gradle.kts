@@ -77,8 +77,8 @@ dependencies {
     // OkHttp
     implementation(libs.okhttp)
 
-    // Login Flow for Nextcloud
-    implementation("de.majuwa.android:login-flow-nextcloud:0.0.1")
+    // Login Flow for Nextcloud (resolved locally via composite build submodule)
+    implementation(libs.nextcloud.login.flow)
 
     // ML Kit (object detection for subject-region blur analysis)
     implementation(libs.mlkitObjectDetection)

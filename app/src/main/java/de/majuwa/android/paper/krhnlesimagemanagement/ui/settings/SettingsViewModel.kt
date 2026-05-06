@@ -3,12 +3,12 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.majuwa.android.nextcloudlogin.LoginFlowState
+import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
-import de.majuwa.android.nextcloudlogin.LoginFlowState
-import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
