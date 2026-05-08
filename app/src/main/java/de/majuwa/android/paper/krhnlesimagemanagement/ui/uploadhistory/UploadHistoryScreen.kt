@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,6 +39,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +84,15 @@ fun UploadHistoryScreen(
                 Text(stringResource(R.string.empty_upload_history))
             }
         } else {
-            val formatter = remember { DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT) }
+            val locales = LocalConfiguration.current.locales
+            val locale = if (locales.isEmpty()) Locale.getDefault() else locales[0]
+            val formatter =
+                remember(locale) {
+                    DateTimeFormatter
+                        .ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+                        .withLocale(locale)
+                        .withZone(ZoneId.systemDefault())
+                }
             LazyColumn(
                 modifier =
                     Modifier
@@ -134,13 +144,8 @@ private fun UploadHistoryItem(
     formatter: DateTimeFormatter,
     onDelete: () -> Unit,
 ) {
-    val uploadedCount = (entry.photoCount - entry.failedCount).coerceAtLeast(0)
-    val timestamp =
-        Instant
-            .ofEpochMilli(entry.timestampMillis)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDateTime()
-            .format(formatter)
+    val uploadedCount = entry.photoCount - entry.failedCount
+    val timestamp = formatter.format(Instant.ofEpochMilli(entry.timestampMillis))
 
     Card(
         modifier =

@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -27,6 +28,8 @@ class UploadWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
+    private val tag = "UploadWorker"
+
     companion object {
         const val KEY_QUEUE_FILE = "queue_file"
         const val KEY_PROGRESS = "progress"
@@ -143,6 +146,8 @@ class UploadWorker(
                     failedCount = failedCount,
                 ),
             )
+        }.onFailure { throwable ->
+            Log.w(tag, "Failed to persist upload history entry", throwable)
         }
     }
 

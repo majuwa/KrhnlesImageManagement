@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -19,6 +20,8 @@ private val Context.uploadHistoryDataStore: DataStore<Preferences> by preference
 class UploadHistoryStore(
     private val context: Context,
 ) : UploadHistoryRepository {
+    private val tag = "UploadHistoryStore"
+
     private companion object {
         val KEY_UPLOAD_HISTORY = stringPreferencesKey("upload_history_entries")
     }
@@ -29,6 +32,8 @@ class UploadHistoryStore(
         }
 
     override suspend fun addEntry(entry: UploadHistoryEntry) {
+        require(entry.photoCount >= 0) { "Photo count cannot be negative" }
+        require(entry.failedCount in 0..entry.photoCount) { "Failed count must be between 0 and total photo count" }
         context.uploadHistoryDataStore.edit { prefs ->
             val updated = decodeEntries(prefs[KEY_UPLOAD_HISTORY]).toMutableList().apply { add(entry) }
             prefs[KEY_UPLOAD_HISTORY] = encodeEntries(updated)
@@ -55,18 +60,25 @@ class UploadHistoryStore(
             buildList {
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
-                    add(
+                    val entry =
                         UploadHistoryEntry(
                             id = item.getLong("id"),
                             occasionName = item.getString("occasionName"),
                             timestampMillis = item.getLong("timestampMillis"),
                             photoCount = item.getInt("photoCount"),
                             failedCount = item.getInt("failedCount"),
-                        ),
-                    )
+                        )
+                    if (entry.photoCount >= 0 && entry.failedCount in 0..entry.photoCount) {
+                        add(entry)
+                    } else {
+                        Log.w(tag, "Skipping invalid upload history entry at index=$i")
+                    }
                 }
             }
-        }.getOrElse { emptyList() }
+        }.getOrElse { throwable ->
+            Log.e(tag, "Failed to parse upload history entries", throwable)
+            emptyList()
+        }
     }
 
     private fun encodeEntries(entries: List<UploadHistoryEntry>): String =
