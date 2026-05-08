@@ -1,0 +1,20 @@
+name: Create Labels
+on:
+  push:
+    paths:
+      - .github/workflows/create-labels.yml
+permissions:
+  issues: write
+jobs:
+  create-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create technical debt label
+        run: |
+          gh label create "technical debt" \
+            --color "e4e669" \
+            --description "Code quality improvements and refactoring" \
+            --repo majuwa/KrhnlesImageManagement \
+            || echo "Label may already exist"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
