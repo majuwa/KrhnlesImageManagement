@@ -100,7 +100,7 @@ class SettingsScreenTest {
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
         composeTestRule.onNodeWithText("Auto date folders").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText(
-            "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's capture date.",
+            "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's capture date (for example 2026/05-May).",
         ).assertIsDisplayed()
     }
 

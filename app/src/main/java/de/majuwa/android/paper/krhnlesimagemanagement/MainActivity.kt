@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
-            val queueFile = File(filesDir, "upload_queue_${UUID.randomUUID()}.json")
+            val queueFile = File(filesDir, "upload_queue_${System.currentTimeMillis()}_${UUID.randomUUID()}.json")
             queueFile.writeText(queue.toString())
 
             val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)

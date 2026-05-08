@@ -81,7 +81,7 @@
     <string name="placeholder_base_folder">Photos/KrohnSync</string>
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
     <string name="label_auto_date_folders">Auto date folders</string>
-    <string name="hint_auto_date_folders">Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo\'s capture date.</string>
+    <string name="hint_auto_date_folders">Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo\'s capture date (for example 2026/05-May).</string>
 
     <!-- Settings screen — login -->
     <string name="title_connect_nextcloud">Connect to Nextcloud</string>
