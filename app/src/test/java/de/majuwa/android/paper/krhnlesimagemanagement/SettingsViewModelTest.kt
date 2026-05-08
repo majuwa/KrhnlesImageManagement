@@ -159,6 +159,15 @@ class SettingsViewModelTest {
             assertEquals("NewFolder", viewModel.uiState.value.baseFolder)
         }
 
+    @Test
+    fun `setAutoDateFoldersEnabled persists via credential store`() =
+        runTest {
+            viewModel.setAutoDateFoldersEnabled(true)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.autoDateFoldersEnabled)
+        }
+
     // ── logout ──────────────────────────────────────────────────────────────
 
     @Test
@@ -172,6 +181,7 @@ class SettingsViewModelTest {
 
             assertFalse(viewModel.uiState.value.isLoggedIn)
             assertEquals("", viewModel.uiState.value.webDavUrl)
+            assertFalse(viewModel.uiState.value.autoDateFoldersEnabled)
         }
 
     // ── Security: HTTP warning ───────────────────────────────────────────────

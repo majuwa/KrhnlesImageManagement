@@ -50,6 +50,10 @@
         <item quantity="other">%d photos</item>
     </plurals>
     <string name="upload_progress">Uploading %1$d / %2$d</string>
+    <plurals name="toast_upload_started">
+        <item quantity="one">Queued %1$d upload for %2$d photos.</item>
+        <item quantity="other">Queued %1$d uploads for %2$d photos.</item>
+    </plurals>
 
     <!-- Permission -->
     <string name="permission_rationale">Photo access is required to browse your images.</string>
@@ -62,6 +66,12 @@
     <string name="dialog_upload_title">Upload Photos</string>
     <string name="dialog_upload_message">Enter the occasion or folder name for the upload:</string>
     <string name="label_occasion_name">Occasion / Folder Name</string>
+    <string name="dialog_auto_date_preview_title">Preview upload folders</string>
+    <plurals name="dialog_auto_date_preview_message">
+        <item quantity="one">The selected photos will upload to this folder:</item>
+        <item quantity="other">The selected photos will be split into %d folders:</item>
+    </plurals>
+    <string name="preview_upload_path">• %s</string>
 
     <!-- Settings screen — logged-in -->
     <string name="status_connected">Connected</string>
@@ -70,6 +80,8 @@
     <string name="label_base_folder">Base upload folder</string>
     <string name="placeholder_base_folder">Photos/KrohnSync</string>
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
+    <string name="label_auto_date_folders">Auto date folders</string>
+    <string name="hint_auto_date_folders">Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo\'s capture date.</string>
 
     <!-- Settings screen — login -->
     <string name="title_connect_nextcloud">Connect to Nextcloud</string>

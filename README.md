@@ -6,7 +6,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 
 - **Local Image Grid:** Browse photos stored on your device in a clean, high-performance grid.
 - **Smart Selection:** Select images individually or batch-select them grouped by date.
-- **Custom Occasions:** Give your upload batch a custom name or occasion (e.g., "Summer Vacation 2026") to automatically create and organize folders on your cloud.
+- **Custom or Automatic Foldering:** Either give each upload a custom occasion name (e.g., "Summer Vacation 2026") or enable automatic `YYYY/MM-Month` folders for quick archive uploads.
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.
 - **WebDAV & Nextcloud Native:** Direct integration with your self-hosted storage.
 - **Secure Login:** Nextcloud Login Flow v2 (browser-based) or manual WebDAV configuration. Credentials are encrypted at rest.
@@ -50,10 +50,14 @@ A lightweight, privacy-focused Android application designed to selectively back 
 2. Enter the full WebDAV URL, username, and password/app token
 3. Tap "Save & Connect"
 
+### Upload Options
+- **Base upload folder:** Choose the remote root folder that all uploads go into.
+- **Auto date folders:** Optional toggle in Settings that skips the occasion dialog and uploads into `YYYY/MM-Month` folders such as `Photos/2026/05-May/`. Selections that span multiple months are queued as separate background uploads automatically.
+
 ### Usage
 1. Grant photo access when prompted
 2. Browse your photos grouped by date
 3. Tap individual photos or date headers to select
 4. Tap the upload FAB (cloud icon) when photos are selected
-5. Enter an occasion/folder name and confirm
+5. Either enter an occasion/folder name, or confirm the auto-date folder preview if that mode is enabled
 6. Upload proceeds in the background with notification progress

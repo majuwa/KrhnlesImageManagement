@@ -90,6 +90,20 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Save folder").assertIsDisplayed()
     }
 
+    @Test
+    fun `shows auto date folders setting when logged in`() {
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            }
+        }
+        composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
+        composeTestRule.onNodeWithText("Auto date folders").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's capture date.",
+        ).assertIsDisplayed()
+    }
+
     // ── Logged-out state ────────────────────────────────────────────────────
 
     @Test

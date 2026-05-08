@@ -8,9 +8,12 @@ import kotlinx.coroutines.flow.map
 
 class FakeCredentialRepository(
     initialConfig: WebDavConfig = WebDavConfig(),
+    initialAutoDateFoldersEnabled: Boolean = false,
 ) : CredentialRepository {
     private val configState = MutableStateFlow(initialConfig)
+    private val autoDateFoldersState = MutableStateFlow(initialAutoDateFoldersEnabled)
 
+    override val autoDateFoldersEnabled: Flow<Boolean> = autoDateFoldersState
     override val webDavConfig: Flow<WebDavConfig> = configState
 
     override val isConfigured: Flow<Boolean> =
@@ -37,7 +40,12 @@ class FakeCredentialRepository(
         configState.value = configState.value.copy(baseFolder = folder.trim('/'))
     }
 
+    override suspend fun saveAutoDateFolders(enabled: Boolean) {
+        autoDateFoldersState.value = enabled
+    }
+
     override suspend fun clear() {
         configState.value = WebDavConfig()
+        autoDateFoldersState.value = false
     }
 }

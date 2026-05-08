@@ -69,6 +69,9 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.previewUploadPath
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatches
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -78,10 +81,12 @@ import java.time.format.FormatStyle
 fun PhotoGridScreen(
     viewModel: PhotoGridViewModel,
     onNavigateToSettings: () -> Unit,
-    onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit,
+    onStartUpload: (batches: List<UploadBatch>) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val autoDateFoldersEnabled by viewModel.autoDateFoldersEnabled.collectAsStateWithLifecycle()
     val isConfigured by viewModel.isConfigured.collectAsStateWithLifecycle()
+    val uploadBaseFolder by viewModel.uploadBaseFolder.collectAsStateWithLifecycle()
     val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -144,7 +149,14 @@ fun PhotoGridScreen(
     // Show not-configured dialog on first launch if no server is set up
     LaunchedEffect(isConfigured) {
         if (!isConfigured) {
+            viewModel.dismissAutoDateFolderPreviewDialog()
             viewModel.dismissOccasionDialog()
+        }
+    }
+
+    LaunchedEffect(autoDateFoldersEnabled) {
+        if (!autoDateFoldersEnabled) {
+            viewModel.dismissAutoDateFolderPreviewDialog()
         }
     }
 
@@ -221,11 +233,25 @@ fun PhotoGridScreen(
     }
 
     if (uiState.showOccasionDialog) {
+        val selectedPhotos = viewModel.getSelectedPhotos()
         OccasionDialog(
             onDismiss = { viewModel.dismissOccasionDialog() },
             onConfirm = { occasionName ->
                 viewModel.dismissOccasionDialog()
-                onStartUpload(occasionName, viewModel.getSelectedPhotos())
+                onStartUpload(listOf(UploadBatch(occasionName, selectedPhotos)))
+                viewModel.clearSelection()
+            },
+        )
+    }
+
+    if (uiState.showAutoDateFolderPreviewDialog && autoDateFoldersEnabled) {
+        val uploadBatches = resolveAutoDateUploadBatches(viewModel.getSelectedPhotos())
+        AutoDateFolderPreviewDialog(
+            previewPaths = uploadBatches.map { previewUploadPath(uploadBaseFolder, it.folderName) },
+            onDismiss = { viewModel.dismissAutoDateFolderPreviewDialog() },
+            onConfirm = {
+                viewModel.dismissAutoDateFolderPreviewDialog()
+                onStartUpload(uploadBatches)
                 viewModel.clearSelection()
             },
         )
@@ -240,6 +266,42 @@ fun PhotoGridScreen(
             },
         )
     }
+}
+
+@Composable
+private fun AutoDateFolderPreviewDialog(
+    previewPaths: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dialog_auto_date_preview_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    pluralStringResource(
+                        R.plurals.dialog_auto_date_preview_message,
+                        previewPaths.size,
+                        previewPaths.size,
+                    ),
+                )
+                previewPaths.forEach { previewPath ->
+                    Text(stringResource(R.string.preview_upload_path, previewPath))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = previewPaths.isNotEmpty()) {
+                Text(stringResource(R.string.action_upload))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
 }
 
 @Composable

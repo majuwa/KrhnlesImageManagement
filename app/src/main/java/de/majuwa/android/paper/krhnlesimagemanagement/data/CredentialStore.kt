@@ -7,6 +7,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -33,6 +34,7 @@ class CredentialStore(
     private val context: Context,
 ) : CredentialRepository {
     private companion object {
+        val KEY_AUTO_DATE_FOLDERS = booleanPreferencesKey("auto_date_folders")
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
     }
@@ -42,6 +44,8 @@ class CredentialStore(
     }
 
     val serverUrl: Flow<String?> = context.credentialDataStore.data.map { it[KEY_SERVER_URL] }
+    override val autoDateFoldersEnabled: Flow<Boolean> =
+        context.credentialDataStore.data.map { it[KEY_AUTO_DATE_FOLDERS] ?: false }
 
     // Username is read from encrypted prefs, but piggybacks on DataStore emissions
     // (DataStore is always updated alongside encrypted prefs in save()).
@@ -85,6 +89,10 @@ class CredentialStore(
 
     override suspend fun saveBaseFolder(folder: String) {
         context.credentialDataStore.edit { it[KEY_BASE_FOLDER] = folder.trim('/') }
+    }
+
+    override suspend fun saveAutoDateFolders(enabled: Boolean) {
+        context.credentialDataStore.edit { it[KEY_AUTO_DATE_FOLDERS] = enabled }
     }
 
     override suspend fun clear() {
