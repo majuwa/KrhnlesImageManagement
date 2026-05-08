@@ -292,7 +292,7 @@ private fun AutoDateFolderPreviewDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = previewPaths.isNotEmpty()) {
+            TextButton(onClick = onConfirm) {
                 Text(stringResource(R.string.action_upload))
             }
         },

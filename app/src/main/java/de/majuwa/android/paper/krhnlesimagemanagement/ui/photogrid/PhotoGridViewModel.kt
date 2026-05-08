@@ -138,12 +138,12 @@ class PhotoGridViewModel
         fun onUploadRequested() {
             if (isConfigured.value) {
                 if (autoDateFoldersEnabled.value) {
-                    showDialog(autoDatePreview = true)
+                    setDialogState(autoDatePreview = true)
                 } else {
-                    showDialog(occasion = true)
+                    setDialogState(occasion = true)
                 }
             } else {
-                showDialog(notConfigured = true)
+                setDialogState(notConfigured = true)
             }
         }
 
@@ -187,7 +187,7 @@ class PhotoGridViewModel
                 .filter { it.id in state.selectedPhotoIds }
         }
 
-        private fun showDialog(
+        private fun setDialogState(
             autoDatePreview: Boolean = false,
             occasion: Boolean = false,
             notConfigured: Boolean = false,
