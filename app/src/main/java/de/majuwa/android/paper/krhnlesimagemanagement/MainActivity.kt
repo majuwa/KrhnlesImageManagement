@@ -23,18 +23,17 @@ import org.json.JSONObject
 import java.io.File
 
 class MainActivity : ComponentActivity() {
-    private lateinit var credentialStore: CredentialStore
-    private lateinit var wifiOnly: StateFlow<Boolean>
+    private val credentialStore by lazy { CredentialStore(this) }
+    private val wifiOnly: StateFlow<Boolean> by lazy {
+        credentialStore.wifiOnly.stateIn(
+            scope = lifecycleScope,
+            started = SharingStarted.Eagerly,
+            initialValue = false,
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        credentialStore = CredentialStore(this)
-        wifiOnly =
-            credentialStore.wifiOnly.stateIn(
-                scope = lifecycleScope,
-                started = SharingStarted.Eagerly,
-                initialValue = false,
-            )
         enableEdgeToEdge()
         setContent {
             KrhnlesImageManagementTheme {
@@ -78,11 +77,9 @@ class MainActivity : ComponentActivity() {
         val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)
 
         val constraints =
-            if (wifiOnly.value) {
-                Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build()
-            } else {
-                Constraints()
-            }
+            Constraints.Builder()
+                .apply { if (wifiOnly.value) setRequiredNetworkType(NetworkType.UNMETERED) }
+                .build()
 
         val uploadRequest =
             OneTimeWorkRequestBuilder<UploadWorker>()
