@@ -14,6 +14,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,7 +56,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
-            val queueFile = File(filesDir, "upload_queue_${System.currentTimeMillis()}_$index.json")
+            val queueFile = File(filesDir, "upload_queue_${index}_${UUID.randomUUID()}.json")
             queueFile.writeText(queue.toString())
 
             val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)
