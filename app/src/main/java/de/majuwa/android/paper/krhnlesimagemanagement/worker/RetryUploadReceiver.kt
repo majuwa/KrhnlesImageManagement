@@ -21,9 +21,9 @@ class RetryUploadReceiver : BroadcastReceiver() {
             return
         }
 
-        val filesDir = context.filesDir.canonicalPath
+        val filesDirPath = context.filesDir.canonicalFile.toPath()
         val queueFile = File(queueFilePath)
-        if (!queueFile.canonicalPath.startsWith("$filesDir/")) {
+        if (!queueFile.canonicalFile.toPath().startsWith(filesDirPath)) {
             Log.w(TAG, "Retry queue file path is outside expected directory — ignoring.")
             return
         }

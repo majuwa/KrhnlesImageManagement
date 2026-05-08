@@ -24,13 +24,14 @@ import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-
-private data class UploadFilesResult(val uploaded: Int, val failedIndices: List<Int>)
+import java.util.UUID
 
 class UploadWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
+    private data class UploadFilesResult(val uploaded: Int, val failedIndices: List<Int>)
+
     companion object {
         const val KEY_QUEUE_FILE = "queue_file"
         const val KEY_PROGRESS = "progress"
@@ -190,7 +191,7 @@ class UploadWorker(
                     )
                 }
             val retryFile =
-                File(applicationContext.filesDir, "retry_queue_${System.currentTimeMillis()}.json")
+                File(applicationContext.filesDir, "retry_queue_${UUID.randomUUID()}.json")
             retryFile.writeText(queue.toString())
             retryFile
         } catch (e: Exception) {

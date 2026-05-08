@@ -10,6 +10,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.worker.RetryUploadReceiver
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Before
@@ -90,6 +91,24 @@ class RetryUploadReceiverTest {
     }
 
     @Test
+    fun retryUploadReceiver_rejectsRelativePathTraversal() {
+        val traversalPath = context.filesDir.absolutePath + "/../../../etc/passwd"
+        val intent =
+            Intent(context, RetryUploadReceiver::class.java).apply {
+                putExtra(RetryUploadReceiver.EXTRA_QUEUE_FILE, traversalPath)
+            }
+
+        val receiver = RetryUploadReceiver()
+        receiver.onReceive(context, intent)
+
+        val workInfos =
+            WorkManager.getInstance(context)
+                .getWorkInfosByTag("photo_upload")
+                .get()
+        assertTrue(workInfos.isEmpty())
+    }
+
+    @Test
     fun retryQueueFile_hasCorrectJsonStructure() {
         val retryFile = File(context.filesDir, "retry_queue_structure_test.json")
         val json =
@@ -97,7 +116,7 @@ class RetryUploadReceiverTest {
                 put("folderName", "VacationPhotos")
                 put(
                     "photos",
-                    org.json.JSONArray().also { arr ->
+                    JSONArray().also { arr ->
                         arr.put(
                             JSONObject().apply {
                                 put("uri", "content://media/external/images/media/1")
