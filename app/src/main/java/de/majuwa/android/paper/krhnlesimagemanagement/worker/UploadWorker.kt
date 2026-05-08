@@ -64,8 +64,14 @@ class UploadWorker(
         }
 
         val remotePath = "${config.uploadPathPrefix}$folderName"
-        return executeUpload(config, remotePath, folderName, uriStrings, mimeTypes, fileNames)
-            .also { queueFile.delete() }
+        return executeUpload(
+            config,
+            remoteFolderPath = remotePath,
+            folderName = folderName,
+            uriStrings,
+            mimeTypes,
+            fileNames,
+        ).also { queueFile.delete() }
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
@@ -75,8 +81,8 @@ class UploadWorker(
 
     private suspend fun executeUpload(
         config: WebDavConfig,
+        remoteFolderPath: String,
         folderName: String,
-        originalFolderName: String,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
@@ -86,7 +92,7 @@ class UploadWorker(
         createNotificationChannel()
         setForeground(buildForegroundInfo(0, uriStrings.size))
 
-        val createResult = client.createDirectory(folderName)
+        val createResult = client.createDirectory(remoteFolderPath)
         if (createResult.isFailure) {
             showFailureNotification(
                 "Failed to create folder: ${createResult.exceptionOrNull()?.message}",
@@ -96,13 +102,13 @@ class UploadWorker(
             )
         }
 
-        val result = uploadFiles(client, folderName, uriStrings, mimeTypes, fileNames)
+        val result = uploadFiles(client, remoteFolderPath, uriStrings, mimeTypes, fileNames)
         val failed = result.failedIndices.size
 
         val retryQueueFilePath =
             if (result.failedIndices.isNotEmpty()) {
                 writeRetryQueueFile(
-                    originalFolderName,
+                    folderName,
                     result.failedIndices,
                     uriStrings,
                     mimeTypes,
@@ -124,7 +130,7 @@ class UploadWorker(
 
     private suspend fun uploadFiles(
         client: WebDavClient,
-        folderName: String,
+        remoteFolderPath: String,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
@@ -142,7 +148,7 @@ class UploadWorker(
 
             val uploadResult =
                 inputStream.use {
-                    client.uploadFile(folderName, fileNames[i], mimeTypes[i], it)
+                    client.uploadFile(remoteFolderPath, fileNames[i], mimeTypes[i], it)
                 }
 
             if (uploadResult.isSuccess) uploaded++ else failedIndices.add(i)
@@ -168,10 +174,6 @@ class UploadWorker(
         fileNames: Array<String>,
     ): File? =
         try {
-            applicationContext.filesDir
-                .listFiles { f -> f.name.startsWith("retry_queue_") && f.name.endsWith(".json") }
-                ?.forEach { it.delete() }
-
             val queue =
                 JSONObject().apply {
                     put("folderName", folderName)
