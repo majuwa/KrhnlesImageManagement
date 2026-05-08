@@ -45,3 +45,11 @@ interface AlbumsRepositoryContract {
 interface MediaRepositoryContract {
     suspend fun loadPhotos(): List<Photo>
 }
+
+interface UploadedPhotosRepositoryContract {
+    val uploadedPhotoIds: Flow<Set<Long>>
+
+    suspend fun markAsUploaded(photoIds: Set<Long>)
+
+    suspend fun clear()
+}

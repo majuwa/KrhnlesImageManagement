@@ -2,10 +2,12 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -26,6 +28,7 @@ import org.robolectric.RuntimeEnvironment
 class SettingsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeCredentials: FakeCredentialRepository
+    private lateinit var fakeUploadedPhotos: FakeUploadedPhotosRepository
     private lateinit var viewModel: SettingsViewModel
 
     @Before
@@ -40,11 +43,13 @@ class SettingsViewModelTest {
                     baseFolder = "Photos",
                 ),
             )
+        fakeUploadedPhotos = FakeUploadedPhotosRepository()
         val app = RuntimeEnvironment.getApplication() as Application
         viewModel =
             SettingsViewModel(
                 application = app,
                 credentialStore = fakeCredentials,
+                uploadedPhotosRepository = fakeUploadedPhotos,
             )
     }
 
@@ -174,6 +179,18 @@ class SettingsViewModelTest {
             assertEquals("", viewModel.uiState.value.webDavUrl)
         }
 
+    @Test
+    fun `logout clears uploaded photo tracking`() =
+        runTest {
+            fakeUploadedPhotos.markAsUploaded(setOf(1L, 2L, 3L))
+            advanceUntilIdle()
+
+            viewModel.logout()
+            advanceUntilIdle()
+
+            assertTrue(fakeUploadedPhotos.uploadedPhotoIds.first().isEmpty())
+        }
+
     // ── Security: HTTP warning ───────────────────────────────────────────────
 
     @Test
@@ -208,3 +225,4 @@ class SettingsViewModelTest {
         assertFalse(viewModel.uiState.value.httpWarning)
     }
 }
+

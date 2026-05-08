@@ -19,6 +19,8 @@
     <string name="action_show_manual_config">Manual WebDAV config</string>
     <string name="action_find_blurry">Find blurry</string>
     <string name="action_find_duplicates">Find duplicates</string>
+    <string name="action_show_only_new">New only</string>
+    <string name="action_show_all_photos">All photos</string>
 
     <!-- Content descriptions -->
     <string name="cd_settings">Settings</string>
@@ -32,6 +34,7 @@
     <string name="cd_selected_for_deletion">Selected for deletion</string>
     <string name="cd_marked_for_deletion">Marked for deletion</string>
     <string name="cd_close_preview">Close preview</string>
+    <string name="cd_already_uploaded">Already uploaded</string>
 
     <!-- Titles -->
     <string name="title_settings">Settings</string>

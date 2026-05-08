@@ -7,6 +7,8 @@ import de.majuwa.android.nextcloudlogin.LoginFlowState
 import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,8 @@ class SettingsViewModel
             CredentialStore(application),
         private val authRepository: NextcloudLoginFlow =
             NextcloudLoginFlow(),
+        private val uploadedPhotosRepository: UploadedPhotosRepositoryContract =
+            UploadedPhotosStore(application),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -183,6 +187,7 @@ class SettingsViewModel
         fun logout() {
             viewModelScope.launch {
                 credentialStore.clear()
+                uploadedPhotosRepository.clear()
                 _uiState.update { SettingsUiState() }
             }
         }

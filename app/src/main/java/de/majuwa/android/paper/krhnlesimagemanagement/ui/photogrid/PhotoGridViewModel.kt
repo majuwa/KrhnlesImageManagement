@@ -9,6 +9,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +33,8 @@ data class UploadProgress(
 data class PhotoGridUiState(
     val photosByDate: Map<LocalDate, List<Photo>> = emptyMap(),
     val selectedPhotoIds: Set<Long> = emptySet(),
+    val uploadedPhotoIds: Set<Long> = emptySet(),
+    val showOnlyNewPhotos: Boolean = false,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val error: String? = null,
@@ -47,11 +51,29 @@ class PhotoGridViewModel
             MediaRepository(application.contentResolver),
         private val credentialStore: CredentialRepository =
             CredentialStore(application),
+        private val uploadedPhotosRepository: UploadedPhotosRepositoryContract =
+            UploadedPhotosStore(application),
         private val workManager: WorkManager =
             WorkManager.getInstance(application),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(PhotoGridUiState())
         val uiState: StateFlow<PhotoGridUiState> = _uiState.asStateFlow()
+
+        // All loaded photos (unfiltered) — source of truth for the filter.
+        private var allPhotosByDate: Map<LocalDate, List<Photo>> = emptyMap()
+
+        init {
+            viewModelScope.launch {
+                uploadedPhotosRepository.uploadedPhotoIds.collect { ids ->
+                    _uiState.update { state ->
+                        state.copy(
+                            uploadedPhotoIds = ids,
+                            photosByDate = computeDisplayedPhotos(allPhotosByDate, ids, state.showOnlyNewPhotos),
+                        )
+                    }
+                }
+            }
+        }
 
         // Observe active upload progress so the UI can show it while the app is open.
         // Android 12+ suppresses foreground-service notifications while the app is visible;
@@ -82,8 +104,12 @@ class PhotoGridViewModel
                             photos
                                 .groupBy { it.dateTaken }
                                 .toSortedMap(compareByDescending { it })
-                        _uiState.update {
-                            it.copy(photosByDate = grouped, isLoading = false)
+                        allPhotosByDate = grouped
+                        _uiState.update { state ->
+                            state.copy(
+                                photosByDate = computeDisplayedPhotos(grouped, state.uploadedPhotoIds, state.showOnlyNewPhotos),
+                                isLoading = false,
+                            )
                         }
                     }.onFailure { throwable ->
                         _uiState.update {
@@ -124,6 +150,17 @@ class PhotoGridViewModel
             _uiState.update { it.copy(selectedPhotoIds = emptySet()) }
         }
 
+        /** Toggles the "show only new (not yet uploaded) photos" filter. */
+        fun toggleShowOnlyNewPhotos() {
+            _uiState.update { state ->
+                val newToggle = !state.showOnlyNewPhotos
+                state.copy(
+                    showOnlyNewPhotos = newToggle,
+                    photosByDate = computeDisplayedPhotos(allPhotosByDate, state.uploadedPhotoIds, newToggle),
+                )
+            }
+        }
+
         /** Called when the FAB is tapped. Shows occasion dialog or not-configured dialog. */
         fun onUploadRequested() {
             if (isConfigured.value) {
@@ -151,8 +188,12 @@ class PhotoGridViewModel
                             photos
                                 .groupBy { it.dateTaken }
                                 .toSortedMap(compareByDescending { it })
-                        _uiState.update {
-                            it.copy(photosByDate = grouped, isRefreshing = false)
+                        allPhotosByDate = grouped
+                        _uiState.update { state ->
+                            state.copy(
+                                photosByDate = computeDisplayedPhotos(grouped, state.uploadedPhotoIds, state.showOnlyNewPhotos),
+                                isRefreshing = false,
+                            )
                         }
                     }.onFailure { throwable ->
                         _uiState.update {
@@ -168,4 +209,19 @@ class PhotoGridViewModel
                 .flatten()
                 .filter { it.id in state.selectedPhotoIds }
         }
+
+        private fun computeDisplayedPhotos(
+            allPhotos: Map<LocalDate, List<Photo>>,
+            uploadedIds: Set<Long>,
+            showOnlyNew: Boolean,
+        ): Map<LocalDate, List<Photo>> =
+            if (showOnlyNew && uploadedIds.isNotEmpty()) {
+                allPhotos
+                    .mapValues { (_, photos) -> photos.filter { it.id !in uploadedIds } }
+                    .filter { (_, photos) -> photos.isNotEmpty() }
+                    .toSortedMap(compareByDescending { it })
+            } else {
+                allPhotos
+            }
     }
+
