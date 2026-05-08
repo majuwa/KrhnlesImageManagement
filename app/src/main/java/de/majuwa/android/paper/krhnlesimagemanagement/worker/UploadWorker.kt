@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -166,6 +167,10 @@ class UploadWorker(
         fileNames: Array<String>,
     ): File? =
         try {
+            applicationContext.filesDir
+                .listFiles { f -> f.name.startsWith("retry_queue_") && f.name.endsWith(".json") }
+                ?.forEach { it.delete() }
+
             val queue =
                 JSONObject().apply {
                     put("folderName", folderName)
@@ -188,7 +193,8 @@ class UploadWorker(
                 File(applicationContext.filesDir, "retry_queue_${System.currentTimeMillis()}.json")
             retryFile.writeText(queue.toString())
             retryFile
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("UploadWorker", "Failed to write retry queue file", e)
             null
         }
 
