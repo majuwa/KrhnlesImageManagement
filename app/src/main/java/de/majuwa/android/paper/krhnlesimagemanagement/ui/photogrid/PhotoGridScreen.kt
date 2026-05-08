@@ -174,6 +174,8 @@ fun PhotoGridScreen(
                         }
                     }
                     if (uiState.uploadedPhotoIds.isNotEmpty() && uiState.selectedPhotoIds.isEmpty()) {
+                        // The filter button is hidden during selection mode to avoid
+                        // cluttering the top bar when the "Clear" action is already present.
                         IconButton(onClick = { viewModel.toggleShowOnlyNewPhotos() }) {
                             Icon(
                                 Icons.Default.FilterList,

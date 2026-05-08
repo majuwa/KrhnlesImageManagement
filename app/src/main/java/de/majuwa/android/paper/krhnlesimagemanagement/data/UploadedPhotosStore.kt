@@ -22,6 +22,9 @@ class UploadedPhotosStore(
 
     override val uploadedPhotoIds: Flow<Set<Long>> =
         context.uploadedPhotosDataStore.data.map { prefs ->
+            // Invalid (non-Long) string entries are silently skipped to guard against
+            // data corruption or future ID-type changes (e.g., Long → UUID migration)
+            // without crashing the app.
             prefs[KEY_UPLOADED_IDS]
                 ?.mapNotNull { it.toLongOrNull() }
                 ?.toSet()

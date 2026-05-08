@@ -42,7 +42,11 @@ class UploadWorker(
         val queue = JSONObject(queueFile.readText())
         val folderName = queue.getString("folderName")
         val photosArray = queue.getJSONArray("photos")
-        val photoIds = LongArray(photosArray.length()) { photosArray.getJSONObject(it).optLong("id", -1L) }
+        val photoIds = LongArray(photosArray.length()) {
+            // -1L is used as a sentinel for entries that pre-date this feature (no "id" field).
+            // Such entries are filtered out later in uploadFiles() so they are never marked as uploaded.
+            photosArray.getJSONObject(it).optLong("id", -1L)
+        }
         val uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") }
         val mimeTypes = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("mimeType") }
         val fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") }
