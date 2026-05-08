@@ -15,7 +15,9 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.first
 import org.json.JSONObject
@@ -46,6 +48,7 @@ class UploadWorker(
         val fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") }
 
         val credentialStore = CredentialStore(applicationContext)
+        val uploadHistoryStore = UploadHistoryStore(applicationContext)
         val config = credentialStore.webDavConfig.first()
 
         if (!config.isValid) {
@@ -56,7 +59,15 @@ class UploadWorker(
         }
 
         val remotePath = "${config.uploadPathPrefix}$folderName"
-        return executeUpload(config, remotePath, uriStrings, mimeTypes, fileNames)
+        return executeUpload(
+            config = config,
+            remotePath = remotePath,
+            occasionName = folderName,
+            uriStrings = uriStrings,
+            mimeTypes = mimeTypes,
+            fileNames = fileNames,
+            uploadHistoryStore = uploadHistoryStore,
+        )
             .also { queueFile.delete() }
     }
 
@@ -67,27 +78,44 @@ class UploadWorker(
 
     private suspend fun executeUpload(
         config: WebDavConfig,
-        folderName: String,
+        remotePath: String,
+        occasionName: String,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
+        uploadHistoryStore: UploadHistoryStore,
     ): Result {
         val client = WebDavClient(config)
 
         createNotificationChannel()
         setForeground(buildForegroundInfo(0, uriStrings.size))
 
-        val createResult = client.createDirectory(folderName)
+        val createResult = client.createDirectory(remotePath)
         if (createResult.isFailure) {
+            recordHistory(
+                uploadHistoryStore = uploadHistoryStore,
+                occasionName = occasionName,
+                photoCount = uriStrings.size,
+                failedCount = uriStrings.size,
+            )
             showFailureNotification(
-                "Failed to create folder: ${createResult.exceptionOrNull()?.message}",
+                applicationContext.getString(
+                    R.string.notification_create_folder_failed,
+                    createResult.exceptionOrNull()?.message ?: "",
+                ),
             )
             return Result.failure(
                 workDataOf("error" to createResult.exceptionOrNull()?.message),
             )
         }
 
-        val (uploaded, failed) = uploadFiles(client, folderName, uriStrings, mimeTypes, fileNames)
+        val (uploaded, failed) = uploadFiles(client, remotePath, uriStrings, mimeTypes, fileNames)
+        recordHistory(
+            uploadHistoryStore = uploadHistoryStore,
+            occasionName = occasionName,
+            photoCount = uriStrings.size,
+            failedCount = failed,
+        )
         showCompletionNotification(uploaded, failed)
 
         return Result.success(
@@ -96,6 +124,26 @@ class UploadWorker(
                 KEY_FAILED_COUNT to failed,
             ),
         )
+    }
+
+    private suspend fun recordHistory(
+        uploadHistoryStore: UploadHistoryStore,
+        occasionName: String,
+        photoCount: Int,
+        failedCount: Int,
+    ) {
+        val now = System.currentTimeMillis()
+        runCatching {
+            uploadHistoryStore.addEntry(
+                UploadHistoryEntry(
+                    id = now,
+                    occasionName = occasionName,
+                    timestampMillis = now,
+                    photoCount = photoCount,
+                    failedCount = failedCount,
+                ),
+            )
+        }
     }
 
     private suspend fun uploadFiles(

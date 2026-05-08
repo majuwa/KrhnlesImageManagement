@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -78,6 +79,7 @@ import java.time.format.FormatStyle
 fun PhotoGridScreen(
     viewModel: PhotoGridViewModel,
     onNavigateToSettings: () -> Unit,
+    onNavigateToUploadHistory: () -> Unit,
     onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -169,6 +171,9 @@ fun PhotoGridScreen(
                         TextButton(onClick = { viewModel.clearSelection() }) {
                             Text(stringResource(R.string.action_clear))
                         }
+                    }
+                    IconButton(onClick = onNavigateToUploadHistory) {
+                        Icon(Icons.Default.History, contentDescription = stringResource(R.string.cd_upload_history))
                     }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.cd_settings))

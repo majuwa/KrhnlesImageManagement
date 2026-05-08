@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 
@@ -44,4 +45,14 @@ interface AlbumsRepositoryContract {
 
 interface MediaRepositoryContract {
     suspend fun loadPhotos(): List<Photo>
+}
+
+interface UploadHistoryRepository {
+    val entries: Flow<List<UploadHistoryEntry>>
+
+    suspend fun addEntry(entry: UploadHistoryEntry)
+
+    suspend fun removeEntry(entryId: Long)
+
+    suspend fun clearAll()
 }

@@ -18,6 +18,7 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 ├── data/
 │   ├── MediaRepository.kt         # Queries device photos via ContentResolver
 │   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
+│   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
 │   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT) via OkHttp
 ├── ui/
@@ -25,6 +26,9 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── photogrid/
 │   │   ├── PhotoGridScreen.kt      # Main screen: LazyVerticalGrid with date headers
 │   │   └── PhotoGridViewModel.kt   # Manages photo loading, selection, grouping
+│   ├── uploadhistory/
+│   │   ├── UploadHistoryScreen.kt    # Upload log list + clear actions
+│   │   └── UploadHistoryViewModel.kt # Exposes persisted upload history
 │   └── settings/
 │       ├── SettingsScreen.kt        # Nextcloud login + manual WebDAV config
 │       └── SettingsViewModel.kt     # Auth state + connection test
@@ -51,6 +55,7 @@ Credentials are stored securely:
 3. **Upload Trigger**: FAB → occasion dialog → `WorkManager.enqueue(UploadWorker)`
 4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy)
 5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
+6. **History**: Upload outcomes are persisted via `UploadHistoryStore` and shown on the Upload History screen
 
 ## Upload Path Construction
 

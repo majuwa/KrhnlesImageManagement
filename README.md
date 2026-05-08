@@ -8,6 +8,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Smart Selection:** Select images individually or batch-select them grouped by date.
 - **Custom Occasions:** Give your upload batch a custom name or occasion (e.g., "Summer Vacation 2026") to automatically create and organize folders on your cloud.
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.
+- **Upload History:** Review past upload batches (folder, timestamp, succeeded/failed counts) and clear entries individually or all at once.
 - **WebDAV & Nextcloud Native:** Direct integration with your self-hosted storage.
 - **Secure Login:** Nextcloud Login Flow v2 (browser-based) or manual WebDAV configuration. Credentials are encrypted at rest.
 - **Cloud Album Browser:** Browse albums (folders) stored on your WebDAV/Nextcloud server.
@@ -57,3 +58,4 @@ A lightweight, privacy-focused Android application designed to selectively back 
 4. Tap the upload FAB (cloud icon) when photos are selected
 5. Enter an occasion/folder name and confirm
 6. Upload proceeds in the background with notification progress
+7. Open the history icon in the Photos top bar to review previous upload results

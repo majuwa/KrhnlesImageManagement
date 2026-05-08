@@ -19,6 +19,7 @@
     <string name="action_show_manual_config">Manual WebDAV config</string>
     <string name="action_find_blurry">Find blurry</string>
     <string name="action_find_duplicates">Find duplicates</string>
+    <string name="action_clear_all">Clear all</string>
 
     <!-- Content descriptions -->
     <string name="cd_settings">Settings</string>
@@ -32,6 +33,9 @@
     <string name="cd_selected_for_deletion">Selected for deletion</string>
     <string name="cd_marked_for_deletion">Marked for deletion</string>
     <string name="cd_close_preview">Close preview</string>
+    <string name="cd_upload_history">Upload history</string>
+    <string name="cd_clear_upload_history">Clear upload history</string>
+    <string name="cd_delete_upload_history_entry">Delete upload history entry</string>
 
     <!-- Titles -->
     <string name="title_settings">Settings</string>
@@ -39,6 +43,7 @@
     <string name="title_album_default">Album</string>
     <string name="title_blurry_photos">Blurry photos</string>
     <string name="title_find_duplicates">Find duplicates</string>
+    <string name="title_upload_history">Upload history</string>
 
     <!-- Format strings -->
     <plurals name="selected_count">
@@ -50,6 +55,7 @@
         <item quantity="other">%d photos</item>
     </plurals>
     <string name="upload_progress">Uploading %1$d / %2$d</string>
+    <string name="upload_history_counts">%1$d succeeded · %2$d failed</string>
 
     <!-- Permission -->
     <string name="permission_rationale">Photo access is required to browse your images.</string>
@@ -62,6 +68,8 @@
     <string name="dialog_upload_title">Upload Photos</string>
     <string name="dialog_upload_message">Enter the occasion or folder name for the upload:</string>
     <string name="label_occasion_name">Occasion / Folder Name</string>
+    <string name="dialog_clear_upload_history_title">Clear upload history?</string>
+    <string name="dialog_clear_upload_history_message">This removes all upload history entries.</string>
 
     <!-- Settings screen — logged-in -->
     <string name="status_connected">Connected</string>
@@ -87,6 +95,7 @@
 
     <!-- Albums -->
     <string name="empty_albums">No albums found.</string>
+    <string name="empty_upload_history">No upload history yet.</string>
     <string name="dialog_delete_album_title">Delete album?</string>
     <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos from the server? This cannot be undone.</string>
 
@@ -143,6 +152,7 @@
         <item quantity="other">%1$d uploaded, %2$d failed.</item>
     </plurals>
     <string name="notification_upload_failed">Upload failed</string>
+    <string name="notification_create_folder_failed">Failed to create folder: %1$s</string>
     <string name="channel_name_uploads">Photo Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
 </resources>
