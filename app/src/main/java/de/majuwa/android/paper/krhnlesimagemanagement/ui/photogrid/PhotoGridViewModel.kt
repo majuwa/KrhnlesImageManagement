@@ -192,6 +192,9 @@ class PhotoGridViewModel
             occasion: Boolean = false,
             notConfigured: Boolean = false,
         ) {
+            require(listOf(autoDatePreview, occasion, notConfigured).count { it } <= 1) {
+                "Only one dialog can be shown at a time."
+            }
             _uiState.update {
                 it.copy(
                     showAutoDateFolderPreviewDialog = autoDatePreview,

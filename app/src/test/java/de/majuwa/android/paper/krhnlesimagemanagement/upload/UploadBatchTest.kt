@@ -30,7 +30,7 @@ class UploadBatchTest {
                 ),
             )
 
-        assertEquals(listOf("2026/04-April", "2026/05-May"), batches.map { it.folderName })
+        assertEquals(listOf("2026/04-Apr", "2026/05-May"), batches.map { it.folderName })
         assertEquals(listOf(1L, 2L), batches.first().photos.map { it.id })
         assertEquals(listOf(3L), batches.last().photos.map { it.id })
     }

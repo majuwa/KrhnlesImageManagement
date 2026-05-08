@@ -5,7 +5,7 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val monthFolderFormatter = DateTimeFormatter.ofPattern("MM-MMMM", Locale.ENGLISH)
+private val monthFolderFormatter = DateTimeFormatter.ofPattern("MM-MMM", Locale.ENGLISH)
 
 data class UploadBatch(
     val folderName: String,
