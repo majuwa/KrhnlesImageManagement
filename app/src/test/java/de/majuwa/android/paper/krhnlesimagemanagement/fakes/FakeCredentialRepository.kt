@@ -8,13 +8,17 @@ import kotlinx.coroutines.flow.map
 
 class FakeCredentialRepository(
     initialConfig: WebDavConfig = WebDavConfig(),
+    initialWifiOnly: Boolean = false,
 ) : CredentialRepository {
     private val configState = MutableStateFlow(initialConfig)
+    private val wifiOnlyState = MutableStateFlow(initialWifiOnly)
 
     override val webDavConfig: Flow<WebDavConfig> = configState
 
     override val isConfigured: Flow<Boolean> =
         configState.map { it.isValid }
+
+    override val wifiOnly: Flow<Boolean> = wifiOnlyState
 
     override fun password(): String? = configState.value.password.ifBlank { null }
 
@@ -36,6 +40,13 @@ class FakeCredentialRepository(
     override suspend fun saveBaseFolder(folder: String) {
         configState.value = configState.value.copy(baseFolder = folder.trim('/'))
     }
+
+    override suspend fun saveWifiOnly(wifiOnly: Boolean) {
+        wifiOnlyState.value = wifiOnly
+    }
+
+    /** Test helper to read the current wi-fi only value synchronously. */
+    fun wifiOnlyValue(): Boolean = wifiOnlyState.value
 
     override suspend fun clear() {
         configState.value = WebDavConfig()

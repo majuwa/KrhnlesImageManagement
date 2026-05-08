@@ -7,6 +7,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -35,6 +36,7 @@ class CredentialStore(
     private companion object {
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
+        val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only")
     }
 
     private val securePrefs: SharedPreferences by lazy {
@@ -47,6 +49,8 @@ class CredentialStore(
     // (DataStore is always updated alongside encrypted prefs in save()).
     val username: Flow<String?> = context.credentialDataStore.data.map { username() }
     val baseFolder: Flow<String> = context.credentialDataStore.data.map { it[KEY_BASE_FOLDER] ?: "" }
+
+    override val wifiOnly: Flow<Boolean> = context.credentialDataStore.data.map { it[KEY_WIFI_ONLY] ?: false }
 
     override val isConfigured: Flow<Boolean> =
         context.credentialDataStore.data.map { prefs ->
@@ -85,6 +89,10 @@ class CredentialStore(
 
     override suspend fun saveBaseFolder(folder: String) {
         context.credentialDataStore.edit { it[KEY_BASE_FOLDER] = folder.trim('/') }
+    }
+
+    override suspend fun saveWifiOnly(wifiOnly: Boolean) {
+        context.credentialDataStore.edit { it[KEY_WIFI_ONLY] = wifiOnly }
     }
 
     override suspend fun clear() {

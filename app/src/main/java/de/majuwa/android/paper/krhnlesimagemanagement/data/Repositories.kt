@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 interface CredentialRepository {
     val isConfigured: Flow<Boolean>
     val webDavConfig: Flow<WebDavConfig>
+    val wifiOnly: Flow<Boolean>
 
     fun password(): String?
 
@@ -22,6 +23,8 @@ interface CredentialRepository {
     )
 
     suspend fun saveBaseFolder(folder: String)
+
+    suspend fun saveWifiOnly(wifiOnly: Boolean)
 
     suspend fun clear()
 }

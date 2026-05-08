@@ -5,19 +5,36 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private lateinit var credentialStore: CredentialStore
+    private lateinit var wifiOnly: StateFlow<Boolean>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        credentialStore = CredentialStore(this)
+        wifiOnly =
+            credentialStore.wifiOnly.stateIn(
+                scope = lifecycleScope,
+                started = SharingStarted.Eagerly,
+                initialValue = false,
+            )
         enableEdgeToEdge()
         setContent {
             KrhnlesImageManagementTheme {
@@ -60,9 +77,17 @@ class MainActivity : ComponentActivity() {
 
         val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)
 
+        val constraints =
+            if (wifiOnly.value) {
+                Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build()
+            } else {
+                Constraints()
+            }
+
         val uploadRequest =
             OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(inputData)
+                .setConstraints(constraints)
                 .addTag("photo_upload")
                 .build()
 
