@@ -9,7 +9,9 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareReceiverScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.util.parseSharedPhotos
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,13 +21,27 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val sharedPhotos = parseSharedPhotos(intent, contentResolver)
+
         setContent {
             KrhnlesImageManagementTheme {
-                KrhnlesApp(
-                    onStartUpload = { occasionName, photos ->
-                        enqueueUpload(occasionName, photos)
-                    },
-                )
+                if (sharedPhotos.isNotEmpty()) {
+                    ShareReceiverScreen(
+                        photoCount = sharedPhotos.size,
+                        onConfirm = { occasionName ->
+                            enqueueUpload(occasionName, sharedPhotos)
+                            finish()
+                        },
+                        onDismiss = { finish() },
+                    )
+                } else {
+                    KrhnlesApp(
+                        onStartUpload = { occasionName, photos ->
+                            enqueueUpload(occasionName, photos)
+                        },
+                    )
+                }
             }
         }
     }
@@ -70,8 +86,9 @@ class MainActivity : ComponentActivity() {
         Toast
             .makeText(
                 this,
-                "Uploading ${photos.size} photos to \"$occasionName\"...",
+                getString(R.string.toast_uploading, occasionName),
                 Toast.LENGTH_SHORT,
             ).show()
     }
 }
+
