@@ -30,10 +30,10 @@ fun parseSharedPhotos(
         }
 
     val today = LocalDate.now()
-    return uris.map { uri ->
+    return uris.mapIndexed { index, uri ->
         val meta = queryUriMetadata(contentResolver, uri)
         Photo(
-            id = uri.hashCode().toLong(),
+            id = index.toLong(),
             uri = uri,
             displayName = meta.displayName,
             dateTaken = today,

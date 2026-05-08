@@ -76,7 +76,7 @@ class ShareIntentParserTest {
     }
 
     @Test
-    fun `parseSharedPhotos assigns unique synthetic id per URI for ACTION_SEND`() {
+    fun `parseSharedPhotos assigns sequential id per URI for ACTION_SEND`() {
         val uri = Uri.parse("content://media/external/images/media/99")
         val intent =
             Intent(Intent.ACTION_SEND).apply {
@@ -86,7 +86,7 @@ class ShareIntentParserTest {
 
         val result = parseSharedPhotos(intent, contentResolver)
 
-        assertEquals(uri.hashCode().toLong(), result[0].id)
+        assertEquals(0L, result[0].id)
     }
 
     // ── ACTION_SEND_MULTIPLE ─────────────────────────────────────────────────
@@ -106,6 +106,8 @@ class ShareIntentParserTest {
         assertEquals(2, result.size)
         assertEquals(uri1, result[0].uri)
         assertEquals(uri2, result[1].uri)
+        assertEquals(0L, result[0].id)
+        assertEquals(1L, result[1].id)
     }
 
     @Test
