@@ -1,5 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui
 
+import android.app.Application
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -17,6 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class BottomNavLabelsTest {
@@ -25,6 +27,7 @@ class BottomNavLabelsTest {
 
     @Test
     fun `Photos nav label comes from string resource`() {
+        val expected = (RuntimeEnvironment.getApplication() as Application).getString(R.string.nav_photos)
         composeTestRule.setContent {
             KrhnlesImageManagementTheme {
                 NavigationBar {
@@ -37,11 +40,12 @@ class BottomNavLabelsTest {
                 }
             }
         }
-        composeTestRule.onNodeWithText("Photos").assertIsDisplayed()
+        composeTestRule.onNodeWithText(expected).assertIsDisplayed()
     }
 
     @Test
     fun `Albums nav label comes from string resource`() {
+        val expected = (RuntimeEnvironment.getApplication() as Application).getString(R.string.nav_albums)
         composeTestRule.setContent {
             KrhnlesImageManagementTheme {
                 NavigationBar {
@@ -54,6 +58,6 @@ class BottomNavLabelsTest {
                 }
             }
         }
-        composeTestRule.onNodeWithText("Albums").assertIsDisplayed()
+        composeTestRule.onNodeWithText(expected).assertIsDisplayed()
     }
 }
