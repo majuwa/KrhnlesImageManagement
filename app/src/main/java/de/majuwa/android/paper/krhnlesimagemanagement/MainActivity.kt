@@ -36,7 +36,7 @@ class MainActivity : ComponentActivity() {
         if (nonEmptyBatches.isEmpty()) return
 
         val workManager = WorkManager.getInstance(this)
-        nonEmptyBatches.forEachIndexed { index, batch ->
+        nonEmptyBatches.forEach { batch ->
             // WorkManager Data has a 10 KB limit — write photo list to a file instead.
             val queue =
                 JSONObject().apply {
@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
-            val queueFile = File(filesDir, "upload_queue_${index}_${UUID.randomUUID()}.json")
+            val queueFile = File(filesDir, "upload_queue_${UUID.randomUUID()}.json")
             queueFile.writeText(queue.toString())
 
             val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)

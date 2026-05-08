@@ -5,7 +5,7 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val autoDateFolderFormatter = DateTimeFormatter.ofPattern("MM-MMMM", Locale.ENGLISH)
+private val monthFolderFormatter = DateTimeFormatter.ofPattern("MM-MMMM", Locale.ENGLISH)
 
 data class UploadBatch(
     val folderName: String,
@@ -18,7 +18,7 @@ fun resolveAutoDateUploadBatches(photos: List<Photo>): List<UploadBatch> =
         .toSortedMap()
         .map { (month, monthPhotos) ->
             UploadBatch(
-                folderName = "${month.year}/${month.format(autoDateFolderFormatter)}",
+                folderName = "${month.year}/${month.format(monthFolderFormatter)}",
                 photos = monthPhotos.sortedWith(compareBy<Photo>({ it.dateTaken }, { it.id })),
             )
         }
