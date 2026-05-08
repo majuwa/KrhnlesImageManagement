@@ -41,6 +41,7 @@ class UploadWorker(
         const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "upload_channel"
         private const val REQUEST_CODE_RETRY = 2001
+        private const val TAG = "UploadWorker"
     }
 
     override suspend fun doWork(): Result {
@@ -197,7 +198,7 @@ class UploadWorker(
             retryFile.writeText(queue.toString())
             retryFile
         } catch (e: Exception) {
-            Log.w("UploadWorker", "Failed to write retry queue file", e)
+            Log.w(TAG, "Failed to write retry queue file", e)
             null
         }
 
