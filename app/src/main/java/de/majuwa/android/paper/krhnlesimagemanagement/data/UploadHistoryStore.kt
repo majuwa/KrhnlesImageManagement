@@ -32,8 +32,7 @@ class UploadHistoryStore(
         }
 
     override suspend fun addEntry(entry: UploadHistoryEntry) {
-        require(entry.photoCount >= 0) { "Photo count cannot be negative" }
-        require(entry.failedCount in 0..entry.photoCount) { "Failed count must be between 0 and total photo count" }
+        require(isValidEntry(entry)) { "Failed count must be between 0 and total photo count, and photo count must be non-negative" }
         context.uploadHistoryDataStore.edit { prefs ->
             val updated = decodeEntries(prefs[KEY_UPLOAD_HISTORY]).toMutableList().apply { add(entry) }
             prefs[KEY_UPLOAD_HISTORY] = encodeEntries(updated)
@@ -68,7 +67,7 @@ class UploadHistoryStore(
                             photoCount = item.getInt("photoCount"),
                             failedCount = item.getInt("failedCount"),
                         )
-                    if (entry.photoCount >= 0 && entry.failedCount in 0..entry.photoCount) {
+                    if (isValidEntry(entry)) {
                         add(entry)
                     } else {
                         Log.w(tag, "Skipping invalid upload history entry at index=$i")
@@ -95,4 +94,7 @@ class UploadHistoryStore(
                 )
             }
         }.toString()
+
+    private fun isValidEntry(entry: UploadHistoryEntry): Boolean =
+        entry.photoCount >= 0 && entry.failedCount in 0..entry.photoCount
 }

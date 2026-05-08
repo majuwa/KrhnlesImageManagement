@@ -85,7 +85,7 @@ fun UploadHistoryScreen(
             }
         } else {
             val locales = LocalConfiguration.current.locales
-            val locale = locales.get(0) ?: Locale.getDefault()
+            val locale = if (locales.isEmpty()) Locale.getDefault() else locales[0]
             val formatter =
                 remember(locale) {
                     DateTimeFormatter

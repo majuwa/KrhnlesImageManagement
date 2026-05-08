@@ -24,12 +24,13 @@ class UploadHistoryStoreTest {
     private lateinit var store: UploadHistoryStore
 
     @Before
-    fun setup() =
+    fun setup() {
         runTest {
             context = ApplicationProvider.getApplicationContext()
             store = UploadHistoryStore(context)
             store.clearAll()
         }
+    }
 
     @Test
     fun `entries persist across new store instances`() =
