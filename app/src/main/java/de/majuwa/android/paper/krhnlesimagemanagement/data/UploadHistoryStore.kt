@@ -32,7 +32,7 @@ class UploadHistoryStore(
         }
 
     override suspend fun addEntry(entry: UploadHistoryEntry) {
-        require(isValidEntry(entry)) { "Failed count must be between 0 and total photo count, and photo count must be non-negative" }
+        require(isValidEntry(entry)) { "failedCount must be between 0 and total photo count, and photo count must be non-negative" }
         context.uploadHistoryDataStore.edit { prefs ->
             val updated = decodeEntries(prefs[KEY_UPLOAD_HISTORY]).toMutableList().apply { add(entry) }
             prefs[KEY_UPLOAD_HISTORY] = encodeEntries(updated)

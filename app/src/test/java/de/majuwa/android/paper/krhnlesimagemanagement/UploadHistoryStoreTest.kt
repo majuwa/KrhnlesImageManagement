@@ -10,6 +10,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -25,11 +26,9 @@ class UploadHistoryStoreTest {
 
     @Before
     fun setup() {
-        runTest {
-            context = ApplicationProvider.getApplicationContext()
-            store = UploadHistoryStore(context)
-            store.clearAll()
-        }
+        context = ApplicationProvider.getApplicationContext()
+        store = UploadHistoryStore(context)
+        runBlocking { store.clearAll() }
     }
 
     @Test
