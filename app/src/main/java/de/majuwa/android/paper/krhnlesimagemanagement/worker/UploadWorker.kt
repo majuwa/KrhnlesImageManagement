@@ -61,10 +61,10 @@ class UploadWorker(
             )
         }
 
-        val remotePath = "${config.uploadPathPrefix}$folderName"
+        val remoteDirectory = "${config.uploadPathPrefix}$folderName"
         return executeUpload(
             config = config,
-            remotePath = remotePath,
+            remoteDirectory = remoteDirectory,
             occasionName = folderName,
             uriStrings = uriStrings,
             mimeTypes = mimeTypes,
@@ -81,7 +81,7 @@ class UploadWorker(
 
     private suspend fun executeUpload(
         config: WebDavConfig,
-        remotePath: String,
+        remoteDirectory: String,
         occasionName: String,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
@@ -93,7 +93,7 @@ class UploadWorker(
         createNotificationChannel()
         setForeground(buildForegroundInfo(0, uriStrings.size))
 
-        val createResult = client.createDirectory(remotePath)
+        val createResult = client.createDirectory(remoteDirectory)
         if (createResult.isFailure) {
             recordHistory(
                 uploadHistoryStore = uploadHistoryStore,
@@ -112,7 +112,7 @@ class UploadWorker(
             )
         }
 
-        val (uploaded, failed) = uploadFiles(client, remotePath, uriStrings, mimeTypes, fileNames)
+        val (uploaded, failed) = uploadFiles(client, remoteDirectory, uriStrings, mimeTypes, fileNames)
         recordHistory(
             uploadHistoryStore = uploadHistoryStore,
             occasionName = occasionName,
