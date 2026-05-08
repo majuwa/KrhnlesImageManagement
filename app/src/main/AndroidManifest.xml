@@ -35,6 +35,10 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".worker.RetryUploadReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

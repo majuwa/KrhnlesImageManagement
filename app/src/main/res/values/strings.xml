@@ -143,6 +143,7 @@
         <item quantity="other">%1$d uploaded, %2$d failed.</item>
     </plurals>
     <string name="notification_upload_failed">Upload failed</string>
+    <string name="notification_retry_failed">Retry Failed (%d)</string>
     <string name="channel_name_uploads">Photo Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
 </resources>

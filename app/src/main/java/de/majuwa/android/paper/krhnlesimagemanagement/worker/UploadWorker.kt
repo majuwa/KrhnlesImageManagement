@@ -3,7 +3,9 @@ package de.majuwa.android.paper.krhnlesimagemanagement.worker
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ServiceInfo
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -18,8 +20,11 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.first
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+
+private data class UploadFilesResult(val uploaded: Int, val failedIndices: List<Int>)
 
 class UploadWorker(
     context: Context,
@@ -31,8 +36,9 @@ class UploadWorker(
         const val KEY_TOTAL = "total"
         const val KEY_UPLOADED_COUNT = "uploaded_count"
         const val KEY_FAILED_COUNT = "failed_count"
+        const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "upload_channel"
-        private const val NOTIFICATION_ID = 1001
+        private const val REQUEST_CODE_RETRY = 2001
     }
 
     override suspend fun doWork(): Result {
@@ -56,7 +62,7 @@ class UploadWorker(
         }
 
         val remotePath = "${config.uploadPathPrefix}$folderName"
-        return executeUpload(config, remotePath, uriStrings, mimeTypes, fileNames)
+        return executeUpload(config, remotePath, folderName, uriStrings, mimeTypes, fileNames)
             .also { queueFile.delete() }
     }
 
@@ -68,6 +74,7 @@ class UploadWorker(
     private suspend fun executeUpload(
         config: WebDavConfig,
         folderName: String,
+        originalFolderName: String,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
@@ -87,12 +94,27 @@ class UploadWorker(
             )
         }
 
-        val (uploaded, failed) = uploadFiles(client, folderName, uriStrings, mimeTypes, fileNames)
-        showCompletionNotification(uploaded, failed)
+        val result = uploadFiles(client, folderName, uriStrings, mimeTypes, fileNames)
+        val failed = result.failedIndices.size
+
+        val retryQueueFilePath =
+            if (result.failedIndices.isNotEmpty()) {
+                writeRetryQueueFile(
+                    originalFolderName,
+                    result.failedIndices,
+                    uriStrings,
+                    mimeTypes,
+                    fileNames,
+                )?.absolutePath
+            } else {
+                null
+            }
+
+        showCompletionNotification(result.uploaded, failed, retryQueueFilePath)
 
         return Result.success(
             workDataOf(
-                KEY_UPLOADED_COUNT to uploaded,
+                KEY_UPLOADED_COUNT to result.uploaded,
                 KEY_FAILED_COUNT to failed,
             ),
         )
@@ -104,15 +126,15 @@ class UploadWorker(
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
-    ): Pair<Int, Int> {
+    ): UploadFilesResult {
         var uploaded = 0
-        var failed = 0
+        val failedIndices = mutableListOf<Int>()
 
         for (i in uriStrings.indices) {
             val uri = uriStrings[i].toUri()
             val inputStream = applicationContext.contentResolver.openInputStream(uri)
             if (inputStream == null) {
-                failed++
+                failedIndices.add(i)
                 continue
             }
 
@@ -121,7 +143,7 @@ class UploadWorker(
                     client.uploadFile(folderName, fileNames[i], mimeTypes[i], it)
                 }
 
-            if (uploadResult.isSuccess) uploaded++ else failed++
+            if (uploadResult.isSuccess) uploaded++ else failedIndices.add(i)
 
             val progress = i + 1
             setProgress(
@@ -133,8 +155,42 @@ class UploadWorker(
             setForeground(buildForegroundInfo(progress, uriStrings.size))
         }
 
-        return uploaded to failed
+        return UploadFilesResult(uploaded, failedIndices)
     }
+
+    private fun writeRetryQueueFile(
+        folderName: String,
+        failedIndices: List<Int>,
+        uriStrings: Array<String>,
+        mimeTypes: Array<String>,
+        fileNames: Array<String>,
+    ): File? =
+        try {
+            val queue =
+                JSONObject().apply {
+                    put("folderName", folderName)
+                    put(
+                        "photos",
+                        JSONArray().also { arr ->
+                            failedIndices.forEach { i ->
+                                arr.put(
+                                    JSONObject().apply {
+                                        put("uri", uriStrings[i])
+                                        put("mimeType", mimeTypes[i])
+                                        put("displayName", fileNames[i])
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
+            val retryFile =
+                File(applicationContext.filesDir, "retry_queue_${System.currentTimeMillis()}.json")
+            retryFile.writeText(queue.toString())
+            retryFile
+        } catch (_: Exception) {
+            null
+        }
 
     private fun buildForegroundInfo(
         current: Int,
@@ -170,6 +226,7 @@ class UploadWorker(
     private fun showCompletionNotification(
         uploaded: Int,
         failed: Int,
+        retryQueueFilePath: String? = null,
     ) {
         val text =
             if (failed == 0) {
@@ -186,15 +243,33 @@ class UploadWorker(
                     failed,
                 )
             }
-        val notification =
+        val builder =
             NotificationCompat
                 .Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle(applicationContext.getString(R.string.notification_upload_complete))
                 .setContentText(text)
                 .setOngoing(false)
-                .build()
-        notifyIfPermitted(notification)
+
+        if (failed > 0 && retryQueueFilePath != null) {
+            val retryIntent =
+                Intent(applicationContext, RetryUploadReceiver::class.java).apply {
+                    putExtra(RetryUploadReceiver.EXTRA_QUEUE_FILE, retryQueueFilePath)
+                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_ID, NOTIFICATION_ID)
+                }
+            val retryPendingIntent =
+                PendingIntent.getBroadcast(
+                    applicationContext,
+                    REQUEST_CODE_RETRY,
+                    retryIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            val retryLabel =
+                applicationContext.getString(R.string.notification_retry_failed, failed)
+            builder.addAction(0, retryLabel, retryPendingIntent)
+        }
+
+        notifyIfPermitted(builder.build())
     }
 
     private fun showFailureNotification(message: String) {
