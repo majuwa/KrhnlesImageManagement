@@ -126,6 +126,21 @@ class WebDavClientTest {
             assertTrue(result.exceptionOrNull()!!.message!!.contains("403"))
         }
 
+    @Test
+    fun `renameDirectory sends MOVE with encoded destination`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(201))
+
+            val result = client.renameDirectory("Photos/Old Album", "Photos/New Album")
+            assertTrue(result.isSuccess)
+
+            val request = server.takeRequest()
+            assertEquals("MOVE", request.method)
+            assertTrue(request.path!!.endsWith("/Photos/Old%20Album"))
+            assertTrue(request.getHeader("Destination")!!.endsWith("/Photos/New%20Album"))
+            assertEquals("F", request.getHeader("Overwrite"))
+        }
+
     // ── uploadFile ──────────────────────────────────────────────────────────
 
     @Test

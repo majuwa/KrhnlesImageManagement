@@ -19,7 +19,7 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── MediaRepository.kt         # Queries device photos via ContentResolver
 │   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
-│   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT) via OkHttp
+│   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT, MOVE) via OkHttp
 ├── ui/
 │   ├── theme/                # Material3 theme (Color, Type, Theme)
 │   ├── photogrid/
@@ -50,7 +50,8 @@ Credentials are stored securely:
 2. **Selection**: User taps photos or date headers → selection state in ViewModel
 3. **Upload Trigger**: FAB → occasion dialog → `WorkManager.enqueue(UploadWorker)`
 4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy)
-5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
+5. **Album Management**: The Albums flow lists remote directories and can rename an album in place via `WebDavClient.renameDirectory()` using WebDAV `MOVE`, updating UI state without re-fetching the full album list
+6. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
 
 ## Upload Path Construction
 

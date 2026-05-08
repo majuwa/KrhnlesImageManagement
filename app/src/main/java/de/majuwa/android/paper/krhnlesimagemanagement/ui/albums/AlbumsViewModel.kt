@@ -26,6 +26,7 @@ data class AlbumsState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val isDeletingAlbum: Boolean = false,
+    val isRenamingAlbum: Boolean = false,
 )
 
 data class AlbumDetailState(
@@ -286,6 +287,34 @@ class AlbumsViewModel
                         onComplete(true)
                     }.onFailure {
                         _albumsState.update { it.copy(isDeletingAlbum = false) }
+                        onComplete(false)
+                    }
+            }
+        }
+
+        fun renameAlbum(
+            album: RemoteAlbum,
+            newName: String,
+            onComplete: (success: Boolean) -> Unit,
+        ) {
+            viewModelScope.launch {
+                _albumsState.update { it.copy(isRenamingAlbum = true) }
+                val r = getRepo()
+                r
+                    .renameAlbum(album, newName)
+                    .onSuccess { renamedAlbum ->
+                        _albumsState.update { state ->
+                            state.copy(
+                                albums =
+                                    state.albums.map { existing ->
+                                        if (existing.href == album.href) renamedAlbum else existing
+                                    },
+                                isRenamingAlbum = false,
+                            )
+                        }
+                        onComplete(true)
+                    }.onFailure {
+                        _albumsState.update { it.copy(isRenamingAlbum = false) }
                         onComplete(false)
                     }
             }

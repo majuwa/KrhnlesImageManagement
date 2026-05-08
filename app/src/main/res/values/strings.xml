@@ -8,6 +8,7 @@
     <string name="action_upload">Upload</string>
     <string name="action_retry">Retry</string>
     <string name="action_configure">Configure</string>
+    <string name="action_rename">Rename</string>
     <string name="action_setup_later">Set up later</string>
     <string name="action_grant_permission">Grant Permission</string>
     <string name="action_save_folder">Save folder</string>
@@ -89,6 +90,12 @@
     <string name="empty_albums">No albums found.</string>
     <string name="dialog_delete_album_title">Delete album?</string>
     <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos from the server? This cannot be undone.</string>
+    <string name="dialog_rename_album_title">Rename album</string>
+    <string name="label_album_name">Album name</string>
+    <string name="error_album_name_blank">Please enter an album name.</string>
+    <string name="error_album_name_unchanged">Please choose a different album name.</string>
+    <string name="snackbar_delete_album_failed">Failed to delete album \"%1$s\".</string>
+    <string name="snackbar_rename_album_failed">Failed to rename album \"%1$s\".</string>
 
     <!-- Album detail -->
     <string name="empty_album_photos">No photos in this album.</string>

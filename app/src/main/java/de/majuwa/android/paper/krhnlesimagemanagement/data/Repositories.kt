@@ -31,6 +31,11 @@ interface AlbumsRepositoryContract {
 
     suspend fun listPhotos(albumHref: String): Result<List<RemotePhoto>>
 
+    suspend fun renameAlbum(
+        album: RemoteAlbum,
+        newName: String,
+    ): Result<RemoteAlbum>
+
     suspend fun thumbnailUrl(photo: RemotePhoto): String
 
     fun fullImageUrl(photo: RemotePhoto): String

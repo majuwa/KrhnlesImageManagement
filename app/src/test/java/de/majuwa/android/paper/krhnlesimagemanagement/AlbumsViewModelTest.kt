@@ -252,6 +252,30 @@ class AlbumsViewModelTest {
             assertFalse(success)
         }
 
+    @Test
+    fun `renameAlbum updates album in albums state on success`() =
+        runTest {
+            val albums =
+                listOf(
+                    RemoteAlbum("Summer", "/Summer/"),
+                    RemoteAlbum("Winter", "/Winter/"),
+                )
+            fakeRepo.albums = Result.success(albums)
+            fakeRepo.renameAlbumResult = Result.success(RemoteAlbum("Autumn", "/Autumn/"))
+
+            viewModel.loadAlbums()
+            advanceUntilIdle()
+
+            var success = false
+            viewModel.renameAlbum(albums[0], "Autumn") { success = it }
+            advanceUntilIdle()
+
+            assertTrue(success)
+            assertEquals("Autumn", viewModel.albumsState.value.albums[0].displayName)
+            assertEquals("/Autumn/", viewModel.albumsState.value.albums[0].href)
+            assertEquals("Winter", viewModel.albumsState.value.albums[1].displayName)
+        }
+
     // ── deleteSelectedPhotos ────────────────────────────────────────────────
 
     @Test
