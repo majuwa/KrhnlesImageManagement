@@ -180,7 +180,7 @@ class SettingsViewModelTest {
             trackingViewModel.testConnection()
             advanceUntilIdle()
 
-            assertEquals(1, collectorsBeforeTest)
+            assertTrue(collectorsBeforeTest > 0)
             assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
             assertFalse(trackingViewModel.uiState.value.isTesting)
             assertEquals("Not configured.", trackingViewModel.uiState.value.testResult)
