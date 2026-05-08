@@ -137,7 +137,10 @@ class WebDavClientTest {
             val request = server.takeRequest()
             assertEquals("MOVE", request.method)
             assertTrue(request.path!!.endsWith("/Photos/Old%20Album"))
-            assertTrue(request.getHeader("Destination")!!.endsWith("/Photos/New%20Album"))
+            assertEquals(
+                server.url("/remote.php/dav/files/user/Photos/New%20Album").toString(),
+                request.getHeader("Destination"),
+            )
             assertEquals("F", request.getHeader("Overwrite"))
         }
 

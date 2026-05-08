@@ -279,7 +279,7 @@ private fun RenameAlbumDialog(
     onConfirm: (String) -> Unit,
 ) {
     var albumName by remember(initialName) { mutableStateOf(initialName) }
-    var errorMessageResId by remember { mutableStateOf<Int?>(null) }
+    var errorMessageResId by remember(initialName) { mutableStateOf<Int?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,

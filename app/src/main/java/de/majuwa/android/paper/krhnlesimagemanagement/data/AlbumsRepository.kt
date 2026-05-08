@@ -24,6 +24,7 @@ class AlbumsRepository(
     private val config: WebDavConfig,
 ) : AlbumsRepositoryContract {
     private val webDavClient = WebDavClient(config)
+    private val baseHttpUrl: HttpUrl = requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
     private val client: OkHttpClient =
         OkHttpClient
@@ -240,7 +241,7 @@ class AlbumsRepository(
                 .toHttpUrlOrNull()
                 ?: error("Invalid album href: ${album.href}")
         val albumSegments = albumUrl.pathSegments.filter { it.isNotBlank() }
-        val baseSegments = requireBaseHttpUrl().pathSegments.filter { it.isNotBlank() }
+        val baseSegments = baseHttpUrl.pathSegments.filter { it.isNotBlank() }
         require(
             albumSegments.size > baseSegments.size &&
                 albumSegments.take(baseSegments.size) == baseSegments,
@@ -252,7 +253,7 @@ class AlbumsRepository(
 
     private fun buildAlbumHref(relativeSegments: List<String>): String {
         val url =
-            requireBaseHttpUrl()
+            baseHttpUrl
                 .newBuilder()
                 .apply { relativeSegments.forEach(::addPathSegment) }
                 .build()
@@ -260,8 +261,6 @@ class AlbumsRepository(
                 .removePrefix(origin)
         return if (url.endsWith("/")) url else "$url/"
     }
-
-    private fun requireBaseHttpUrl(): HttpUrl = requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
     private companion object {
         const val USER_AGENT = "Kroehnles-Image-Management/1.0"
