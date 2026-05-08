@@ -1,16 +1,21 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -159,6 +164,28 @@ class SettingsViewModelTest {
             assertEquals("NewFolder", viewModel.uiState.value.baseFolder)
         }
 
+    @Test
+    fun `testConnection cancels config flow after first emission`() =
+        runTest {
+            val trackingCredentials = TrackingCredentialRepository()
+            val app = RuntimeEnvironment.getApplication() as Application
+            val trackingViewModel =
+                SettingsViewModel(
+                    application = app,
+                    credentialStore = trackingCredentials,
+                )
+
+            advanceUntilIdle()
+            val collectorsBeforeTest = trackingCredentials.activeCollectors.get()
+            trackingViewModel.testConnection()
+            advanceUntilIdle()
+
+            assertEquals(1, collectorsBeforeTest)
+            assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
+            assertFalse(trackingViewModel.uiState.value.isTesting)
+            assertEquals("Not configured.", trackingViewModel.uiState.value.testResult)
+        }
+
     // ── logout ──────────────────────────────────────────────────────────────
 
     @Test
@@ -206,5 +233,39 @@ class SettingsViewModelTest {
         viewModel.onManualUrlChange("http://192.168.1.1/dav")
         viewModel.onManualUrlChange("https://192.168.1.1/dav")
         assertFalse(viewModel.uiState.value.httpWarning)
+    }
+
+    private class TrackingCredentialRepository : CredentialRepository {
+        val activeCollectors = AtomicInteger(0)
+
+        override val webDavConfig: Flow<WebDavConfig> =
+            flow {
+                activeCollectors.incrementAndGet()
+                try {
+                    emit(WebDavConfig())
+                    awaitCancellation()
+                } finally {
+                    activeCollectors.decrementAndGet()
+                }
+            }
+
+        override val isConfigured: Flow<Boolean> =
+            flow {
+                emit(false)
+            }
+
+        override fun password(): String? = null
+
+        override fun isLoggedIn(): Boolean = false
+
+        override suspend fun save(
+            serverUrl: String,
+            username: String,
+            password: String,
+        ) = Unit
+
+        override suspend fun saveBaseFolder(folder: String) = Unit
+
+        override suspend fun clear() = Unit
     }
 }

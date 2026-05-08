@@ -12,6 +12,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -157,25 +158,23 @@ class SettingsViewModel
         fun testConnection() {
             viewModelScope.launch {
                 _uiState.update { it.copy(isTesting = true, testResult = null) }
-                credentialStore.webDavConfig.collect { config ->
-                    if (!config.isValid) {
-                        _uiState.update { it.copy(isTesting = false, testResult = "Not configured.") }
-                        return@collect
-                    }
-                    val client = WebDavClient(config)
-                    val result = client.testConnection()
-                    _uiState.update {
-                        it.copy(
-                            isTesting = false,
-                            testResult =
-                                if (result.isSuccess) {
-                                    "Connection successful!"
-                                } else {
-                                    "Failed: ${result.exceptionOrNull()?.message}"
-                                },
-                        )
-                    }
-                    return@collect
+                val config = credentialStore.webDavConfig.first()
+                if (!config.isValid) {
+                    _uiState.update { it.copy(isTesting = false, testResult = "Not configured.") }
+                    return@launch
+                }
+                val client = WebDavClient(config)
+                val result = client.testConnection()
+                _uiState.update {
+                    it.copy(
+                        isTesting = false,
+                        testResult =
+                            if (result.isSuccess) {
+                                "Connection successful!"
+                            } else {
+                                "Failed: ${result.exceptionOrNull()?.message}"
+                            },
+                    )
                 }
             }
         }
