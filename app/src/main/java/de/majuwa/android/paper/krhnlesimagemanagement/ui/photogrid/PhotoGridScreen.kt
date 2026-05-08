@@ -244,7 +244,7 @@ fun PhotoGridScreen(
         )
     }
 
-    if (uiState.showAutoDateFolderPreviewDialog && autoDateFoldersEnabled) {
+    if (uiState.showAutoDateFolderPreviewDialog) {
         val uploadBatches = resolveAutoDateUploadBatches(viewModel.getSelectedPhotos())
         AutoDateFolderPreviewDialog(
             previewPaths = uploadBatches.map { previewUploadPath(uploadBaseFolder, it.folderName) },

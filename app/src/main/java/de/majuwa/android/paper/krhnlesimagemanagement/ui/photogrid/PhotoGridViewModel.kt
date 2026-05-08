@@ -138,30 +138,12 @@ class PhotoGridViewModel
         fun onUploadRequested() {
             if (isConfigured.value) {
                 if (autoDateFoldersEnabled.value) {
-                    _uiState.update {
-                        it.copy(
-                            showAutoDateFolderPreviewDialog = true,
-                            showOccasionDialog = false,
-                            showNotConfiguredDialog = false,
-                        )
-                    }
+                    showDialog(autoDatePreview = true)
                 } else {
-                    _uiState.update {
-                        it.copy(
-                            showAutoDateFolderPreviewDialog = false,
-                            showOccasionDialog = true,
-                            showNotConfiguredDialog = false,
-                        )
-                    }
+                    showDialog(occasion = true)
                 }
             } else {
-                _uiState.update {
-                    it.copy(
-                        showAutoDateFolderPreviewDialog = false,
-                        showOccasionDialog = false,
-                        showNotConfiguredDialog = true,
-                    )
-                }
+                showDialog(notConfigured = true)
             }
         }
 
@@ -203,5 +185,19 @@ class PhotoGridViewModel
             return state.photosByDate.values
                 .flatten()
                 .filter { it.id in state.selectedPhotoIds }
+        }
+
+        private fun showDialog(
+            autoDatePreview: Boolean = false,
+            occasion: Boolean = false,
+            notConfigured: Boolean = false,
+        ) {
+            _uiState.update {
+                it.copy(
+                    showAutoDateFolderPreviewDialog = autoDatePreview,
+                    showOccasionDialog = occasion,
+                    showNotConfiguredDialog = notConfigured,
+                )
+            }
         }
     }
