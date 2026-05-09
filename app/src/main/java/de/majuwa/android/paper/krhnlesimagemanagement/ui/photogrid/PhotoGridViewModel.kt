@@ -39,6 +39,7 @@ data class PhotoGridUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val error: String? = null,
+    val showAutoDateFolderPreviewDialog: Boolean = false,
     val showOccasionDialog: Boolean = false,
     val showNotConfiguredDialog: Boolean = false,
     val uploadProgress: UploadProgress? = null,
@@ -96,6 +97,15 @@ class PhotoGridViewModel
         val isConfigured: StateFlow<Boolean> =
             credentialStore.isConfigured
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), false)
+
+        val autoDateFoldersEnabled: StateFlow<Boolean> =
+            credentialStore.autoDateFoldersEnabled
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), false)
+
+        val uploadBaseFolder: StateFlow<String> =
+            credentialStore.webDavConfig
+                .map { it.normalizedBaseFolder }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), "")
 
         fun loadPhotos() {
             viewModelScope.launch {
@@ -167,10 +177,18 @@ class PhotoGridViewModel
         /** Called when the FAB is tapped. Shows occasion dialog or not-configured dialog. */
         fun onUploadRequested() {
             if (isConfigured.value) {
-                _uiState.update { it.copy(showOccasionDialog = true) }
+                if (autoDateFoldersEnabled.value) {
+                    setDialogState(autoDatePreview = true)
+                } else {
+                    setDialogState(occasion = true)
+                }
             } else {
-                _uiState.update { it.copy(showNotConfiguredDialog = true) }
+                setDialogState(notConfigured = true)
             }
+        }
+
+        fun dismissAutoDateFolderPreviewDialog() {
+            _uiState.update { it.copy(showAutoDateFolderPreviewDialog = false) }
         }
 
         fun dismissOccasionDialog() {
@@ -226,5 +244,21 @@ class PhotoGridViewModel
             } else {
                 allPhotos
             }
-    }
 
+        private fun setDialogState(
+            autoDatePreview: Boolean = false,
+            occasion: Boolean = false,
+            notConfigured: Boolean = false,
+        ) {
+            require(listOf(autoDatePreview, occasion, notConfigured).count { it } <= 1) {
+                "Only one dialog can be shown at a time"
+            }
+            _uiState.update {
+                it.copy(
+                    showAutoDateFolderPreviewDialog = autoDatePreview,
+                    showOccasionDialog = occasion,
+                    showNotConfiguredDialog = notConfigured,
+                )
+            }
+        }
+    }

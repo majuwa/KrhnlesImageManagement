@@ -20,11 +20,11 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
 │   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
 │   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
-│   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
-│   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
 │   ├── Repositories.kt            # Repository interfaces (CredentialRepository, UploadedPhotosRepositoryContract, …)
 │   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT) via OkHttp
+├── upload/
+│   └── UploadBatch.kt         # Upload batching and auto-date folder resolution
 ├── ui/
 │   ├── theme/                # Material3 theme (Color, Type, Theme)
 │   ├── photogrid/
@@ -60,7 +60,7 @@ Credentials are stored securely:
 
 1. **Photo Loading**: `MediaRepository` queries `MediaStore.Images` → photos grouped by date in `PhotoGridViewModel`
 2. **Selection**: User taps photos or date headers → selection state in ViewModel
-3. **Upload Trigger**: FAB → occasion dialog → `WorkManager.enqueue(UploadWorker)`
+3. **Upload Trigger**: FAB → occasion dialog *or* auto-date preview dialog → one or more `WorkManager.enqueue(UploadWorker)` calls
 4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy), then records the successfully uploaded photo IDs via `UploadedPhotosStore.markAsUploaded()`
 5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
 6. **History**: Upload outcomes are persisted via `UploadHistoryStore` and shown on the Upload History screen
@@ -87,6 +87,8 @@ Given:
 - File: `photo.jpg`
 
 Result: `https://nextcloud.example.com/remote.php/dav/files/user/Photos/KrohnSync/Summer 2026/photo.jpg`
+
+When auto date folders are enabled, the user-selected photos are grouped by `YearMonth` and each batch resolves to `YYYY/MM-Month` (for example `2026/05-May`). A mixed-month selection therefore becomes multiple queued uploads under the configured base folder.
 
 `WebDavClient.createDirectory()` walks each segment in order (MKCOL per segment, 405=already exists is OK), so nested paths are created safely regardless of what already exists on the server.
 All path segments are validated (`.` / `..` rejected) and URL-encoded via `HttpUrl` segment builders to prevent path traversal and malformed path injection.

@@ -34,6 +34,7 @@ class CredentialStore(
     private val context: Context,
 ) : CredentialRepository {
     private companion object {
+        val KEY_AUTO_DATE_FOLDERS = booleanPreferencesKey("auto_date_folders")
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
         val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only")
@@ -44,6 +45,8 @@ class CredentialStore(
     }
 
     val serverUrl: Flow<String?> = context.credentialDataStore.data.map { it[KEY_SERVER_URL] }
+    override val autoDateFoldersEnabled: Flow<Boolean> =
+        context.credentialDataStore.data.map { it[KEY_AUTO_DATE_FOLDERS] ?: false }
 
     // Username is read from encrypted prefs, but piggybacks on DataStore emissions
     // (DataStore is always updated alongside encrypted prefs in save()).
@@ -93,6 +96,10 @@ class CredentialStore(
 
     override suspend fun saveWifiOnly(wifiOnly: Boolean) {
         context.credentialDataStore.edit { it[KEY_WIFI_ONLY] = wifiOnly }
+    }
+
+    override suspend fun saveAutoDateFolders(enabled: Boolean) {
+        context.credentialDataStore.edit { it[KEY_AUTO_DATE_FOLDERS] = enabled }
     }
 
     override suspend fun clear() {

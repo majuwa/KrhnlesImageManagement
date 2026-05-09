@@ -211,6 +211,39 @@ class PhotoGridViewModelTest {
             assertFalse(vm.uiState.value.showOccasionDialog)
         }
 
+    @Test
+    fun `onUploadRequested shows occasion dialog when configured and auto date folders disabled`() =
+        runTest {
+            advanceUntilIdle()
+
+            viewModel.onUploadRequested()
+
+            assertTrue(viewModel.uiState.value.showOccasionDialog)
+            assertFalse(viewModel.uiState.value.showAutoDateFolderPreviewDialog)
+        }
+
+    @Test
+    fun `onUploadRequested shows auto date preview when configured and auto date folders enabled`() =
+        runTest {
+            val app = RuntimeEnvironment.getApplication() as Application
+            val vm =
+                PhotoGridViewModel(
+                    application = app,
+                    mediaRepository = fakeMedia,
+                    credentialStore =
+                        FakeCredentialRepository(
+                            initialConfig = WebDavConfig("https://x.com/dav/", "u", "p"),
+                            initialAutoDateFoldersEnabled = true,
+                        ),
+                )
+            advanceUntilIdle()
+
+            vm.onUploadRequested()
+
+            assertTrue(vm.uiState.value.showAutoDateFolderPreviewDialog)
+            assertFalse(vm.uiState.value.showOccasionDialog)
+        }
+
     // ── refreshPhotos ───────────────────────────────────────────────────────
 
     @Test
@@ -269,6 +302,28 @@ class PhotoGridViewModelTest {
         viewModel.dismissOccasionDialog()
         assertFalse(viewModel.uiState.value.showOccasionDialog)
     }
+
+    @Test
+    fun `dismissAutoDateFolderPreviewDialog clears flag`() =
+        runTest {
+            val app = RuntimeEnvironment.getApplication() as Application
+            val vm =
+                PhotoGridViewModel(
+                    application = app,
+                    mediaRepository = fakeMedia,
+                    credentialStore =
+                        FakeCredentialRepository(
+                            initialConfig = WebDavConfig("https://x.com/dav/", "u", "p"),
+                            initialAutoDateFoldersEnabled = true,
+                        ),
+                )
+            advanceUntilIdle()
+            vm.onUploadRequested()
+
+            vm.dismissAutoDateFolderPreviewDialog()
+
+            assertFalse(vm.uiState.value.showAutoDateFolderPreviewDialog)
+        }
 
     @Test
     fun `dismissNotConfiguredDialog clears flag`() {

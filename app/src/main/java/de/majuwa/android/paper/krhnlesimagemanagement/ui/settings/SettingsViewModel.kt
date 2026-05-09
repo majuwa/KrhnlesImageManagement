@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
+    val autoDateFoldersEnabled: Boolean = false,
     val serverUrl: String = "",
     val username: String = "",
     val webDavUrl: String = "",
@@ -73,6 +74,11 @@ class SettingsViewModel
                     _uiState.update { it.copy(wifiOnly = value) }
                 }
             }
+            viewModelScope.launch {
+                credentialStore.autoDateFoldersEnabled.collect { enabled ->
+                    _uiState.update { it.copy(autoDateFoldersEnabled = enabled) }
+                }
+            }
         }
 
         fun onServerUrlChange(value: String) {
@@ -92,6 +98,13 @@ class SettingsViewModel
         fun setWifiOnly(enabled: Boolean) {
             viewModelScope.launch {
                 credentialStore.saveWifiOnly(enabled)
+            }
+        }
+
+        fun setAutoDateFoldersEnabled(enabled: Boolean) {
+            _uiState.update { it.copy(autoDateFoldersEnabled = enabled) }
+            viewModelScope.launch {
+                credentialStore.saveAutoDateFolders(enabled)
             }
         }
 

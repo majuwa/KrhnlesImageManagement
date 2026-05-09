@@ -9,6 +9,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 
 interface CredentialRepository {
+    val autoDateFoldersEnabled: Flow<Boolean>
     val isConfigured: Flow<Boolean>
     val webDavConfig: Flow<WebDavConfig>
     val wifiOnly: Flow<Boolean>
@@ -26,6 +27,8 @@ interface CredentialRepository {
     suspend fun saveBaseFolder(folder: String)
 
     suspend fun saveWifiOnly(wifiOnly: Boolean)
+
+    suspend fun saveAutoDateFolders(enabled: Boolean)
 
     suspend fun clear()
 }

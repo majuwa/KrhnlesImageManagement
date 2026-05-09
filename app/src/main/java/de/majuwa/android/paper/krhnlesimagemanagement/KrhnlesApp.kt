@@ -23,7 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
@@ -48,7 +48,7 @@ private const val ROUTE_DUPLICATES = "albums/duplicates"
 private const val ROUTE_BLUR = "albums/blur"
 
 @Composable
-fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit) {
+fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
