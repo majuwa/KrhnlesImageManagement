@@ -64,7 +64,6 @@
     </plurals>
     <string name="upload_progress">Uploading %1$d / %2$d</string>
     <string name="upload_history_counts">%1$d succeeded · %2$d failed</string>
-    <string name="upload_history_counts">%1$d succeeded · %2$d failed</string>
     <plurals name="toast_upload_started">
         <item quantity="one">Queued %1$d upload for %2$d photos.</item>
         <item quantity="other">Queued %1$d uploads for %2$d photos.</item>
