@@ -59,7 +59,7 @@ class UploadWorker(
         val photosArray = queue.getJSONArray("photos")
         val photoIds = LongArray(photosArray.length()) {
             // -1L is used as a sentinel for entries that pre-date this feature (no "id" field).
-            // Such entries are filtered out later in uploadFiles() so they are never marked as uploaded.
+            // Such entries still upload normally but are skipped when success IDs are recorded.
             photosArray.getJSONObject(it).optLong("id", -1L)
         }
         val uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") }
