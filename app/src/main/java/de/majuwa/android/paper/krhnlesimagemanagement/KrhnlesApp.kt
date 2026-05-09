@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -66,7 +67,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                             }
                         },
                         icon = { Icon(Icons.Default.PhotoLibrary, contentDescription = null) },
-                        label = { Text("Photos") },
+                        label = { Text(stringResource(R.string.nav_photos)) },
                     )
                     NavigationBarItem(
                         selected = currentRoute == ROUTE_ALBUMS,
@@ -78,7 +79,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                             }
                         },
                         icon = { Icon(Icons.Default.Collections, contentDescription = null) },
-                        label = { Text("Albums") },
+                        label = { Text(stringResource(R.string.nav_albums)) },
                     )
                 }
             }
