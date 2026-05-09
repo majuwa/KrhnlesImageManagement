@@ -85,6 +85,8 @@
     <string name="label_base_folder">Base upload folder</string>
     <string name="placeholder_base_folder">Photos/KrohnSync</string>
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
+    <string name="label_wifi_only">Upload on Wi-Fi only</string>
+    <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
 
     <!-- Settings screen — login -->
     <string name="title_connect_nextcloud">Connect to Nextcloud</string>

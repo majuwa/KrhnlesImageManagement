@@ -224,5 +224,38 @@ class SettingsViewModelTest {
         viewModel.onManualUrlChange("https://192.168.1.1/dav")
         assertFalse(viewModel.uiState.value.httpWarning)
     }
+
+    // ── Wi-Fi only toggle ────────────────────────────────────────────────────
+
+    @Test
+    fun `wifiOnly defaults to false`() =
+        runTest {
+            advanceUntilIdle()
+            assertFalse(viewModel.uiState.value.wifiOnly)
+        }
+
+    @Test
+    fun `setWifiOnly true persists and reflects in UI state`() =
+        runTest {
+            advanceUntilIdle()
+            viewModel.setWifiOnly(true)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.wifiOnly)
+            assertTrue(fakeCredentials.wifiOnlyValue())
+        }
+
+    @Test
+    fun `setWifiOnly false after true resets to false`() =
+        runTest {
+            advanceUntilIdle()
+            viewModel.setWifiOnly(true)
+            advanceUntilIdle()
+            viewModel.setWifiOnly(false)
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.wifiOnly)
+            assertFalse(fakeCredentials.wifiOnlyValue())
+        }
 }
 

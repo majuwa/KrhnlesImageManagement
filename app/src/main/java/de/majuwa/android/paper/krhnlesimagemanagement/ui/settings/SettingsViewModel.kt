@@ -34,6 +34,8 @@ data class SettingsUiState(
     val manualPassword: String = "",
     /** True when the entered URL explicitly uses plain HTTP (credentials sent in cleartext). */
     val httpWarning: Boolean = false,
+    /** True when uploads should be restricted to Wi-Fi (unmetered) connections. */
+    val wifiOnly: Boolean = false,
 )
 
 class SettingsViewModel
@@ -66,6 +68,11 @@ class SettingsViewModel
                     }
                 }
             }
+            viewModelScope.launch {
+                credentialStore.wifiOnly.collect { value ->
+                    _uiState.update { it.copy(wifiOnly = value) }
+                }
+            }
         }
 
         fun onServerUrlChange(value: String) {
@@ -79,6 +86,12 @@ class SettingsViewModel
         fun saveBaseFolder() {
             viewModelScope.launch {
                 credentialStore.saveBaseFolder(_uiState.value.baseFolder)
+            }
+        }
+
+        fun setWifiOnly(enabled: Boolean) {
+            viewModelScope.launch {
+                credentialStore.saveWifiOnly(enabled)
             }
         }
 

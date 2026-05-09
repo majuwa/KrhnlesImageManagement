@@ -122,4 +122,18 @@ class SettingsScreenTest {
         )
         composeTestRule.onNodeWithText("Save & Connect").performScrollTo().assertIsDisplayed()
     }
+
+    @Test
+    fun `shows Wi-Fi only toggle when logged in`() {
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            }
+        }
+        composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
+        composeTestRule
+            .onNodeWithText("Upload on Wi-Fi only")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
 }
