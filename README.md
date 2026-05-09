@@ -15,7 +15,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Cloud Album Browser:** Browse albums (folders) stored on your WebDAV/Nextcloud server.
 - **Cloud Duplicate Detector:** Scan an album for near-duplicate images and bulk-delete the extras.
 - **Delete Photos from Album:** Long-press any photo in an album to enter selection mode. Select multiple photos, then tap the delete icon in the top bar. A confirmation dialog is shown before any server deletion.
-- **Delete Entire Album:** Long-press an album in the Albums tab to delete the whole album (and all its photos) from the server, with a confirmation dialog.
+- **Manage Remote Albums:** Long-press an album in the Albums tab to rename it or delete it from the server, with confirmation and inline validation.
 
 ## 🔮 Future Roadmap
 - **Blurry/Bad Photo Detection:** Smart suggestions to clean up low-quality photos and save cloud space.

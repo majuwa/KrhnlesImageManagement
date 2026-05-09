@@ -2,10 +2,17 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui
 
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
@@ -137,5 +144,52 @@ class AlbumsScreenTest {
             }
         }
         composeTestRule.onNodeWithContentDescription("Reload").assertIsDisplayed()
+    }
+
+    @Test
+    fun `long pressing album exposes rename and unchanged names show friendly message`() {
+        val fakeRepo = FakeAlbumsRepository()
+        fakeRepo.albums = Result.success(listOf(RemoteAlbum("Summer 2025", "/Summer%202025/")))
+        val viewModel = createViewModel(fakeRepo)
+
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Summer 2025").performTouchInput { longClick() }
+        composeTestRule.onNodeWithText("Rename").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Rename").performClick()
+        composeTestRule.onNode(hasSetTextAction()).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Rename")[1].performClick()
+        composeTestRule.onNodeWithText("Please choose a different album name.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `renaming album updates the album list without reloading`() {
+        val fakeRepo = FakeAlbumsRepository()
+        fakeRepo.albums = Result.success(listOf(RemoteAlbum("Summer 2025", "/Summer%202025/")))
+        val viewModel = createViewModel(fakeRepo)
+
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                AlbumsScreen(viewModel = viewModel, onOpenAlbum = {})
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Summer 2025").performTouchInput { longClick() }
+        composeTestRule.onNodeWithText("Rename").performClick()
+        composeTestRule.onNode(hasSetTextAction()).performTextClearance()
+        composeTestRule.onNode(hasSetTextAction()).performTextInput("Autumn 2025")
+        composeTestRule.onAllNodesWithText("Rename")[1].performClick()
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Autumn 2025").assertIsDisplayed()
+        assertEquals(1, fakeRepo.renamedAlbums.size)
+        assertEquals("Summer 2025", fakeRepo.renamedAlbums[0].first.displayName)
+        assertEquals("Autumn 2025", fakeRepo.renamedAlbums[0].second)
     }
 }

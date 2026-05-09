@@ -22,7 +22,7 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
 │   ├── Repositories.kt            # Repository interfaces (CredentialRepository, UploadedPhotosRepositoryContract, …)
-│   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT) via OkHttp
+│   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT, MOVE) via OkHttp
 ├── upload/
 │   └── UploadBatch.kt         # Upload batching and auto-date folder resolution
 ├── ui/
@@ -64,6 +64,7 @@ Credentials are stored securely:
 4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy), then records the successfully uploaded photo IDs via `UploadedPhotosStore.markAsUploaded()`
 5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
 6. **History**: Upload outcomes are persisted via `UploadHistoryStore` and shown on the Upload History screen
+7. **Album Management**: The Albums flow lists remote directories and can rename an album in place via `WebDavClient.renameDirectory()` using WebDAV `MOVE`, updating UI state without re-fetching the full album list
 
 ## Share Target Flow
 

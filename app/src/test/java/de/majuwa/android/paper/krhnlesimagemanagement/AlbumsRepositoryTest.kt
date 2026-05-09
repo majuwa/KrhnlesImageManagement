@@ -293,6 +293,29 @@ class AlbumsRepositoryTest {
             assertEquals("DELETE", request.method)
         }
 
+    @Test
+    fun `renameAlbum sends MOVE and returns updated album`() =
+        runTest {
+            repo = createRepo(baseFolder = "Photos/Backup")
+            server.enqueue(MockResponse().setResponseCode(201))
+
+            val album = RemoteAlbum("Summer 2025", "/remote.php/dav/files/user/Photos/Backup/Summer%202025/")
+            val result = repo.renameAlbum(album, "Autumn 2025")
+
+            assertTrue(result.isSuccess)
+            val renamedAlbum = result.getOrThrow()
+            assertEquals("Autumn 2025", renamedAlbum.displayName)
+            assertEquals(
+                "/remote.php/dav/files/user/Photos/Backup/Autumn%202025/",
+                renamedAlbum.href,
+            )
+
+            val request = server.takeRequest()
+            assertEquals("MOVE", request.method)
+            assertTrue(request.path!!.endsWith("/Photos/Backup/Summer%202025"))
+            assertTrue(request.getHeader("Destination")!!.endsWith("/Photos/Backup/Autumn%202025"))
+        }
+
     // ── fullImageUrl ────────────────────────────────────────────────────────
 
     @Test
