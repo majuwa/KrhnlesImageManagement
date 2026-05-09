@@ -8,7 +8,7 @@ Kröhnle's Image Management follows **MVVM + Clean Architecture** using Kotlin a
 
 ```
 de.majuwa.android.paper.krhnlesimagemanagement/
-├── MainActivity.kt          # Entry point, sets up Compose and WorkManager uploads
+├── MainActivity.kt          # Entry point, sets up Compose and WorkManager uploads; handles share intents
 ├── KrhnlesApp.kt            # Navigation host (NavHost with routes)
 ├── model/
 │   ├── Photo.kt             # Photo data class (id, uri, date, size, mime)
@@ -29,9 +29,13 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── uploadhistory/
 │   │   ├── UploadHistoryScreen.kt    # Upload log list + clear actions
 │   │   └── UploadHistoryViewModel.kt # Exposes persisted upload history
-│   └── settings/
-│       ├── SettingsScreen.kt        # Nextcloud login + manual WebDAV config
-│       └── SettingsViewModel.kt     # Auth state + connection test
+│   ├── settings/
+│   │   ├── SettingsScreen.kt        # Nextcloud login + manual WebDAV config
+│   │   └── SettingsViewModel.kt     # Auth state + connection test
+│   └── share/
+│       └── ShareReceiverScreen.kt   # Lightweight occasion dialog for the share-target flow
+├── util/
+│   └── ShareIntentParser.kt  # Extracts Photo objects from ACTION_SEND / ACTION_SEND_MULTIPLE intents
 └── worker/
     └── UploadWorker.kt      # WorkManager CoroutineWorker for background uploads
 ```
@@ -57,6 +61,16 @@ Credentials are stored securely:
 5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
 6. **History**: Upload outcomes are persisted via `UploadHistoryStore` and shown on the Upload History screen
 
+## Share Target Flow
+
+When another app (Gallery, Screenshot, etc.) shares images via the Android share sheet:
+
+1. `MainActivity` is launched with `ACTION_SEND` or `ACTION_SEND_MULTIPLE` intent
+2. `parseSharedPhotos()` extracts URIs and wraps them as `Photo` objects (display name, MIME type, size resolved via `ContentResolver`; id is the URI hash code; date is today)
+3. `ShareReceiverScreen` is displayed instead of the full app — shows only the occasion name dialog
+4. On confirm → `enqueueUpload()` dispatches the upload via `WorkManager` → `finish()` returns the user to the source app
+5. On dismiss → `finish()` returns without uploading
+
 ## Upload Path Construction
 
 Given:
@@ -73,6 +87,7 @@ All path segments are validated (`.` / `..` rejected) and URL-encoded via `HttpU
 ## Key Decisions
 
 - **WorkManager** for uploads ensures they survive app closure
+- **Share target** declared for `image/*` (`ACTION_SEND` + `ACTION_SEND_MULTIPLE`); `ShareReceiverScreen` shows the occasion dialog immediately so the user stays in context and the source app is returned to after confirm
 - **Android Keystore** for secure credential encryption (replaced deprecated EncryptedSharedPreferences)
 - **EncryptedSharedPreferences** — removed (deprecated in security-crypto 1.1.0)
 - **Nextcloud Login Flow v2** for browser-based auth (no password handling in-app)

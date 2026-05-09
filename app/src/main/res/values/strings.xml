@@ -143,6 +143,13 @@
     <string name="hint_pinch_drag">Pinch to zoom · Drag to pan</string>
     <string name="hint_pinch_tap">Pinch to zoom · Tap outside to close</string>
 
+    <!-- Share target -->
+    <plurals name="share_upload_message">
+        <item quantity="one">Upload %1$d photo to your server. Enter an occasion or folder name:</item>
+        <item quantity="other">Upload %1$d photos to your server. Enter an occasion or folder name:</item>
+    </plurals>
+    <string name="toast_uploading">Uploading to \"%1$s\"…</string>
+
     <!-- Notifications (UploadWorker) -->
     <string name="notification_preparing">Preparing…</string>
     <string name="notification_uploading_title">Uploading photos</string>
