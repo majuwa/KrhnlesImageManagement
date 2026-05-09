@@ -186,6 +186,8 @@
     </plurals>
     <string name="notification_upload_failed">Upload failed</string>
     <string name="notification_create_folder_failed">Failed to create folder: %1$s</string>
+    <string name="notification_retry_failed">Retry Failed (%d)</string>
+    <string name="notification_create_folder_failed">Failed to create folder: %1$s</string>
     <string name="channel_name_uploads">Photo Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
 </resources>

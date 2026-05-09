@@ -3,7 +3,9 @@ package de.majuwa.android.paper.krhnlesimagemanagement.worker
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.core.app.ActivityCompat
@@ -22,14 +24,20 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.first
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.UUID
 
 class UploadWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
-    private val tag = "UploadWorker"
+    private data class UploadFilesResult(
+        val uploaded: Int,
+        val failedIndices: List<Int>,
+        val uploadedIds: Set<Long>,
+    )
 
     companion object {
         const val KEY_QUEUE_FILE = "queue_file"
@@ -37,8 +45,10 @@ class UploadWorker(
         const val KEY_TOTAL = "total"
         const val KEY_UPLOADED_COUNT = "uploaded_count"
         const val KEY_FAILED_COUNT = "failed_count"
+        const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "upload_channel"
-        private const val NOTIFICATION_ID = 1001
+        private const val REQUEST_CODE_RETRY = 2001
+        private const val TAG = "UploadWorker"
     }
 
     override suspend fun doWork(): Result {
@@ -67,10 +77,10 @@ class UploadWorker(
             )
         }
 
-        val remoteDirectory = "${config.uploadPathPrefix}$folderName"
+        val remoteFolderPath = "${config.uploadPathPrefix}$folderName"
         return executeUpload(
             config = config,
-            remoteDirectory = remoteDirectory,
+            remoteFolderPath = remoteFolderPath,
             occasionName = folderName,
             photoIds = photoIds,
             uriStrings = uriStrings,
@@ -88,7 +98,7 @@ class UploadWorker(
 
     private suspend fun executeUpload(
         config: WebDavConfig,
-        remoteDirectory: String,
+        remoteFolderPath: String,
         occasionName: String,
         photoIds: LongArray,
         uriStrings: Array<String>,
@@ -101,7 +111,7 @@ class UploadWorker(
         createNotificationChannel()
         setForeground(buildForegroundInfo(0, uriStrings.size))
 
-        val createResult = client.createDirectory(remoteDirectory)
+        val createResult = client.createDirectory(remoteFolderPath)
         if (createResult.isFailure) {
             recordHistory(
                 uploadHistoryStore = uploadHistoryStore,
@@ -120,22 +130,38 @@ class UploadWorker(
             )
         }
 
-        val (uploaded, failed, uploadedIds) = uploadFiles(client, remoteDirectory, photoIds, uriStrings, mimeTypes, fileNames)
+        val result = uploadFiles(client, remoteFolderPath, photoIds, uriStrings, mimeTypes, fileNames)
+        val failed = result.failedIndices.size
         recordHistory(
             uploadHistoryStore = uploadHistoryStore,
             occasionName = occasionName,
             photoCount = uriStrings.size,
             failedCount = failed,
         )
-        showCompletionNotification(uploaded, failed)
 
-        if (uploadedIds.isNotEmpty()) {
-            UploadedPhotosStore(applicationContext).markAsUploaded(uploadedIds)
+        val retryQueueFilePath =
+            if (result.failedIndices.isNotEmpty()) {
+                writeRetryQueueFile(
+                    occasionName,
+                    photoIds,
+                    result.failedIndices,
+                    uriStrings,
+                    mimeTypes,
+                    fileNames,
+                )?.absolutePath
+            } else {
+                null
+            }
+
+        showCompletionNotification(result.uploaded, failed, retryQueueFilePath)
+
+        if (result.uploadedIds.isNotEmpty()) {
+            UploadedPhotosStore(applicationContext).markAsUploaded(result.uploadedIds)
         }
 
         return Result.success(
             workDataOf(
-                KEY_UPLOADED_COUNT to uploaded,
+                KEY_UPLOADED_COUNT to result.uploaded,
                 KEY_FAILED_COUNT to failed,
             ),
         )
@@ -159,33 +185,33 @@ class UploadWorker(
                 ),
             )
         }.onFailure { throwable ->
-            Log.w(tag, "Failed to persist upload history entry", throwable)
+            Log.w(TAG, "Failed to persist upload history entry", throwable)
         }
     }
 
     private suspend fun uploadFiles(
         client: WebDavClient,
-        folderName: String,
+        remoteFolderPath: String,
         photoIds: LongArray,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
-    ): Triple<Int, Int, Set<Long>> {
+    ): UploadFilesResult {
         var uploaded = 0
-        var failed = 0
+        val failedIndices = mutableListOf<Int>()
         val uploadedIds = mutableSetOf<Long>()
 
         for (i in uriStrings.indices) {
             val uri = uriStrings[i].toUri()
             val inputStream = applicationContext.contentResolver.openInputStream(uri)
             if (inputStream == null) {
-                failed++
+                failedIndices.add(i)
                 continue
             }
 
             val uploadResult =
                 inputStream.use {
-                    client.uploadFile(folderName, fileNames[i], mimeTypes[i], it)
+                    client.uploadFile(remoteFolderPath, fileNames[i], mimeTypes[i], it)
                 }
 
             if (uploadResult.isSuccess) {
@@ -195,7 +221,7 @@ class UploadWorker(
                     uploadedIds.add(photoId)
                 }
             } else {
-                failed++
+                failedIndices.add(i)
             }
 
             val progress = i + 1
@@ -208,8 +234,48 @@ class UploadWorker(
             setForeground(buildForegroundInfo(progress, uriStrings.size))
         }
 
-        return Triple(uploaded, failed, uploadedIds)
+        return UploadFilesResult(uploaded, failedIndices, uploadedIds)
     }
+
+    private fun writeRetryQueueFile(
+        folderName: String,
+        photoIds: LongArray,
+        failedIndices: List<Int>,
+        uriStrings: Array<String>,
+        mimeTypes: Array<String>,
+        fileNames: Array<String>,
+    ): File? =
+        try {
+            val queue =
+                JSONObject().apply {
+                    put("folderName", folderName)
+                    put(
+                        "photos",
+                        JSONArray().also { arr ->
+                            failedIndices.forEach { i ->
+                                arr.put(
+                                    JSONObject().apply {
+                                        val photoId = photoIds.getOrElse(i) { -1L }
+                                        if (photoId >= 0L) {
+                                            put("id", photoId)
+                                        }
+                                        put("uri", uriStrings[i])
+                                        put("mimeType", mimeTypes[i])
+                                        put("displayName", fileNames[i])
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
+            val retryFile =
+                File(applicationContext.filesDir, "retry_queue_${UUID.randomUUID()}.json")
+            retryFile.writeText(queue.toString())
+            retryFile
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write retry queue file", e)
+            null
+        }
 
     private fun buildForegroundInfo(
         current: Int,
@@ -245,6 +311,7 @@ class UploadWorker(
     private fun showCompletionNotification(
         uploaded: Int,
         failed: Int,
+        retryQueueFilePath: String? = null,
     ) {
         val text =
             if (failed == 0) {
@@ -261,15 +328,33 @@ class UploadWorker(
                     failed,
                 )
             }
-        val notification =
+        val builder =
             NotificationCompat
                 .Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle(applicationContext.getString(R.string.notification_upload_complete))
                 .setContentText(text)
                 .setOngoing(false)
-                .build()
-        notifyIfPermitted(notification)
+
+        if (failed > 0 && retryQueueFilePath != null) {
+            val retryIntent =
+                Intent(applicationContext, RetryUploadReceiver::class.java).apply {
+                    putExtra(RetryUploadReceiver.EXTRA_QUEUE_FILE, retryQueueFilePath)
+                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_ID, NOTIFICATION_ID)
+                }
+            val retryPendingIntent =
+                PendingIntent.getBroadcast(
+                    applicationContext,
+                    REQUEST_CODE_RETRY,
+                    retryIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            val retryLabel =
+                applicationContext.getString(R.string.notification_retry_failed, failed)
+            builder.addAction(0, retryLabel, retryPendingIntent)
+        }
+
+        notifyIfPermitted(builder.build())
     }
 
     private fun showFailureNotification(message: String) {
