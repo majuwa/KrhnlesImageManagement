@@ -56,3 +56,11 @@ interface UploadHistoryRepository {
 
     suspend fun clearAll()
 }
+
+interface UploadedPhotosRepositoryContract {
+    val uploadedPhotoIds: Flow<Set<Long>>
+
+    suspend fun markAsUploaded(photoIds: Set<Long>)
+
+    suspend fun clear()
+}

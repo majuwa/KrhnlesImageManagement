@@ -19,25 +19,29 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── MediaRepository.kt         # Queries device photos via ContentResolver
 │   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
 │   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
+│   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
+│   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
+│   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
+│   ├── Repositories.kt            # Repository interfaces (CredentialRepository, UploadedPhotosRepositoryContract, …)
 │   └── WebDavClient.kt            # WebDAV operations (PROPFIND, MKCOL, PUT) via OkHttp
 ├── ui/
 │   ├── theme/                # Material3 theme (Color, Type, Theme)
 │   ├── photogrid/
-│   │   ├── PhotoGridScreen.kt      # Main screen: LazyVerticalGrid with date headers
-│   │   └── PhotoGridViewModel.kt   # Manages photo loading, selection, grouping
+│   │   ├── PhotoGridScreen.kt      # Main screen: LazyVerticalGrid with date headers, cloud badges, filter toggle
+│   │   └── PhotoGridViewModel.kt   # Manages photo loading, selection, grouping, uploaded-IDs tracking, filter
 │   ├── uploadhistory/
 │   │   ├── UploadHistoryScreen.kt    # Upload log list + clear actions
 │   │   └── UploadHistoryViewModel.kt # Exposes persisted upload history
 │   ├── settings/
 │   │   ├── SettingsScreen.kt        # Nextcloud login + manual WebDAV config
-│   │   └── SettingsViewModel.kt     # Auth state + connection test
+│   │   └── SettingsViewModel.kt     # Auth state + connection test; clears upload tracking on logout
 │   └── share/
 │       └── ShareReceiverScreen.kt   # Lightweight occasion dialog for the share-target flow
 ├── util/
 │   └── ShareIntentParser.kt  # Extracts Photo objects from ACTION_SEND / ACTION_SEND_MULTIPLE intents
 └── worker/
-    └── UploadWorker.kt      # WorkManager CoroutineWorker for background uploads
+    └── UploadWorker.kt      # WorkManager CoroutineWorker for background uploads; records uploaded photo IDs
 ```
 
 ## Authentication
@@ -57,7 +61,7 @@ Credentials are stored securely:
 1. **Photo Loading**: `MediaRepository` queries `MediaStore.Images` → photos grouped by date in `PhotoGridViewModel`
 2. **Selection**: User taps photos or date headers → selection state in ViewModel
 3. **Upload Trigger**: FAB → occasion dialog → `WorkManager.enqueue(UploadWorker)`
-4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy)
+4. **Upload Execution**: `UploadWorker` reads config from `CredentialStore`, creates remote folder via `WebDavClient.createDirectory()`, uploads each file via `WebDavClient.uploadFile()` (streamed request body, no full in-memory byte copy), then records the successfully uploaded photo IDs via `UploadedPhotosStore.markAsUploaded()`
 5. **Progress**: Worker emits progress via `setProgress()` and shows system notifications
 6. **History**: Upload outcomes are persisted via `UploadHistoryStore` and shown on the Upload History screen
 
@@ -70,6 +74,9 @@ When another app (Gallery, Screenshot, etc.) shares images via the Android share
 3. `ShareReceiverScreen` is displayed instead of the full app — shows only the occasion name dialog
 4. On confirm → `enqueueUpload()` dispatches the upload via `WorkManager` → `finish()` returns the user to the source app
 5. On dismiss → `finish()` returns without uploading
+6. **History**: Upload outcomes are persisted via `UploadHistoryStore` and shown on the Upload History screen
+7. **Uploaded Badge**: `PhotoGridViewModel` observes `UploadedPhotosStore.uploadedPhotoIds` and includes them in `PhotoGridUiState`; the grid shows a cloud badge on already-uploaded thumbnails (user can still select and re-upload them for a different album)
+8. **Filter Toggle**: A funnel icon in the top bar (visible when any photos have been uploaded) lets the user hide already-uploaded photos; `PhotoGridViewModel.toggleShowOnlyNewPhotos()` recomputes `photosByDate` from the full unfiltered list
 
 ## Upload Path Construction
 
@@ -96,3 +103,6 @@ All path segments are validated (`.` / `..` rejected) and URL-encoded via `HttpU
 - **Coil 3** for efficient image loading in the grid
 - **LazyVerticalGrid** with `GridItemSpan` for date headers spanning full width
 - **AndroidViewModel** to access Application context for ContentResolver and DataStore
+- **DataStore Preferences** (`uploaded_photos`) for persisting the set of already-uploaded photo IDs across restarts; stored as `Set<String>` (Long IDs converted to strings)
+- **Uploaded-photo tracking reset on logout** — `SettingsViewModel.logout()` calls `UploadedPhotosStore.clear()` so the tracking starts fresh when a user disconnects (or switches servers)
+- **UploadWorker records IDs after success** — each successfully uploaded photo's MediaStore ID is written to `UploadedPhotosStore`; failed uploads are not marked; re-uploads are always allowed (badge is visual only)

@@ -27,8 +27,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -36,6 +38,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -175,6 +178,34 @@ fun PhotoGridScreen(
                     IconButton(onClick = onNavigateToUploadHistory) {
                         Icon(Icons.Default.History, contentDescription = stringResource(R.string.cd_upload_history))
                     }
+                    if (uiState.selectedPhotoIds.isEmpty()) {
+                        IconButton(onClick = onNavigateToUploadHistory) {
+                            Icon(Icons.Default.History, contentDescription = stringResource(R.string.cd_upload_history))
+                        }
+                    }
+                    if (uiState.uploadedPhotoIds.isNotEmpty() && uiState.selectedPhotoIds.isEmpty()) {
+                        // The filter button is hidden during selection mode to avoid
+                        // cluttering the top bar when the "Clear" action is already present.
+                        IconButton(onClick = { viewModel.toggleShowOnlyNewPhotos() }) {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription =
+                                    stringResource(
+                                        if (uiState.showOnlyNewPhotos) {
+                                            R.string.action_show_all_photos
+                                        } else {
+                                            R.string.action_show_only_new
+                                        },
+                                    ),
+                                tint =
+                                    if (uiState.showOnlyNewPhotos) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    },
+                            )
+                        }
+                    }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.cd_settings))
                     }
@@ -211,6 +242,11 @@ fun PhotoGridScreen(
                 uploadProgress?.let { progress ->
                     UploadProgressBanner(progress.current, progress.total)
                 }
+            }
+            AnimatedVisibility(visible = uiState.showOnlyNewPhotos) {
+                NewOnlyFilterBanner(
+                    onClear = { viewModel.toggleShowOnlyNewPhotos() },
+                )
             }
             Box(modifier = Modifier.weight(1f)) {
                 InnerContent(
@@ -275,6 +311,34 @@ private fun UploadProgressBanner(
     }
 }
 
+@Composable
+private fun NewOnlyFilterBanner(
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = true,
+            onClick = onClear,
+            label = { Text(stringResource(R.string.action_show_only_new)) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            },
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InnerContent(
@@ -323,6 +387,7 @@ private fun InnerContent(
                 PhotoGrid(
                     photosByDate = uiState.photosByDate,
                     selectedPhotoIds = uiState.selectedPhotoIds,
+                    uploadedPhotoIds = uiState.uploadedPhotoIds,
                     onPhotoClick = onPhotoClick,
                     onDateHeaderClick = onDateHeaderClick,
                     modifier = Modifier.fillMaxSize(),
@@ -336,6 +401,7 @@ private fun InnerContent(
 private fun PhotoGrid(
     photosByDate: Map<LocalDate, List<Photo>>,
     selectedPhotoIds: Set<Long>,
+    uploadedPhotoIds: Set<Long>,
     onPhotoClick: (Long) -> Unit,
     onDateHeaderClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
@@ -367,6 +433,7 @@ private fun PhotoGrid(
                 PhotoItem(
                     photo = photo,
                     isSelected = photo.id in selectedPhotoIds,
+                    isUploaded = photo.id in uploadedPhotoIds,
                     onClick = { onPhotoClick(photo.id) },
                 )
             }
@@ -414,6 +481,7 @@ private fun DateHeader(
 private fun PhotoItem(
     photo: Photo,
     isSelected: Boolean,
+    isUploaded: Boolean,
     onClick: () -> Unit,
 ) {
     Box(
@@ -440,6 +508,25 @@ private fun PhotoItem(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
             )
+        }
+        if (isUploaded) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(4.dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Cloud,
+                    contentDescription = stringResource(R.string.cd_already_uploaded),
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
         Icon(
             imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,

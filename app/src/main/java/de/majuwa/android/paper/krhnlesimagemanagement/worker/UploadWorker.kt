@@ -17,6 +17,7 @@ import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -46,6 +47,11 @@ class UploadWorker(
         val queue = JSONObject(queueFile.readText())
         val folderName = queue.getString("folderName")
         val photosArray = queue.getJSONArray("photos")
+        val photoIds = LongArray(photosArray.length()) {
+            // -1L is used as a sentinel for entries that pre-date this feature (no "id" field).
+            // Such entries are filtered out later in uploadFiles() so they are never marked as uploaded.
+            photosArray.getJSONObject(it).optLong("id", -1L)
+        }
         val uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") }
         val mimeTypes = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("mimeType") }
         val fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") }
@@ -66,6 +72,7 @@ class UploadWorker(
             config = config,
             remoteDirectory = remoteDirectory,
             occasionName = folderName,
+            photoIds = photoIds,
             uriStrings = uriStrings,
             mimeTypes = mimeTypes,
             fileNames = fileNames,
@@ -83,6 +90,7 @@ class UploadWorker(
         config: WebDavConfig,
         remoteDirectory: String,
         occasionName: String,
+        photoIds: LongArray,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
@@ -112,7 +120,7 @@ class UploadWorker(
             )
         }
 
-        val (uploaded, failed) = uploadFiles(client, remoteDirectory, uriStrings, mimeTypes, fileNames)
+        val (uploaded, failed, uploadedIds) = uploadFiles(client, remoteDirectory, photoIds, uriStrings, mimeTypes, fileNames)
         recordHistory(
             uploadHistoryStore = uploadHistoryStore,
             occasionName = occasionName,
@@ -120,6 +128,10 @@ class UploadWorker(
             failedCount = failed,
         )
         showCompletionNotification(uploaded, failed)
+
+        if (uploadedIds.isNotEmpty()) {
+            UploadedPhotosStore(applicationContext).markAsUploaded(uploadedIds)
+        }
 
         return Result.success(
             workDataOf(
@@ -154,12 +166,14 @@ class UploadWorker(
     private suspend fun uploadFiles(
         client: WebDavClient,
         folderName: String,
+        photoIds: LongArray,
         uriStrings: Array<String>,
         mimeTypes: Array<String>,
         fileNames: Array<String>,
-    ): Pair<Int, Int> {
+    ): Triple<Int, Int, Set<Long>> {
         var uploaded = 0
         var failed = 0
+        val uploadedIds = mutableSetOf<Long>()
 
         for (i in uriStrings.indices) {
             val uri = uriStrings[i].toUri()
@@ -174,7 +188,15 @@ class UploadWorker(
                     client.uploadFile(folderName, fileNames[i], mimeTypes[i], it)
                 }
 
-            if (uploadResult.isSuccess) uploaded++ else failed++
+            if (uploadResult.isSuccess) {
+                uploaded++
+                val photoId = photoIds.getOrElse(i) { -1L }
+                if (photoId >= 0L) {
+                    uploadedIds.add(photoId)
+                }
+            } else {
+                failed++
+            }
 
             val progress = i + 1
             setProgress(
@@ -186,7 +208,7 @@ class UploadWorker(
             setForeground(buildForegroundInfo(progress, uriStrings.size))
         }
 
-        return uploaded to failed
+        return Triple(uploaded, failed, uploadedIds)
     }
 
     private fun buildForegroundInfo(

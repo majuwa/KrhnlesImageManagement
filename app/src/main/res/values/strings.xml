@@ -20,6 +20,8 @@
     <string name="action_find_blurry">Find blurry</string>
     <string name="action_find_duplicates">Find duplicates</string>
     <string name="action_clear_all">Clear all</string>
+    <string name="action_show_only_new">New only</string>
+    <string name="action_show_all_photos">All photos</string>
 
     <!-- Content descriptions -->
     <string name="cd_settings">Settings</string>
@@ -40,6 +42,7 @@
     <!-- Navigation labels -->
     <string name="nav_photos">Photos</string>
     <string name="nav_albums">Albums</string>
+    <string name="cd_already_uploaded">Already uploaded</string>
 
     <!-- Titles -->
     <string name="title_settings">Settings</string>

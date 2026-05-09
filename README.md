@@ -9,6 +9,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Custom Occasions:** Give your upload batch a custom name or occasion (e.g., "Summer Vacation 2026") to automatically create and organize folders on your cloud.
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.
 - **Upload History:** Review past upload batches (folder, timestamp, succeeded/failed counts) and clear entries individually or all at once.
+- **Duplicate-Upload Prevention:** Already-uploaded photos are marked with a cloud badge in the local grid. Use the filter toggle (funnel icon) to show only new (not yet uploaded) photos. The tracking is reset when you disconnect from the server.
 - **WebDAV & Nextcloud Native:** Direct integration with your self-hosted storage.
 - **Secure Login:** Nextcloud Login Flow v2 (browser-based) or manual WebDAV configuration. Credentials are encrypted at rest.
 - **Cloud Album Browser:** Browse albums (folders) stored on your WebDAV/Nextcloud server.

@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
                         photos.forEach { p ->
                             arr.put(
                                 JSONObject().apply {
+                                    put("id", p.id)
                                     put("uri", p.uri.toString())
                                     put("mimeType", p.mimeType)
                                     put("displayName", p.displayName)
