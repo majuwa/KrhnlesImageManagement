@@ -23,7 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
@@ -34,10 +34,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridView
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
 
 private const val ROUTE_PHOTOS = "photos"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_UPLOAD_HISTORY = "photos/history"
 private const val ROUTE_ALBUMS = "albums"
 private const val ROUTE_ALBUM_DETAIL = "albums/detail"
 private const val ROUTE_VIEWER = "albums/viewer"
@@ -45,7 +48,7 @@ private const val ROUTE_DUPLICATES = "albums/duplicates"
 private const val ROUTE_BLUR = "albums/blur"
 
 @Composable
-fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit) {
+fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
@@ -95,6 +98,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                 PhotoGridScreen(
                     viewModel = vm,
                     onNavigateToSettings = { navController.navigate(ROUTE_SETTINGS) },
+                    onNavigateToUploadHistory = { navController.navigate(ROUTE_UPLOAD_HISTORY) },
                     onStartUpload = onStartUpload,
                 )
             }
@@ -102,6 +106,14 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
             composable(ROUTE_SETTINGS) {
                 val vm: SettingsViewModel = viewModel()
                 SettingsScreen(
+                    viewModel = vm,
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(ROUTE_UPLOAD_HISTORY) {
+                val vm: UploadHistoryViewModel = viewModel()
+                UploadHistoryScreen(
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )

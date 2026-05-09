@@ -91,6 +91,37 @@ class WebDavClient(
             }
         }
 
+    suspend fun renameDirectory(
+        oldPath: String,
+        newPath: String,
+    ): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val oldSegments = oldPath.split("/").filter { it.isNotBlank() }
+                val newSegments = newPath.split("/").filter { it.isNotBlank() }
+                require(oldSegments.isNotEmpty()) { "Invalid path segment: blank" }
+                require(newSegments.isNotEmpty()) { "Invalid path segment: blank" }
+                oldSegments.forEach(::validatePathSegment)
+                newSegments.forEach(::validatePathSegment)
+
+                val sourceUrl = buildPathUrl(oldSegments)
+                val destinationUrl = buildPathUrl(newSegments)
+                val request =
+                    Request
+                        .Builder()
+                        .url(sourceUrl)
+                        .method("MOVE", null)
+                        .header("Destination", destinationUrl.toString())
+                        .header("Overwrite", "F")
+                        .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        error("Rename failed: HTTP ${response.code} ${response.message}")
+                    }
+                }
+            }
+        }
+
     suspend fun uploadFile(
         folderName: String,
         fileName: String,

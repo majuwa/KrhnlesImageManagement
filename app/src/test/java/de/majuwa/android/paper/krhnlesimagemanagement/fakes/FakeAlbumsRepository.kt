@@ -8,16 +8,32 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 class FakeAlbumsRepository : AlbumsRepositoryContract {
     var albums: Result<List<RemoteAlbum>> = Result.success(emptyList())
     var photos: Result<List<RemotePhoto>> = Result.success(emptyList())
+    var renameAlbumResult: Result<RemoteAlbum>? = null
     var deletePhotoResult: Result<Unit> = Result.success(Unit)
     var deleteAlbumResult: Result<Unit> = Result.success(Unit)
     var downloadBitmapResult: Bitmap? = null
 
     val deletedPhotos = mutableListOf<RemotePhoto>()
     val deletedAlbums = mutableListOf<RemoteAlbum>()
+    val renamedAlbums = mutableListOf<Pair<RemoteAlbum, String>>()
 
     override suspend fun listAlbums(): Result<List<RemoteAlbum>> = albums
 
     override suspend fun listPhotos(albumHref: String): Result<List<RemotePhoto>> = photos
+
+    override suspend fun renameAlbum(
+        album: RemoteAlbum,
+        newName: String,
+    ): Result<RemoteAlbum> {
+        renamedAlbums += album to newName
+        return renameAlbumResult
+            ?: Result.success(
+                album.copy(
+                    displayName = newName,
+                    href = "/${newName.replace(' ', '_')}/",
+                ),
+            )
+    }
 
     override suspend fun thumbnailUrl(photo: RemotePhoto): String = "https://fake.server/thumb/${photo.href}"
 

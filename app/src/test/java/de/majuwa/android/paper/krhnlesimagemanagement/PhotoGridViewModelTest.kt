@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.work.testing.WorkManagerTestInitHelper
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
@@ -32,6 +33,7 @@ class PhotoGridViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeMedia: FakeMediaRepository
     private lateinit var fakeCredentials: FakeCredentialRepository
+    private lateinit var fakeUploadedPhotos: FakeUploadedPhotosRepository
     private lateinit var viewModel: PhotoGridViewModel
 
     private val today = LocalDate.of(2026, 4, 2)
@@ -58,6 +60,7 @@ class PhotoGridViewModelTest {
             FakeCredentialRepository(
                 WebDavConfig("https://x.com/dav/", "u", "p"),
             )
+        fakeUploadedPhotos = FakeUploadedPhotosRepository()
         val app = RuntimeEnvironment.getApplication() as Application
         WorkManagerTestInitHelper.initializeTestWorkManager(app)
         viewModel =
@@ -65,6 +68,7 @@ class PhotoGridViewModelTest {
                 application = app,
                 mediaRepository = fakeMedia,
                 credentialStore = fakeCredentials,
+                uploadedPhotosRepository = fakeUploadedPhotos,
             )
     }
 
@@ -198,11 +202,45 @@ class PhotoGridViewModelTest {
                     application = app,
                     mediaRepository = fakeMedia,
                     credentialStore = unconfiguredCreds,
+                    uploadedPhotosRepository = fakeUploadedPhotos,
                 )
             advanceUntilIdle()
 
             vm.onUploadRequested()
             assertTrue(vm.uiState.value.showNotConfiguredDialog)
+            assertFalse(vm.uiState.value.showOccasionDialog)
+        }
+
+    @Test
+    fun `onUploadRequested shows occasion dialog when configured and auto date folders disabled`() =
+        runTest {
+            advanceUntilIdle()
+
+            viewModel.onUploadRequested()
+
+            assertTrue(viewModel.uiState.value.showOccasionDialog)
+            assertFalse(viewModel.uiState.value.showAutoDateFolderPreviewDialog)
+        }
+
+    @Test
+    fun `onUploadRequested shows auto date preview when configured and auto date folders enabled`() =
+        runTest {
+            val app = RuntimeEnvironment.getApplication() as Application
+            val vm =
+                PhotoGridViewModel(
+                    application = app,
+                    mediaRepository = fakeMedia,
+                    credentialStore =
+                        FakeCredentialRepository(
+                            initialConfig = WebDavConfig("https://x.com/dav/", "u", "p"),
+                            initialAutoDateFoldersEnabled = true,
+                        ),
+                )
+            advanceUntilIdle()
+
+            vm.onUploadRequested()
+
+            assertTrue(vm.uiState.value.showAutoDateFolderPreviewDialog)
             assertFalse(vm.uiState.value.showOccasionDialog)
         }
 
@@ -266,6 +304,28 @@ class PhotoGridViewModelTest {
     }
 
     @Test
+    fun `dismissAutoDateFolderPreviewDialog clears flag`() =
+        runTest {
+            val app = RuntimeEnvironment.getApplication() as Application
+            val vm =
+                PhotoGridViewModel(
+                    application = app,
+                    mediaRepository = fakeMedia,
+                    credentialStore =
+                        FakeCredentialRepository(
+                            initialConfig = WebDavConfig("https://x.com/dav/", "u", "p"),
+                            initialAutoDateFoldersEnabled = true,
+                        ),
+                )
+            advanceUntilIdle()
+            vm.onUploadRequested()
+
+            vm.dismissAutoDateFolderPreviewDialog()
+
+            assertFalse(vm.uiState.value.showAutoDateFolderPreviewDialog)
+        }
+
+    @Test
     fun `dismissNotConfiguredDialog clears flag`() {
         viewModel.dismissNotConfiguredDialog()
         assertFalse(viewModel.uiState.value.showNotConfiguredDialog)
@@ -292,4 +352,121 @@ class PhotoGridViewModelTest {
             assertEquals(2, selected.size)
             assertEquals(setOf(1L, 3L), selected.map { it.id }.toSet())
         }
+
+    // ── uploaded photo IDs ──────────────────────────────────────────────────
+
+    @Test
+    fun `uploadedPhotoIds are reflected in uiState`() =
+        runTest {
+            fakeUploadedPhotos.markAsUploaded(setOf(1L, 2L))
+            advanceUntilIdle()
+
+            assertEquals(setOf(1L, 2L), viewModel.uiState.value.uploadedPhotoIds)
+        }
+
+    @Test
+    fun `uploadedPhotoIds are updated when repository emits new value`() =
+        runTest {
+            advanceUntilIdle()
+
+            fakeUploadedPhotos.markAsUploaded(setOf(5L))
+            advanceUntilIdle()
+
+            assertTrue(5L in viewModel.uiState.value.uploadedPhotoIds)
+        }
+
+    // ── toggleShowOnlyNewPhotos ─────────────────────────────────────────────
+
+    @Test
+    fun `toggleShowOnlyNewPhotos hides uploaded photos when enabled`() =
+        runTest {
+            fakeMedia.photosToReturn =
+                listOf(
+                    photo(1, "a.jpg", today),
+                    photo(2, "b.jpg", today),
+                    photo(3, "c.jpg", yesterday),
+                )
+            fakeUploadedPhotos.markAsUploaded(setOf(1L, 3L))
+
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.toggleShowOnlyNewPhotos()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.showOnlyNewPhotos)
+
+            // Only photo 2 (not uploaded) should be visible
+            val visiblePhotos = state.photosByDate.values.flatten()
+            assertEquals(1, visiblePhotos.size)
+            assertEquals(2L, visiblePhotos.first().id)
+        }
+
+    @Test
+    fun `toggleShowOnlyNewPhotos restores all photos when disabled`() =
+        runTest {
+            fakeMedia.photosToReturn =
+                listOf(
+                    photo(1, "a.jpg", today),
+                    photo(2, "b.jpg", today),
+                )
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.toggleShowOnlyNewPhotos()
+            advanceUntilIdle()
+            assertEquals(1, viewModel.uiState.value.photosByDate.values.flatten().size)
+
+            viewModel.toggleShowOnlyNewPhotos()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertFalse(state.showOnlyNewPhotos)
+            assertEquals(2, state.photosByDate.values.flatten().size)
+        }
+
+    @Test
+    fun `toggleShowOnlyNewPhotos removes empty date groups`() =
+        runTest {
+            fakeMedia.photosToReturn =
+                listOf(
+                    photo(1, "a.jpg", today),
+                    photo(2, "b.jpg", yesterday),
+                )
+            // Mark all photos as uploaded
+            fakeUploadedPhotos.markAsUploaded(setOf(1L, 2L))
+
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.toggleShowOnlyNewPhotos()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.showOnlyNewPhotos)
+            // No photos visible — all dates filtered out
+            assertTrue(state.photosByDate.isEmpty())
+        }
+
+    @Test
+    fun `showOnlyNewPhotos has no effect when no photos are uploaded`() =
+        runTest {
+            fakeMedia.photosToReturn =
+                listOf(
+                    photo(1, "a.jpg", today),
+                    photo(2, "b.jpg", today),
+                )
+
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.toggleShowOnlyNewPhotos()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.showOnlyNewPhotos)
+            // All photos still visible because uploadedPhotoIds is empty
+            assertEquals(2, state.photosByDate.values.flatten().size)
+        }
 }
+

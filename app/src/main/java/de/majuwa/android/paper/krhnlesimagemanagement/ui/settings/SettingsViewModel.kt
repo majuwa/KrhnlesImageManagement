@@ -7,15 +7,19 @@ import de.majuwa.android.nextcloudlogin.LoginFlowState
 import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
+    val autoDateFoldersEnabled: Boolean = false,
     val serverUrl: String = "",
     val username: String = "",
     val webDavUrl: String = "",
@@ -32,6 +36,8 @@ data class SettingsUiState(
     val manualPassword: String = "",
     /** True when the entered URL explicitly uses plain HTTP (credentials sent in cleartext). */
     val httpWarning: Boolean = false,
+    /** True when uploads should be restricted to Wi-Fi (unmetered) connections. */
+    val wifiOnly: Boolean = false,
 )
 
 class SettingsViewModel
@@ -42,6 +48,8 @@ class SettingsViewModel
             CredentialStore(application),
         private val authRepository: NextcloudLoginFlow =
             NextcloudLoginFlow(),
+        private val uploadedPhotosRepository: UploadedPhotosRepositoryContract =
+            UploadedPhotosStore(application),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -62,6 +70,16 @@ class SettingsViewModel
                     }
                 }
             }
+            viewModelScope.launch {
+                credentialStore.wifiOnly.collect { value ->
+                    _uiState.update { it.copy(wifiOnly = value) }
+                }
+            }
+            viewModelScope.launch {
+                credentialStore.autoDateFoldersEnabled.collect { enabled ->
+                    _uiState.update { it.copy(autoDateFoldersEnabled = enabled) }
+                }
+            }
         }
 
         fun onServerUrlChange(value: String) {
@@ -75,6 +93,19 @@ class SettingsViewModel
         fun saveBaseFolder() {
             viewModelScope.launch {
                 credentialStore.saveBaseFolder(_uiState.value.baseFolder)
+            }
+        }
+
+        fun setWifiOnly(enabled: Boolean) {
+            viewModelScope.launch {
+                credentialStore.saveWifiOnly(enabled)
+            }
+        }
+
+        fun setAutoDateFoldersEnabled(enabled: Boolean) {
+            _uiState.update { it.copy(autoDateFoldersEnabled = enabled) }
+            viewModelScope.launch {
+                credentialStore.saveAutoDateFolders(enabled)
             }
         }
 
@@ -157,25 +188,23 @@ class SettingsViewModel
         fun testConnection() {
             viewModelScope.launch {
                 _uiState.update { it.copy(isTesting = true, testResult = null) }
-                credentialStore.webDavConfig.collect { config ->
-                    if (!config.isValid) {
-                        _uiState.update { it.copy(isTesting = false, testResult = "Not configured.") }
-                        return@collect
-                    }
-                    val client = WebDavClient(config)
-                    val result = client.testConnection()
-                    _uiState.update {
-                        it.copy(
-                            isTesting = false,
-                            testResult =
-                                if (result.isSuccess) {
-                                    "Connection successful!"
-                                } else {
-                                    "Failed: ${result.exceptionOrNull()?.message}"
-                                },
-                        )
-                    }
-                    return@collect
+                val config = credentialStore.webDavConfig.first()
+                if (!config.isValid) {
+                    _uiState.update { it.copy(isTesting = false, testResult = "Not configured.") }
+                    return@launch
+                }
+                val client = WebDavClient(config)
+                val result = client.testConnection()
+                _uiState.update {
+                    it.copy(
+                        isTesting = false,
+                        testResult =
+                            if (result.isSuccess) {
+                                "Connection successful!"
+                            } else {
+                                "Failed: ${result.exceptionOrNull()?.message}"
+                            },
+                    )
                 }
             }
         }
@@ -183,6 +212,7 @@ class SettingsViewModel
         fun logout() {
             viewModelScope.launch {
                 credentialStore.clear()
+                uploadedPhotosRepository.clear()
                 _uiState.update { SettingsUiState() }
             }
         }

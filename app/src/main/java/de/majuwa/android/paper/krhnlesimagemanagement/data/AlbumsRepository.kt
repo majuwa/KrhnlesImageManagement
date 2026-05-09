@@ -12,6 +12,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Credentials
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -21,6 +23,9 @@ import java.util.concurrent.TimeUnit
 class AlbumsRepository(
     private val config: WebDavConfig,
 ) : AlbumsRepositoryContract {
+    private val webDavClient = WebDavClient(config)
+    private val baseHttpUrl: HttpUrl = requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
+
     private val client: OkHttpClient =
         OkHttpClient
             .Builder()
@@ -71,6 +76,26 @@ class AlbumsRepository(
                     .drop(1)
                     .filter { isImage(it) }
                     .map { RemotePhoto(it.displayName, it.href, it.fileId, it.contentType) }
+            }
+        }
+
+    override suspend fun renameAlbum(
+        album: RemoteAlbum,
+        newName: String,
+    ): Result<RemoteAlbum> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val oldSegments = albumRelativeSegments(album)
+                require(oldSegments.isNotEmpty()) { "Invalid album path" }
+                val newSegments = oldSegments.dropLast(1) + newName
+                webDavClient.renameDirectory(
+                    oldPath = oldSegments.joinToString("/"),
+                    newPath = newSegments.joinToString("/"),
+                ).getOrThrow()
+                RemoteAlbum(
+                    displayName = newName,
+                    href = buildAlbumHref(newSegments),
+                )
             }
         }
 
@@ -208,6 +233,33 @@ class AlbumsRepository(
                 response.body.string()
             }
         return parsePropfindXml(xml)
+    }
+
+    private fun albumRelativeSegments(album: RemoteAlbum): List<String> {
+        val albumUrl =
+            "$origin${album.href}"
+                .toHttpUrlOrNull()
+                ?: error("Invalid album href: ${album.href}")
+        val albumSegments = albumUrl.pathSegments.filter { it.isNotBlank() }
+        val baseSegments = baseHttpUrl.pathSegments.filter { it.isNotBlank() }
+        require(
+            albumSegments.size > baseSegments.size &&
+                albumSegments.take(baseSegments.size) == baseSegments,
+        ) {
+            "Album href is outside configured WebDAV root"
+        }
+        return albumSegments.drop(baseSegments.size)
+    }
+
+    private fun buildAlbumHref(relativeSegments: List<String>): String {
+        val url =
+            baseHttpUrl
+                .newBuilder()
+                .apply { relativeSegments.forEach(::addPathSegment) }
+                .build()
+                .toString()
+                .removePrefix(origin)
+        return if (url.endsWith("/")) url else "$url/"
     }
 
     private companion object {

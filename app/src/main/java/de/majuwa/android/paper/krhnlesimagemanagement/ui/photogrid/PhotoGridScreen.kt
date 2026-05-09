@@ -27,7 +27,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -35,6 +38,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +73,9 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.previewUploadPath
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatches
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -78,10 +85,13 @@ import java.time.format.FormatStyle
 fun PhotoGridScreen(
     viewModel: PhotoGridViewModel,
     onNavigateToSettings: () -> Unit,
-    onStartUpload: (occasionName: String, photos: List<Photo>) -> Unit,
+    onNavigateToUploadHistory: () -> Unit,
+    onStartUpload: (batches: List<UploadBatch>) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val autoDateFoldersEnabled by viewModel.autoDateFoldersEnabled.collectAsStateWithLifecycle()
     val isConfigured by viewModel.isConfigured.collectAsStateWithLifecycle()
+    val uploadBaseFolder by viewModel.uploadBaseFolder.collectAsStateWithLifecycle()
     val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -144,7 +154,14 @@ fun PhotoGridScreen(
     // Show not-configured dialog on first launch if no server is set up
     LaunchedEffect(isConfigured) {
         if (!isConfigured) {
+            viewModel.dismissAutoDateFolderPreviewDialog()
             viewModel.dismissOccasionDialog()
+        }
+    }
+
+    LaunchedEffect(autoDateFoldersEnabled) {
+        if (!autoDateFoldersEnabled) {
+            viewModel.dismissAutoDateFolderPreviewDialog()
         }
     }
 
@@ -168,6 +185,34 @@ fun PhotoGridScreen(
                     if (uiState.selectedPhotoIds.isNotEmpty()) {
                         TextButton(onClick = { viewModel.clearSelection() }) {
                             Text(stringResource(R.string.action_clear))
+                        }
+                    }
+                    if (uiState.selectedPhotoIds.isEmpty()) {
+                        IconButton(onClick = onNavigateToUploadHistory) {
+                            Icon(Icons.Default.History, contentDescription = stringResource(R.string.cd_upload_history))
+                        }
+                    }
+                    if (uiState.uploadedPhotoIds.isNotEmpty() && uiState.selectedPhotoIds.isEmpty()) {
+                        // The filter button is hidden during selection mode to avoid
+                        // cluttering the top bar when the "Clear" action is already present.
+                        IconButton(onClick = { viewModel.toggleShowOnlyNewPhotos() }) {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription =
+                                    stringResource(
+                                        if (uiState.showOnlyNewPhotos) {
+                                            R.string.action_show_all_photos
+                                        } else {
+                                            R.string.action_show_only_new
+                                        },
+                                    ),
+                                tint =
+                                    if (uiState.showOnlyNewPhotos) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    },
+                            )
                         }
                     }
                     IconButton(onClick = onNavigateToSettings) {
@@ -207,6 +252,11 @@ fun PhotoGridScreen(
                     UploadProgressBanner(progress.current, progress.total)
                 }
             }
+            AnimatedVisibility(visible = uiState.showOnlyNewPhotos) {
+                NewOnlyFilterBanner(
+                    onClear = { viewModel.toggleShowOnlyNewPhotos() },
+                )
+            }
             Box(modifier = Modifier.weight(1f)) {
                 InnerContent(
                     hasPermission = hasPermission,
@@ -221,11 +271,25 @@ fun PhotoGridScreen(
     }
 
     if (uiState.showOccasionDialog) {
+        val selectedPhotos = viewModel.getSelectedPhotos()
         OccasionDialog(
             onDismiss = { viewModel.dismissOccasionDialog() },
             onConfirm = { occasionName ->
                 viewModel.dismissOccasionDialog()
-                onStartUpload(occasionName, viewModel.getSelectedPhotos())
+                onStartUpload(listOf(UploadBatch(occasionName, selectedPhotos)))
+                viewModel.clearSelection()
+            },
+        )
+    }
+
+    if (uiState.showAutoDateFolderPreviewDialog) {
+        val uploadBatches = resolveAutoDateUploadBatches(viewModel.getSelectedPhotos())
+        AutoDateFolderPreviewDialog(
+            previewPaths = uploadBatches.map { previewUploadPath(uploadBaseFolder, it.folderName) },
+            onDismiss = { viewModel.dismissAutoDateFolderPreviewDialog() },
+            onConfirm = {
+                viewModel.dismissAutoDateFolderPreviewDialog()
+                onStartUpload(uploadBatches)
                 viewModel.clearSelection()
             },
         )
@@ -240,6 +304,42 @@ fun PhotoGridScreen(
             },
         )
     }
+}
+
+@Composable
+private fun AutoDateFolderPreviewDialog(
+    previewPaths: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dialog_auto_date_preview_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    pluralStringResource(
+                        R.plurals.dialog_auto_date_preview_message,
+                        previewPaths.size,
+                        previewPaths.size,
+                    ),
+                )
+                previewPaths.forEach { previewPath ->
+                    Text(stringResource(R.string.preview_upload_path, previewPath))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.action_upload))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -266,6 +366,34 @@ private fun UploadProgressBanner(
                     .fillMaxWidth()
                     .padding(top = 4.dp)
                     .height(4.dp),
+        )
+    }
+}
+
+@Composable
+private fun NewOnlyFilterBanner(
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = true,
+            onClick = onClear,
+            label = { Text(stringResource(R.string.action_show_only_new)) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            },
         )
     }
 }
@@ -318,6 +446,7 @@ private fun InnerContent(
                 PhotoGrid(
                     photosByDate = uiState.photosByDate,
                     selectedPhotoIds = uiState.selectedPhotoIds,
+                    uploadedPhotoIds = uiState.uploadedPhotoIds,
                     onPhotoClick = onPhotoClick,
                     onDateHeaderClick = onDateHeaderClick,
                     modifier = Modifier.fillMaxSize(),
@@ -331,6 +460,7 @@ private fun InnerContent(
 private fun PhotoGrid(
     photosByDate: Map<LocalDate, List<Photo>>,
     selectedPhotoIds: Set<Long>,
+    uploadedPhotoIds: Set<Long>,
     onPhotoClick: (Long) -> Unit,
     onDateHeaderClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
@@ -362,6 +492,7 @@ private fun PhotoGrid(
                 PhotoItem(
                     photo = photo,
                     isSelected = photo.id in selectedPhotoIds,
+                    isUploaded = photo.id in uploadedPhotoIds,
                     onClick = { onPhotoClick(photo.id) },
                 )
             }
@@ -409,6 +540,7 @@ private fun DateHeader(
 private fun PhotoItem(
     photo: Photo,
     isSelected: Boolean,
+    isUploaded: Boolean,
     onClick: () -> Unit,
 ) {
     Box(
@@ -435,6 +567,25 @@ private fun PhotoItem(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
             )
+        }
+        if (isUploaded) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(4.dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Cloud,
+                    contentDescription = stringResource(R.string.cd_already_uploaded),
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
         Icon(
             imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,

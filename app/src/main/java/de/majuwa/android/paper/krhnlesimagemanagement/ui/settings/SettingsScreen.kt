@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -133,6 +135,36 @@ private fun LoggedInContent(
 
     Spacer(modifier = Modifier.height(16.dp))
 
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.label_wifi_only),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(R.string.hint_wifi_only),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = uiState.wifiOnly,
+            onCheckedChange = { viewModel.setWifiOnly(it) },
+        )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    AutoDateFoldersSetting(
+        enabled = uiState.autoDateFoldersEnabled,
+        onEnabledChange = viewModel::setAutoDateFoldersEnabled,
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
     OutlinedButton(
         onClick = { viewModel.testConnection() },
         enabled = !uiState.isTesting,
@@ -166,6 +198,40 @@ private fun LoggedInContent(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text(stringResource(R.string.action_disconnect))
+    }
+}
+
+@Composable
+private fun AutoDateFoldersSetting(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.label_auto_date_folders),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.hint_auto_date_folders),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                modifier = Modifier.testTag("autoDateFoldersSwitch"),
+            )
+        }
     }
 }
 

@@ -90,6 +90,20 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Save folder").assertIsDisplayed()
     }
 
+    @Test
+    fun `shows auto date folders setting when logged in`() {
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            }
+        }
+        composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
+        composeTestRule.onNodeWithText("Auto date folders").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's capture date (for example 2026/05-May).",
+        ).assertIsDisplayed()
+    }
+
     // ── Logged-out state ────────────────────────────────────────────────────
 
     @Test
@@ -121,5 +135,19 @@ class SettingsScreenTest {
             timeoutMillis = 5_000,
         )
         composeTestRule.onNodeWithText("Save & Connect").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `shows Wi-Fi only toggle when logged in`() {
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = createLoggedInViewModel(), onNavigateBack = {})
+            }
+        }
+        composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
+        composeTestRule
+            .onNodeWithText("Upload on Wi-Fi only")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 }

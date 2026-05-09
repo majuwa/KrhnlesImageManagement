@@ -4,12 +4,15 @@ import android.graphics.Bitmap
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 
 interface CredentialRepository {
+    val autoDateFoldersEnabled: Flow<Boolean>
     val isConfigured: Flow<Boolean>
     val webDavConfig: Flow<WebDavConfig>
+    val wifiOnly: Flow<Boolean>
 
     fun password(): String?
 
@@ -23,6 +26,10 @@ interface CredentialRepository {
 
     suspend fun saveBaseFolder(folder: String)
 
+    suspend fun saveWifiOnly(wifiOnly: Boolean)
+
+    suspend fun saveAutoDateFolders(enabled: Boolean)
+
     suspend fun clear()
 }
 
@@ -30,6 +37,11 @@ interface AlbumsRepositoryContract {
     suspend fun listAlbums(): Result<List<RemoteAlbum>>
 
     suspend fun listPhotos(albumHref: String): Result<List<RemotePhoto>>
+
+    suspend fun renameAlbum(
+        album: RemoteAlbum,
+        newName: String,
+    ): Result<RemoteAlbum>
 
     suspend fun thumbnailUrl(photo: RemotePhoto): String
 
@@ -44,4 +56,22 @@ interface AlbumsRepositoryContract {
 
 interface MediaRepositoryContract {
     suspend fun loadPhotos(): List<Photo>
+}
+
+interface UploadHistoryRepository {
+    val entries: Flow<List<UploadHistoryEntry>>
+
+    suspend fun addEntry(entry: UploadHistoryEntry)
+
+    suspend fun removeEntry(entryId: Long)
+
+    suspend fun clearAll()
+}
+
+interface UploadedPhotosRepositoryContract {
+    val uploadedPhotoIds: Flow<Set<Long>>
+
+    suspend fun markAsUploaded(photoIds: Set<Long>)
+
+    suspend fun clear()
 }
