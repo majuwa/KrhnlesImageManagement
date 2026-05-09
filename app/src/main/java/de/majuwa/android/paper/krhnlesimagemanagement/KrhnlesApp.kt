@@ -34,10 +34,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridView
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
 
 private const val ROUTE_PHOTOS = "photos"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_UPLOAD_HISTORY = "photos/history"
 private const val ROUTE_ALBUMS = "albums"
 private const val ROUTE_ALBUM_DETAIL = "albums/detail"
 private const val ROUTE_VIEWER = "albums/viewer"
@@ -95,6 +98,7 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
                 PhotoGridScreen(
                     viewModel = vm,
                     onNavigateToSettings = { navController.navigate(ROUTE_SETTINGS) },
+                    onNavigateToUploadHistory = { navController.navigate(ROUTE_UPLOAD_HISTORY) },
                     onStartUpload = onStartUpload,
                 )
             }
@@ -102,6 +106,14 @@ fun KrhnlesApp(onStartUpload: (occasionName: String, photos: List<Photo>) -> Uni
             composable(ROUTE_SETTINGS) {
                 val vm: SettingsViewModel = viewModel()
                 SettingsScreen(
+                    viewModel = vm,
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(ROUTE_UPLOAD_HISTORY) {
+                val vm: UploadHistoryViewModel = viewModel()
+                UploadHistoryScreen(
                     viewModel = vm,
                     onNavigateBack = { navController.popBackStack() },
                 )
