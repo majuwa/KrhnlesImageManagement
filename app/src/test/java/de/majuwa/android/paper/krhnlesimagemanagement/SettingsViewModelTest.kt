@@ -1,18 +1,23 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,8 +63,6 @@ class SettingsViewModelTest {
         Dispatchers.resetMain()
     }
 
-    // ── init: config loaded from credential store ───────────────────────────
-
     @Test
     fun `init loads existing config into UI state`() =
         runTest {
@@ -71,8 +74,6 @@ class SettingsViewModelTest {
             assertTrue(state.isLoggedIn)
         }
 
-    // ── onServerUrlChange ───────────────────────────────────────────────────
-
     @Test
     fun `onServerUrlChange updates server URL and clears error`() {
         viewModel.onServerUrlChange("https://new.server.com")
@@ -80,8 +81,6 @@ class SettingsViewModelTest {
         assertEquals("https://new.server.com", state.serverUrl)
         assertEquals(null, state.error)
     }
-
-    // ── startLoginFlow ──────────────────────────────────────────────────────
 
     @Test
     fun `startLoginFlow with blank URL sets error`() =
@@ -93,8 +92,6 @@ class SettingsViewModelTest {
             assertEquals("Server URL is required", viewModel.uiState.value.error)
         }
 
-    // ── toggleManualConfig ──────────────────────────────────────────────────
-
     @Test
     fun `toggleManualConfig toggles flag`() {
         assertFalse(viewModel.uiState.value.useManualConfig)
@@ -103,8 +100,6 @@ class SettingsViewModelTest {
         viewModel.toggleManualConfig()
         assertFalse(viewModel.uiState.value.useManualConfig)
     }
-
-    // ── manual config fields ────────────────────────────────────────────────
 
     @Test
     fun `onManualUrlChange updates URL`() {
@@ -123,8 +118,6 @@ class SettingsViewModelTest {
         viewModel.onManualPasswordChange("secret")
         assertEquals("secret", viewModel.uiState.value.manualPassword)
     }
-
-    // ── saveManualConfig ────────────────────────────────────────────────────
 
     @Test
     fun `saveManualConfig with empty fields sets error`() =
@@ -148,11 +141,8 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             assertTrue(viewModel.uiState.value.isLoggedIn)
-            // URL should be normalized with https://
             assertEquals("https://cloud.example.com/dav", viewModel.uiState.value.manualUrl)
         }
-
-    // ── saveBaseFolder ──────────────────────────────────────────────────────
 
     @Test
     fun `saveBaseFolder persists via credential store`() =
@@ -173,7 +163,27 @@ class SettingsViewModelTest {
             assertTrue(viewModel.uiState.value.autoDateFoldersEnabled)
         }
 
-    // ── logout ──────────────────────────────────────────────────────────────
+    @Test
+    fun `testConnection cancels config flow after first emission`() =
+        runTest {
+            val trackingCredentials = TrackingCredentialRepository()
+            val app = RuntimeEnvironment.getApplication() as Application
+            val trackingViewModel =
+                SettingsViewModel(
+                    application = app,
+                    credentialStore = trackingCredentials,
+                )
+
+            advanceUntilIdle()
+            val collectorsBeforeTest = trackingCredentials.activeCollectors.get()
+            trackingViewModel.testConnection()
+            advanceUntilIdle()
+
+            assertTrue(collectorsBeforeTest > 0)
+            assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
+            assertFalse(trackingViewModel.uiState.value.isTesting)
+            assertEquals("Not configured.", trackingViewModel.uiState.value.testResult)
+        }
 
     @Test
     fun `logout clears credentials and resets UI state`() =
@@ -200,8 +210,6 @@ class SettingsViewModelTest {
 
             assertTrue(fakeUploadedPhotos.uploadedPhotoIds.first().isEmpty())
         }
-
-    // ── Security: HTTP warning ───────────────────────────────────────────────
 
     @Test
     fun `onServerUrlChange sets httpWarning for explicit http scheme`() {
@@ -235,8 +243,6 @@ class SettingsViewModelTest {
         assertFalse(viewModel.uiState.value.httpWarning)
     }
 
-    // ── Wi-Fi only toggle ────────────────────────────────────────────────────
-
     @Test
     fun `wifiOnly defaults to false`() =
         runTest {
@@ -267,5 +273,52 @@ class SettingsViewModelTest {
             assertFalse(viewModel.uiState.value.wifiOnly)
             assertFalse(fakeCredentials.wifiOnlyValue())
         }
-}
 
+    private class TrackingCredentialRepository : CredentialRepository {
+        val activeCollectors = AtomicInteger(0)
+
+        override val autoDateFoldersEnabled: Flow<Boolean> =
+            flow {
+                emit(false)
+            }
+
+        override val webDavConfig: Flow<WebDavConfig> =
+            flow {
+                activeCollectors.incrementAndGet()
+                try {
+                    emit(WebDavConfig())
+                    awaitCancellation()
+                } finally {
+                    activeCollectors.decrementAndGet()
+                }
+            }
+
+        override val wifiOnly: Flow<Boolean> =
+            flow {
+                emit(false)
+            }
+
+        override val isConfigured: Flow<Boolean> =
+            flow {
+                emit(false)
+            }
+
+        override fun password(): String? = null
+
+        override fun isLoggedIn(): Boolean = false
+
+        override suspend fun save(
+            serverUrl: String,
+            username: String,
+            password: String,
+        ) = Unit
+
+        override suspend fun saveBaseFolder(folder: String) = Unit
+
+        override suspend fun saveWifiOnly(wifiOnly: Boolean) = Unit
+
+        override suspend fun saveAutoDateFolders(enabled: Boolean) = Unit
+
+        override suspend fun clear() = Unit
+    }
+}
