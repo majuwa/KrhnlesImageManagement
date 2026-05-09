@@ -53,7 +53,8 @@ class RetryUploadReceiverTest {
         receiver.onReceive(context, intent)
 
         val workInfos =
-            WorkManager.getInstance(context)
+            WorkManager
+                .getInstance(context)
                 .getWorkInfosByTag("photo_upload")
                 .get()
         assertTrue(workInfos.isNotEmpty())
@@ -67,7 +68,8 @@ class RetryUploadReceiverTest {
         receiver.onReceive(context, intent)
 
         val workInfos =
-            WorkManager.getInstance(context)
+            WorkManager
+                .getInstance(context)
                 .getWorkInfosByTag("photo_upload")
                 .get()
         assertTrue(workInfos.isEmpty())
@@ -84,7 +86,8 @@ class RetryUploadReceiverTest {
         receiver.onReceive(context, intent)
 
         val workInfos =
-            WorkManager.getInstance(context)
+            WorkManager
+                .getInstance(context)
                 .getWorkInfosByTag("photo_upload")
                 .get()
         assertTrue(workInfos.isEmpty())
@@ -102,7 +105,8 @@ class RetryUploadReceiverTest {
         receiver.onReceive(context, intent)
 
         val workInfos =
-            WorkManager.getInstance(context)
+            WorkManager
+                .getInstance(context)
                 .getWorkInfosByTag("photo_upload")
                 .get()
         assertTrue(workInfos.isEmpty())

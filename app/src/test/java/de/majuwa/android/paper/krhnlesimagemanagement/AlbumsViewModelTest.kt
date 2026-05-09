@@ -271,9 +271,21 @@ class AlbumsViewModelTest {
             advanceUntilIdle()
 
             assertTrue(success)
-            assertEquals("Autumn", viewModel.albumsState.value.albums[0].displayName)
-            assertEquals("/Autumn/", viewModel.albumsState.value.albums[0].href)
-            assertEquals("Winter", viewModel.albumsState.value.albums[1].displayName)
+            assertEquals(
+                "Autumn",
+                viewModel.albumsState.value.albums[0]
+                    .displayName,
+            )
+            assertEquals(
+                "/Autumn/",
+                viewModel.albumsState.value.albums[0]
+                    .href,
+            )
+            assertEquals(
+                "Winter",
+                viewModel.albumsState.value.albums[1]
+                    .displayName,
+            )
         }
 
     // ── deleteSelectedPhotos ────────────────────────────────────────────────

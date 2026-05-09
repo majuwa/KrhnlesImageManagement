@@ -23,10 +23,14 @@ fun parseSharedPhotos(
                 val uri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 if (uri != null) listOf(uri) else emptyList()
             }
+
             Intent.ACTION_SEND_MULTIPLE -> {
                 intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) ?: emptyList()
             }
-            else -> emptyList()
+
+            else -> {
+                emptyList()
+            }
         }
 
     val today = LocalDate.now()
@@ -55,7 +59,7 @@ private fun queryUriMetadata(
 ): UriMetadata {
     var displayName = uri.lastPathSegment ?: "image"
     var size = 0L
-    val mimeType = contentResolver.getType(uri)
+    val mimeType = runCatching { contentResolver.getType(uri) }.getOrNull()
 
     contentResolver
         .query(

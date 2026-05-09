@@ -3,9 +3,9 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import androidx.test.core.app.ApplicationProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.uploadHistoryDataStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
@@ -16,8 +16,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-
-private val Context.testUploadHistoryDataStore by preferencesDataStore(name = "upload_history")
 
 @RunWith(RobolectricTestRunner::class)
 class UploadHistoryStoreTest {
@@ -116,7 +114,7 @@ class UploadHistoryStoreTest {
     @Test
     fun `invalid persisted entries are filtered out`() =
         runTest {
-            context.testUploadHistoryDataStore.edit { prefs ->
+            context.uploadHistoryDataStore.edit { prefs ->
                 prefs[stringPreferencesKey("upload_history_entries")] =
                     """
                     [

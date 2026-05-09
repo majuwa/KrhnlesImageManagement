@@ -29,8 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -182,42 +182,13 @@ fun PhotoGridScreen(
                     }
                 },
                 actions = {
-                    if (uiState.selectedPhotoIds.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.clearSelection() }) {
-                            Text(stringResource(R.string.action_clear))
-                        }
-                    }
-                    if (uiState.selectedPhotoIds.isEmpty()) {
-                        IconButton(onClick = onNavigateToUploadHistory) {
-                            Icon(Icons.Default.History, contentDescription = stringResource(R.string.cd_upload_history))
-                        }
-                    }
-                    if (uiState.uploadedPhotoIds.isNotEmpty() && uiState.selectedPhotoIds.isEmpty()) {
-                        // The filter button is hidden during selection mode to avoid
-                        // cluttering the top bar when the "Clear" action is already present.
-                        IconButton(onClick = { viewModel.toggleShowOnlyNewPhotos() }) {
-                            Icon(
-                                Icons.Default.FilterList,
-                                contentDescription =
-                                    stringResource(
-                                        if (uiState.showOnlyNewPhotos) {
-                                            R.string.action_show_all_photos
-                                        } else {
-                                            R.string.action_show_only_new
-                                        },
-                                    ),
-                                tint =
-                                    if (uiState.showOnlyNewPhotos) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    },
-                            )
-                        }
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.cd_settings))
-                    }
+                    PhotoGridTopBarActions(
+                        uiState = uiState,
+                        onClearSelection = { viewModel.clearSelection() },
+                        onNavigateToUploadHistory = onNavigateToUploadHistory,
+                        onNavigateToSettings = onNavigateToSettings,
+                        onToggleFilter = { viewModel.toggleShowOnlyNewPhotos() },
+                    )
                 },
                 colors =
                     TopAppBarDefaults.topAppBarColors(
@@ -307,6 +278,52 @@ fun PhotoGridScreen(
 }
 
 @Composable
+private fun PhotoGridTopBarActions(
+    uiState: PhotoGridUiState,
+    onClearSelection: () -> Unit,
+    onNavigateToUploadHistory: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onToggleFilter: () -> Unit,
+) {
+    if (uiState.selectedPhotoIds.isNotEmpty()) {
+        TextButton(onClick = onClearSelection) {
+            Text(stringResource(R.string.action_clear))
+        }
+    }
+    if (uiState.selectedPhotoIds.isEmpty()) {
+        IconButton(onClick = onNavigateToUploadHistory) {
+            Icon(Icons.Default.History, contentDescription = stringResource(R.string.cd_upload_history))
+        }
+    }
+    if (uiState.uploadedPhotoIds.isNotEmpty() && uiState.selectedPhotoIds.isEmpty()) {
+        // The filter button is hidden during selection mode to avoid
+        // cluttering the top bar when the "Clear" action is already present.
+        IconButton(onClick = onToggleFilter) {
+            Icon(
+                Icons.Default.FilterList,
+                contentDescription =
+                    stringResource(
+                        if (uiState.showOnlyNewPhotos) {
+                            R.string.action_show_all_photos
+                        } else {
+                            R.string.action_show_only_new
+                        },
+                    ),
+                tint =
+                    if (uiState.showOnlyNewPhotos) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    },
+            )
+        }
+    }
+    IconButton(onClick = onNavigateToSettings) {
+        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.cd_settings))
+    }
+}
+
+@Composable
 private fun AutoDateFolderPreviewDialog(
     previewPaths: List<String>,
     onDismiss: () -> Unit,
@@ -371,9 +388,7 @@ private fun UploadProgressBanner(
 }
 
 @Composable
-private fun NewOnlyFilterBanner(
-    onClear: () -> Unit,
-) {
+private fun NewOnlyFilterBanner(onClear: () -> Unit) {
     Row(
         modifier =
             Modifier

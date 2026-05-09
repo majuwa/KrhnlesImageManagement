@@ -417,14 +417,24 @@ class PhotoGridViewModelTest {
 
             viewModel.toggleShowOnlyNewPhotos()
             advanceUntilIdle()
-            assertEquals(1, viewModel.uiState.value.photosByDate.values.flatten().size)
+            assertEquals(
+                1,
+                viewModel.uiState.value.photosByDate.values
+                    .flatten()
+                    .size,
+            )
 
             viewModel.toggleShowOnlyNewPhotos()
             advanceUntilIdle()
 
             val state = viewModel.uiState.value
             assertFalse(state.showOnlyNewPhotos)
-            assertEquals(2, state.photosByDate.values.flatten().size)
+            assertEquals(
+                2,
+                state.photosByDate.values
+                    .flatten()
+                    .size,
+            )
         }
 
     @Test
@@ -466,7 +476,11 @@ class PhotoGridViewModelTest {
             val state = viewModel.uiState.value
             assertTrue(state.showOnlyNewPhotos)
             // All photos still visible because uploadedPhotoIds is empty
-            assertEquals(2, state.photosByDate.values.flatten().size)
+            assertEquals(
+                2,
+                state.photosByDate.values
+                    .flatten()
+                    .size,
+            )
         }
 }
-

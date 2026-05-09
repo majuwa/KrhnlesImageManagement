@@ -13,8 +13,8 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareReceiverScreen
-import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.util.parseSharedPhotos
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import kotlinx.coroutines.flow.SharingStarted
@@ -95,7 +95,8 @@ class MainActivity : ComponentActivity() {
             val inputData = workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath)
 
             val constraints =
-                Constraints.Builder()
+                Constraints
+                    .Builder()
                     .apply { if (wifiOnly.value) setRequiredNetworkType(NetworkType.UNMETERED) }
                     .build()
 

@@ -23,7 +23,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
@@ -37,6 +36,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManag
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 
 private const val ROUTE_PHOTOS = "photos"
 private const val ROUTE_SETTINGS = "settings"

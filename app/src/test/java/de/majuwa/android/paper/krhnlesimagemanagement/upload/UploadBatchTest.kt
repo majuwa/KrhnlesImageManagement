@@ -4,8 +4,11 @@ import android.net.Uri
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.time.LocalDate
 
+@RunWith(RobolectricTestRunner::class)
 class UploadBatchTest {
     private fun photo(
         id: Long,

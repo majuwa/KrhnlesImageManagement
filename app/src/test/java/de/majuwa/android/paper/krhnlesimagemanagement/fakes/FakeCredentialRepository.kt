@@ -54,6 +54,7 @@ class FakeCredentialRepository(
     override suspend fun saveAutoDateFolders(enabled: Boolean) {
         autoDateFoldersState.value = enabled
     }
+
     override suspend fun clear() {
         configState.value = WebDavConfig()
         wifiOnlyState.value = false

@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 
-private val Context.uploadHistoryDataStore: DataStore<Preferences> by preferencesDataStore(
+internal val Context.uploadHistoryDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "upload_history",
 )
 
@@ -32,7 +32,9 @@ class UploadHistoryStore(
         }
 
     override suspend fun addEntry(entry: UploadHistoryEntry) {
-        require(isValidEntry(entry)) { "failedCount must be between 0 and total photo count, and photo count must be non-negative" }
+        require(isValidEntry(entry)) {
+            "failedCount must be between 0 and total photo count, and photo count must be non-negative"
+        }
         context.uploadHistoryDataStore.edit { prefs ->
             val updated = decodeEntries(prefs[KEY_UPLOAD_HISTORY]).toMutableList().apply { add(entry) }
             prefs[KEY_UPLOAD_HISTORY] = encodeEntries(updated)
@@ -81,19 +83,20 @@ class UploadHistoryStore(
     }
 
     private fun encodeEntries(entries: List<UploadHistoryEntry>): String =
-        JSONArray().apply {
-            entries.forEach { entry ->
-                put(
-                    JSONObject().apply {
-                        put("id", entry.id)
-                        put("occasionName", entry.occasionName)
-                        put("timestampMillis", entry.timestampMillis)
-                        put("photoCount", entry.photoCount)
-                        put("failedCount", entry.failedCount)
-                    },
-                )
-            }
-        }.toString()
+        JSONArray()
+            .apply {
+                entries.forEach { entry ->
+                    put(
+                        JSONObject().apply {
+                            put("id", entry.id)
+                            put("occasionName", entry.occasionName)
+                            put("timestampMillis", entry.timestampMillis)
+                            put("photoCount", entry.photoCount)
+                            put("failedCount", entry.failedCount)
+                        },
+                    )
+                }
+            }.toString()
 
     private fun isValidEntry(entry: UploadHistoryEntry): Boolean =
         entry.photoCount >= 0 && entry.failedCount in 0..entry.photoCount

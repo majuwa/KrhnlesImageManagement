@@ -18,6 +18,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 
+private const val HINT_AUTO_DATE_FOLDERS =
+    "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's " +
+        "capture date (for example 2026/05-May)."
+
 @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
 class SettingsScreenTest {
@@ -75,7 +79,7 @@ class SettingsScreenTest {
             }
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
-        composeTestRule.onNodeWithText("Test Connection").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Test Connection").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Disconnect").performScrollTo().assertIsDisplayed()
     }
 
@@ -99,9 +103,10 @@ class SettingsScreenTest {
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
         composeTestRule.onNodeWithText("Auto date folders").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText(
-            "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's capture date (for example 2026/05-May).",
-        ).assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(HINT_AUTO_DATE_FOLDERS)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     // ── Logged-out state ────────────────────────────────────────────────────

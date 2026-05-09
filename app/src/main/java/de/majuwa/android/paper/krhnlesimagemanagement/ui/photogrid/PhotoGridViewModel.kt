@@ -96,11 +96,11 @@ class PhotoGridViewModel
 
         val isConfigured: StateFlow<Boolean> =
             credentialStore.isConfigured
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), false)
+                .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
         val autoDateFoldersEnabled: StateFlow<Boolean> =
             credentialStore.autoDateFoldersEnabled
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), false)
+                .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
         val uploadBaseFolder: StateFlow<String> =
             credentialStore.webDavConfig
@@ -120,8 +120,13 @@ class PhotoGridViewModel
                         allPhotosByDate = grouped
                         _uiState.update { state ->
                             state.copy(
-                                photosByDate = computeDisplayedPhotos(grouped, state.uploadedPhotoIds, state.showOnlyNewPhotos),
                                 isLoading = false,
+                                photosByDate =
+                                    computeDisplayedPhotos(
+                                        grouped,
+                                        state.uploadedPhotoIds,
+                                        state.showOnlyNewPhotos,
+                                    ),
                             )
                         }
                     }.onFailure { throwable ->
@@ -212,8 +217,13 @@ class PhotoGridViewModel
                         allPhotosByDate = grouped
                         _uiState.update { state ->
                             state.copy(
-                                photosByDate = computeDisplayedPhotos(grouped, state.uploadedPhotoIds, state.showOnlyNewPhotos),
                                 isRefreshing = false,
+                                photosByDate =
+                                    computeDisplayedPhotos(
+                                        grouped,
+                                        state.uploadedPhotoIds,
+                                        state.showOnlyNewPhotos,
+                                    ),
                             )
                         }
                     }.onFailure { throwable ->

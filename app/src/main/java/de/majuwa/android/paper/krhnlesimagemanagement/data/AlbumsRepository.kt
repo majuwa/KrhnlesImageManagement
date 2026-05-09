@@ -24,7 +24,8 @@ class AlbumsRepository(
     private val config: WebDavConfig,
 ) : AlbumsRepositoryContract {
     private val webDavClient = WebDavClient(config)
-    private val baseHttpUrl: HttpUrl = requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
+    private val baseHttpUrl: HttpUrl =
+        requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
     private val client: OkHttpClient =
         OkHttpClient
@@ -88,10 +89,11 @@ class AlbumsRepository(
                 val oldSegments = albumRelativeSegments(album)
                 require(oldSegments.isNotEmpty()) { "Invalid album path" }
                 val newSegments = oldSegments.dropLast(1) + newName
-                webDavClient.renameDirectory(
-                    oldPath = oldSegments.joinToString("/"),
-                    newPath = newSegments.joinToString("/"),
-                ).getOrThrow()
+                webDavClient
+                    .renameDirectory(
+                        oldPath = oldSegments.joinToString("/"),
+                        newPath = newSegments.joinToString("/"),
+                    ).getOrThrow()
                 RemoteAlbum(
                     displayName = newName,
                     href = buildAlbumHref(newSegments),

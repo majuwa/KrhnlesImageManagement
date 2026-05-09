@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Kröhnle\'s Image Management</string>
 
     <!-- Common actions -->
@@ -63,7 +63,7 @@
         <item quantity="other">%d photos</item>
     </plurals>
     <string name="upload_progress">Uploading %1$d / %2$d</string>
-    <string name="upload_history_counts">%1$d succeeded · %2$d failed</string>
+    <string name="upload_history_counts" tools:ignore="PluralsCandidate">%1$d succeeded · %2$d failed</string>
     <plurals name="toast_upload_started">
         <item quantity="one">Queued %1$d upload for %2$d photos.</item>
         <item quantity="other">Queued %1$d uploads for %2$d photos.</item>
@@ -82,8 +82,6 @@
     <string name="label_occasion_name">Occasion / Folder Name</string>
     <string name="dialog_clear_upload_history_title">Clear upload history?</string>
     <string name="dialog_clear_upload_history_message">This removes all upload history entries.</string>
-    <string name="dialog_clear_upload_history_title">Clear upload history?</string>
-    <string name="dialog_clear_upload_history_message">This removes all upload history entries.</string>
     <string name="dialog_auto_date_preview_title">Preview upload folders</string>
     <plurals name="dialog_auto_date_preview_message">
         <item quantity="one">The selected photos will upload to this folder:</item>
@@ -98,8 +96,6 @@
     <string name="label_base_folder">Base upload folder</string>
     <string name="placeholder_base_folder">Photos/KrohnSync</string>
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
-    <string name="label_wifi_only">Upload on Wi-Fi only</string>
-    <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
     <string name="label_wifi_only">Upload on Wi-Fi only</string>
     <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
     <string name="label_auto_date_folders">Auto date folders</string>
@@ -176,7 +172,6 @@
         <item quantity="one">Upload %1$d photo to your server. Enter an occasion or folder name:</item>
         <item quantity="other">Upload %1$d photos to your server. Enter an occasion or folder name:</item>
     </plurals>
-    <string name="toast_uploading">Uploading to \"%1$s\"…</string>
 
     <!-- Notifications (UploadWorker) -->
     <string name="notification_preparing">Preparing…</string>
@@ -193,7 +188,6 @@
     <string name="notification_upload_failed">Upload failed</string>
     <string name="notification_create_folder_failed">Failed to create folder: %1$s</string>
     <string name="notification_retry_failed">Retry Failed (%d)</string>
-    <string name="notification_create_folder_failed">Failed to create folder: %1$s</string>
     <string name="channel_name_uploads">Photo Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
 </resources>

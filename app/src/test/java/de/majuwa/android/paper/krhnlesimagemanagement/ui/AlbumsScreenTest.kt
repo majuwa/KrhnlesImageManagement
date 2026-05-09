@@ -3,16 +3,15 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.longClick
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
@@ -163,7 +162,7 @@ class AlbumsScreenTest {
         composeTestRule.onNodeWithText("Rename").assertIsDisplayed()
         composeTestRule.onNodeWithText("Rename").performClick()
         composeTestRule.onNode(hasSetTextAction()).assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Rename")[1].performClick()
+        composeTestRule.onAllNodesWithText("Rename")[0].performClick()
         composeTestRule.onNodeWithText("Please choose a different album name.").assertIsDisplayed()
     }
 
@@ -184,7 +183,7 @@ class AlbumsScreenTest {
         composeTestRule.onNodeWithText("Rename").performClick()
         composeTestRule.onNode(hasSetTextAction()).performTextClearance()
         composeTestRule.onNode(hasSetTextAction()).performTextInput("Autumn 2025")
-        composeTestRule.onAllNodesWithText("Rename")[1].performClick()
+        composeTestRule.onAllNodesWithText("Rename")[0].performClick()
 
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Autumn 2025").assertIsDisplayed()
