@@ -6,6 +6,7 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.hasSameOriginAs
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +39,8 @@ class KrhnlesApplication :
                 .addInterceptor { chain ->
                     val config = cachedConfig.value
                     val requestBuilder = chain.request().newBuilder()
-                    if (config.isValid) {
+                    // Credentials only go to the configured server origin (defence in depth).
+                    if (config.isValid && chain.request().url.hasSameOriginAs(config.url)) {
                         requestBuilder.header(
                             "Authorization",
                             Credentials.basic(config.username, config.password),

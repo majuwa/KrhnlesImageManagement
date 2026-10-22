@@ -1,5 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -35,8 +36,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -46,7 +45,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,7 +57,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -74,7 +71,6 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,9 +80,19 @@ fun DuplicateReviewScreen(
 ) {
     val duplicatesState by viewModel.duplicatesState.collectAsStateWithLifecycle()
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    val resources = LocalResources.current
+
+    // Set when this screen started a deletion; navigate back once it has finished. The outcome
+    // (failure snackbar) is shown by the album detail screen, which is visible after navigating back.
+    var awaitingDeletion by rememberSaveable { mutableStateOf(false) }
+    val isDeleting = duplicatesState is DuplicatesState.Deleting
+    LaunchedEffect(awaitingDeletion, isDeleting) {
+        if (awaitingDeletion && !isDeleting) {
+            awaitingDeletion = false
+            onNavigateBack()
+        }
+    }
+    // Leaving is blocked while deleting, so the deletion always finishes on this screen.
+    BackHandler(enabled = isDeleting) { /* consume Back until the deletion has finished */ }
 
     // Start analysis when the screen first appears
     LaunchedEffect(Unit) { viewModel.findDuplicates() }
@@ -115,12 +121,11 @@ fun DuplicateReviewScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.title_find_duplicates)) },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    IconButton(enabled = !isDeleting, onClick = {
                         viewModel.resetDuplicatesState()
                         onNavigateBack()
                     }) {
@@ -172,20 +177,7 @@ fun DuplicateReviewScreen(
                                 state.groups
                                     .flatten()
                                     .filter { it.href in toDelete }
-                            viewModel.deletePhotos(photosToDelete) { failures ->
-                                if (failures > 0) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            resources.getQuantityString(
-                                                R.plurals.snackbar_delete_failures,
-                                                failures,
-                                                failures,
-                                            ),
-                                        )
-                                    }
-                                }
-                                onNavigateBack()
-                            }
+                            if (viewModel.deletePhotos(photosToDelete)) awaitingDeletion = true
                         },
                         deleteCount = toDelete.size,
                     )

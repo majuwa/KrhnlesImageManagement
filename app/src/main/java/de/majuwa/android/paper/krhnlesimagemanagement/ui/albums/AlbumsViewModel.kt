@@ -8,18 +8,22 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoDeletionResult
+import de.majuwa.android.paper.krhnlesimagemanagement.data.deletePhotosIndividually
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurAnalyzer
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurDetector
 import de.majuwa.android.paper.krhnlesimagemanagement.util.DuplicateFinder
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 data class AlbumsState(
     val albums: List<RemoteAlbum> = emptyList(),
@@ -42,6 +46,15 @@ data class AlbumDetailState(
             thumbnailUrls = thumbnailUrls.filterKeys { it !in hrefs },
         )
 }
+
+/**
+ * One-shot result of a finished photo deletion (any entry point), consumed by the album detail
+ * screen — the screen that is visible after the duplicate / blur review navigates back — via
+ * [AlbumsViewModel.consumePhotoDeletionOutcome].
+ */
+data class PhotoDeletionOutcome(
+    val failureCount: Int,
+)
 
 sealed interface DuplicatesState {
     data object Idle : DuplicatesState
@@ -109,6 +122,14 @@ class AlbumsViewModel
 
         private val _isDeletingPhotos = MutableStateFlow(false)
         val isDeletingPhotos: StateFlow<Boolean> = _isDeletingPhotos.asStateFlow()
+
+        private val _photoDeletionOutcome = MutableStateFlow<PhotoDeletionOutcome?>(null)
+
+        /** Result of the last finished photo deletion until [consumePhotoDeletionOutcome] is called. */
+        val photoDeletionOutcome: StateFlow<PhotoDeletionOutcome?> = _photoDeletionOutcome.asStateFlow()
+
+        /** The running photo deletion (any entry point); re-entry is ignored while it is active. */
+        private var photoDeletionJob: Job? = null
 
         // Cached repo instance — recreated only when loadAlbums() is called.
         private var repo: AlbumsRepositoryContract? = null
@@ -214,55 +235,85 @@ class AlbumsViewModel
         }
 
         /**
-         * Deletes [toDelete] photos from the server, removes them from [detailState], then
-         * resets [duplicatesState] to [DuplicatesState.Idle] and calls [onComplete] with
-         * the number of individual deletion failures.
+         * Deletes [toDelete] photos found by the duplicate review. [duplicatesState] is
+         * [DuplicatesState.Deleting] while it runs and [DuplicatesState.Idle] afterwards; the
+         * result is published as [photoDeletionOutcome].
+         * Returns `false` (and does nothing) while another photo deletion is still running.
          */
-        fun deletePhotos(
-            toDelete: List<RemotePhoto>,
-            onComplete: (failureCount: Int) -> Unit,
-        ) {
-            if (toDelete.isEmpty()) {
-                _duplicatesState.value = DuplicatesState.Idle
-                onComplete(0)
-                return
-            }
-            viewModelScope.launch {
-                _duplicatesState.value = DuplicatesState.Deleting
-                val r = getRepo()
-                var failures = 0
-                toDelete.forEach { photo -> r.deletePhoto(photo).onFailure { failures++ } }
-                val deletedHrefs = toDelete.map { it.href }.toSet()
-                _detailState.update { s -> s.withPhotosDeleted(deletedHrefs) }
-                _duplicatesState.value = DuplicatesState.Idle
-                onComplete(failures)
-            }
-        }
+        fun deletePhotos(toDelete: List<RemotePhoto>): Boolean =
+            launchPhotoDeletion(
+                toDelete = toDelete,
+                onStart = { _duplicatesState.value = DuplicatesState.Deleting },
+                // Only leave Deleting: never overwrite a newer scan started meanwhile.
+                onFinish = { _duplicatesState.compareAndSet(DuplicatesState.Deleting, DuplicatesState.Idle) },
+            )
 
         /**
          * Deletes [toDelete] photos directly from the album view (not via the duplicates flow).
-         * Updates [isDeletingPhotos] during the operation and calls [onComplete] with the number
-         * of individual deletion failures.
+         * [isDeletingPhotos] is `true` while it runs; the result is published as
+         * [photoDeletionOutcome].
+         * Returns `false` (and does nothing) while another photo deletion is still running.
          */
-        fun deleteSelectedPhotos(
-            toDelete: List<RemotePhoto>,
-            onComplete: (failureCount: Int) -> Unit,
-        ) {
-            if (toDelete.isEmpty()) {
-                onComplete(0)
-                return
-            }
-            viewModelScope.launch {
-                _isDeletingPhotos.value = true
-                val r = getRepo()
-                var failures = 0
-                toDelete.forEach { photo -> r.deletePhoto(photo).onFailure { failures++ } }
-                val deletedHrefs = toDelete.map { it.href }.toSet()
-                _detailState.update { s -> s.withPhotosDeleted(deletedHrefs) }
-                _isDeletingPhotos.value = false
-                onComplete(failures)
-            }
+        fun deleteSelectedPhotos(toDelete: List<RemotePhoto>): Boolean =
+            launchPhotoDeletion(
+                toDelete = toDelete,
+                onStart = { _isDeletingPhotos.value = true },
+                onFinish = { _isDeletingPhotos.value = false },
+            )
+
+        /** Clears [photoDeletionOutcome] once the UI has shown it. */
+        fun consumePhotoDeletionOutcome() {
+            _photoDeletionOutcome.value = null
         }
+
+        /**
+         * Shared orchestration for every photo-deletion entry point (issues #28 / #47).
+         *
+         * Ignored (returns `false`) while another photo deletion is still running (one-shot guard,
+         * released when the job ends; every request is bounded by the OkHttp connect/read timeouts). [onStart] runs
+         * synchronously, then [deletePhotosIndividually] deletes [toDelete], only the photos that
+         * were actually deleted are removed from [detailState], [onFinish] resets the busy state
+         * (always, in `finally`) and the failure count is published as [photoDeletionOutcome].
+         * Any non-cancellation failure (e.g. an invalid server URL in [getRepo]) counts every
+         * photo as failed instead of crashing; cancellation publishes nothing.
+         */
+        private fun launchPhotoDeletion(
+            toDelete: List<RemotePhoto>,
+            onStart: () -> Unit,
+            onFinish: () -> Unit,
+        ): Boolean {
+            if (photoDeletionJob?.isActive == true) return false
+            onStart()
+            if (toDelete.isEmpty()) {
+                onFinish()
+                _photoDeletionOutcome.value = PhotoDeletionOutcome(failureCount = 0)
+                return true
+            }
+            photoDeletionJob =
+                viewModelScope.launch {
+                    val failureCount =
+                        try {
+                            deletePhotosOrReportAllFailed(toDelete).let { deletion ->
+                                _detailState.update { s -> s.withPhotosDeleted(deletion.deletedHrefs) }
+                                deletion.failureCount
+                            }
+                        } finally {
+                            onFinish()
+                        }
+                    _photoDeletionOutcome.value = PhotoDeletionOutcome(failureCount)
+                }
+            return true
+        }
+
+        /** Runs the deletion; returns a result for every outcome and only throws on cancellation. */
+        private suspend fun deletePhotosOrReportAllFailed(toDelete: List<RemotePhoto>): PhotoDeletionResult =
+            runCatching { getRepo().deletePhotosIndividually(toDelete) }
+                .getOrElse { failure ->
+                    if (failure is CancellationException) throw failure
+                    // Log the type only: exception messages may contain server details.
+                    Log.w(TAG, "Photo deletion failed: ${failure.javaClass.simpleName}")
+                    PhotoDeletionResult.allFailed(toDelete)
+                }
 
         /**
          * Deletes the entire [album] from the server and removes it from [albumsState].
@@ -373,26 +424,19 @@ class AlbumsViewModel
             }
         }
 
-        fun deleteBlurryPhotos(
-            toDelete: List<RemotePhoto>,
-            onComplete: (failureCount: Int) -> Unit,
-        ) {
-            if (toDelete.isEmpty()) {
-                _blurState.value = BlurState.Idle
-                onComplete(0)
-                return
-            }
-            viewModelScope.launch {
-                _blurState.value = BlurState.Deleting
-                val r = getRepo()
-                var failures = 0
-                toDelete.forEach { photo -> r.deletePhoto(photo).onFailure { failures++ } }
-                val deletedHrefs = toDelete.map { it.href }.toSet()
-                _detailState.update { s -> s.withPhotosDeleted(deletedHrefs) }
-                _blurState.value = BlurState.Idle
-                onComplete(failures)
-            }
-        }
+        /**
+         * Deletes [toDelete] photos found by the blur review. [blurState] is [BlurState.Deleting]
+         * while it runs and [BlurState.Idle] afterwards; the result is published as
+         * [photoDeletionOutcome].
+         * Returns `false` (and does nothing) while another photo deletion is still running.
+         */
+        fun deleteBlurryPhotos(toDelete: List<RemotePhoto>): Boolean =
+            launchPhotoDeletion(
+                toDelete = toDelete,
+                onStart = { _blurState.value = BlurState.Deleting },
+                // Only leave Deleting: never overwrite a newer scan started meanwhile.
+                onFinish = { _blurState.compareAndSet(BlurState.Deleting, BlurState.Idle) },
+            )
 
         fun resetBlurState() {
             _blurState.value = BlurState.Idle

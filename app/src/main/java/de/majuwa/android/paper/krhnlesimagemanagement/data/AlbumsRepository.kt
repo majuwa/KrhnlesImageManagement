@@ -27,20 +27,33 @@ class AlbumsRepository(
     private val baseHttpUrl: HttpUrl =
         requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
+    /**
+     * Configured WebDAV URL plus base folder. Every server-supplied album / photo href must resolve
+     * to a URL strictly below it (see [resolveWebDavHref]); anything else is never requested.
+     */
+    private val baseFolderUrl: HttpUrl =
+        baseHttpUrl
+            .newBuilder()
+            .apply {
+                config.normalizedBaseFolder
+                    .split('/')
+                    .filter { it.isNotBlank() }
+                    .forEach(::addPathSegment)
+            }.build()
+
     private val client: OkHttpClient =
         OkHttpClient
             .Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .addInterceptor { chain ->
-                chain.proceed(
-                    chain
-                        .request()
-                        .newBuilder()
-                        .header("Authorization", Credentials.basic(config.username, config.password))
-                        .header("User-Agent", USER_AGENT)
-                        .build(),
-                )
+                val request = chain.request()
+                val builder = request.newBuilder().header("User-Agent", USER_AGENT)
+                // Credentials only go to the configured origin, never to another host (defence in depth).
+                if (request.url.hasSameOriginAs(baseHttpUrl)) {
+                    builder.header("Authorization", Credentials.basic(config.username, config.password))
+                }
+                chain.proceed(builder.build())
             }.build()
 
     /** scheme://host[:port] derived from config.url */
@@ -57,15 +70,10 @@ class AlbumsRepository(
     override suspend fun listAlbums(): Result<List<RemoteAlbum>> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val basePath =
-                    if (config.normalizedBaseFolder.isBlank()) {
-                        config.url.trimEnd('/')
-                    } else {
-                        "${config.url.trimEnd('/')}/${config.normalizedBaseFolder}"
-                    }
-                propfind(basePath)
+                propfind(baseFolderUrl)
                     .drop(1) // first entry is the directory itself
                     .filter { it.isDirectory }
+                    .withSafeHrefsBelow(baseFolderUrl)
                     .map { RemoteAlbum(displayName = it.displayName, href = it.href) }
             }
         }
@@ -73,9 +81,11 @@ class AlbumsRepository(
     override suspend fun listPhotos(albumHref: String): Result<List<RemotePhoto>> =
         withContext(Dispatchers.IO) {
             runCatching {
-                propfind("$origin${albumHref.trimEnd('/')}")
+                val albumUrl = requireSafeHref(albumHref).withoutTrailingSlash()
+                propfind(albumUrl)
                     .drop(1)
                     .filter { isImage(it) }
+                    .withSafeHrefsBelow(albumUrl)
                     .map { RemotePhoto(it.displayName, it.href, it.fileId, it.contentType) }
             }
         }
@@ -138,43 +148,66 @@ class AlbumsRepository(
             }
         }
 
-    /** Sends a WebDAV DELETE for [photo]. */
+    /**
+     * Sends a WebDAV DELETE for [photo]. `404 Not Found` / `410 Gone` count as success: the photo
+     * is already gone (e.g. deleted from another device), which is what the user asked for. Other
+     * non-2xx statuses fail with [WebDavHttpException]. An href outside the configured folder fails
+     * with [UnsafeHrefException] without sending a request.
+     */
     override suspend fun deletePhoto(photo: RemotePhoto): Result<Unit> =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val request =
-                    Request
-                        .Builder()
-                        .url("$origin${photo.href}")
-                        .delete()
-                        .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        error("DELETE failed: HTTP ${response.code} for ${photo.href}")
-                    }
-                }
-            }
+            runCatching { delete(requireSafeHref(photo.href), alreadyGoneIsSuccess = true) }
         }
 
     /** Sends a WebDAV DELETE for [album], removing the entire directory from the server. */
     override suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit> =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val request =
-                    Request
-                        .Builder()
-                        .url("$origin${album.href}")
-                        .delete()
-                        .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        error("DELETE failed: HTTP ${response.code} for ${album.href}")
-                    }
-                }
-            }
+            runCatching { delete(requireSafeHref(album.href), alreadyGoneIsSuccess = false) }
         }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    private fun delete(
+        url: HttpUrl,
+        alreadyGoneIsSuccess: Boolean,
+    ) {
+        val request =
+            Request
+                .Builder()
+                .url(url)
+                .delete()
+                .build()
+        client.newCall(request).execute().use { response ->
+            val alreadyGone = alreadyGoneIsSuccess && response.code in ALREADY_GONE_CODES
+            if (!response.isSuccessful && !alreadyGone) {
+                throw WebDavHttpException(response.code, "DELETE failed: HTTP ${response.code}")
+            }
+        }
+    }
+
+    /** Resolves a server-supplied [href] strictly below [baseFolderUrl] or throws [UnsafeHrefException]. */
+    private fun requireSafeHref(href: String): HttpUrl =
+        resolveWebDavHref(baseFolderUrl, href) ?: run {
+            // The href itself is not logged: it is server-controlled and may be crafted.
+            Log.w(TAG, "Refusing request for an href outside the configured WebDAV folder")
+            throw UnsafeHrefException()
+        }
+
+    /** Drops entries whose href is not strictly below [root] (see [resolveWebDavHref]). */
+    private fun List<WebDavEntry>.withSafeHrefsBelow(root: HttpUrl): List<WebDavEntry> {
+        val safe = filter { resolveWebDavHref(root, it.href) != null }
+        if (safe.size != size) {
+            Log.w(TAG, "Skipped ${size - safe.size} PROPFIND entries with an unsafe href")
+        }
+        return safe
+    }
+
+    private fun HttpUrl.withoutTrailingSlash(): HttpUrl =
+        if (pathSegments.size > 1 && pathSegments.last().isEmpty()) {
+            newBuilder().removePathSegment(pathSegments.size - 1).build()
+        } else {
+            this
+        }
 
     private fun buildUrl(
         photo: RemotePhoto,
@@ -185,7 +218,8 @@ class AlbumsRepository(
         return if (memoriesAvailable == true && base != null && id != null) {
             "$base/index.php/apps/memories/api/image/preview/$id?x=$size&y=$size&a=1"
         } else {
-            "$origin${photo.href}"
+            // Unsafe hrefs never reach the UI (listPhotos filters them); "" just fails to load.
+            resolveWebDavHref(baseFolderUrl, photo.href)?.toString().orEmpty()
         }
     }
 
@@ -213,12 +247,12 @@ class AlbumsRepository(
                         .build()
                 client.newCall(req).execute().use { it.code == 200 }
             } catch (e: Exception) {
-                Log.w("AlbumsRepository", "Memories API check failed", e)
+                Log.w(TAG, "Memories API check failed", e)
                 false
             }
         }
 
-    private fun propfind(url: String): List<WebDavEntry> {
+    private fun propfind(url: HttpUrl): List<WebDavEntry> {
         val body = PROPFIND_BODY.toRequestBody("application/xml; charset=utf-8".toMediaType())
         val request =
             Request
@@ -237,21 +271,11 @@ class AlbumsRepository(
         return parsePropfindXml(xml)
     }
 
-    private fun albumRelativeSegments(album: RemoteAlbum): List<String> {
-        val albumUrl =
-            "$origin${album.href}"
-                .toHttpUrlOrNull()
-                ?: error("Invalid album href: ${album.href}")
-        val albumSegments = albumUrl.pathSegments.filter { it.isNotBlank() }
-        val baseSegments = baseHttpUrl.pathSegments.filter { it.isNotBlank() }
-        require(
-            albumSegments.size > baseSegments.size &&
-                albumSegments.take(baseSegments.size) == baseSegments,
-        ) {
-            "Album href is outside configured WebDAV root"
-        }
-        return albumSegments.drop(baseSegments.size)
-    }
+    /** Album path relative to the configured WebDAV URL (as expected by [WebDavClient]). */
+    private fun albumRelativeSegments(album: RemoteAlbum): List<String> =
+        requireSafeHref(album.href)
+            .nonEmptyPathSegments()
+            .drop(baseHttpUrl.nonEmptyPathSegments().size)
 
     private fun buildAlbumHref(relativeSegments: List<String>): String {
         val url =
@@ -265,10 +289,14 @@ class AlbumsRepository(
     }
 
     private companion object {
+        const val TAG = "AlbumsRepository"
         const val USER_AGENT = "Kroehnles-Image-Management/1.0"
         const val THUMB_SIZE = 512
         const val FULL_SIZE = 2048
         const val MEMORIES_CHECK_TIMEOUT_MS = 5_000L
+
+        /** DELETE answers meaning "already deleted": 404 Not Found, 410 Gone. */
+        val ALREADY_GONE_CODES = setOf(404, 410)
 
         val IMAGE_EXTENSIONS =
             setOf(
@@ -312,3 +340,6 @@ class AlbumsRepository(
         }
     }
 }
+
+/** A server-supplied href points outside the configured WebDAV folder / origin and was not requested. */
+class UnsafeHrefException : IllegalArgumentException("Refusing href outside the configured WebDAV folder")

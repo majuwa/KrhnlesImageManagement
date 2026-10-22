@@ -1,5 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 
+import android.content.res.Resources
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -41,7 +42,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +58,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filterNotNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,7 +73,6 @@ fun AlbumDetailScreen(
     val state by viewModel.detailState.collectAsStateWithLifecycle()
     val isDeletingPhotos by viewModel.isDeletingPhotos.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val resources = LocalResources.current
 
     var selectedHrefs by remember { mutableStateOf(emptySet<String>()) }
@@ -82,6 +81,17 @@ fun AlbumDetailScreen(
 
     LaunchedEffect(albumHref) { viewModel.loadAlbum(albumHref) }
 
+    // Outcome of any photo deletion (selection mode here, or the duplicate / blur review that
+    // navigated back to this screen). Consumed first, so it is shown at most once; collected (not
+    // keyed on the value) so consuming it does not cancel the snackbar.
+    LaunchedEffect(viewModel) {
+        viewModel.photoDeletionOutcome.filterNotNull().collect { outcome ->
+            viewModel.consumePhotoDeletionOutcome()
+            selectedHrefs = emptySet()
+            photoDeletionFailureMessage(resources, outcome)?.let { snackbarHostState.showSnackbar(it) }
+        }
+    }
+
     if (showDeleteConfirmation) {
         DeletePhotosDialog(
             count = selectedHrefs.size,
@@ -89,20 +99,7 @@ fun AlbumDetailScreen(
             onConfirm = {
                 showDeleteConfirmation = false
                 val toDelete = state.photos.filter { it.href in selectedHrefs }
-                viewModel.deleteSelectedPhotos(toDelete) { failures ->
-                    selectedHrefs = emptySet()
-                    if (failures > 0) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                resources.getQuantityString(
-                                    R.plurals.snackbar_delete_failures,
-                                    failures,
-                                    failures,
-                                ),
-                            )
-                        }
-                    }
-                }
+                viewModel.deleteSelectedPhotos(toDelete)
             },
         )
     }
@@ -350,3 +347,12 @@ private fun DeletePhotosDialog(
         },
     )
 }
+
+/** Snackbar text for a finished photo deletion, or `null` when nothing failed. */
+internal fun photoDeletionFailureMessage(
+    resources: Resources,
+    outcome: PhotoDeletionOutcome,
+): String? =
+    outcome.failureCount.takeIf { it > 0 }?.let { failures ->
+        resources.getQuantityString(R.plurals.snackbar_delete_failures, failures, failures)
+    }

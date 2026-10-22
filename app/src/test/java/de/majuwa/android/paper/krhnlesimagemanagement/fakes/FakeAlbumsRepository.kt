@@ -10,8 +10,17 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
     var photos: Result<List<RemotePhoto>> = Result.success(emptyList())
     var renameAlbumResult: Result<RemoteAlbum>? = null
     var deletePhotoResult: Result<Unit> = Result.success(Unit)
+
+    /** Per-photo overrides keyed by [RemotePhoto.href]; falls back to [deletePhotoResult]. */
+    var deletePhotoResults: Map<String, Result<Unit>> = emptyMap()
+
+    /** Invoked (and may suspend or throw) on every [deletePhoto] call before the result is returned. */
+    var onDeletePhoto: suspend (RemotePhoto) -> Unit = {}
     var deleteAlbumResult: Result<Unit> = Result.success(Unit)
     var downloadBitmapResult: Bitmap? = null
+
+    /** Creates a fresh bitmap per download (callers recycle it); takes precedence over [downloadBitmapResult]. */
+    var downloadBitmapFactory: (() -> Bitmap)? = null
 
     val deletedPhotos = mutableListOf<RemotePhoto>()
     val deletedAlbums = mutableListOf<RemoteAlbum>()
@@ -40,11 +49,12 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
     override fun fullImageUrl(photo: RemotePhoto): String = "https://fake.server/full/${photo.href}"
 
     override suspend fun downloadBitmapForHash(url: String): Bitmap =
-        downloadBitmapResult ?: error("No bitmap configured in FakeAlbumsRepository")
+        downloadBitmapFactory?.invoke() ?: downloadBitmapResult ?: error("No bitmap configured in FakeAlbumsRepository")
 
     override suspend fun deletePhoto(photo: RemotePhoto): Result<Unit> {
         deletedPhotos.add(photo)
-        return deletePhotoResult
+        onDeletePhoto(photo)
+        return deletePhotoResults[photo.href] ?: deletePhotoResult
     }
 
     override suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit> {
