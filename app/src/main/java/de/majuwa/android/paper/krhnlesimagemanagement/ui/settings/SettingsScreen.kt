@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -251,6 +252,11 @@ private fun LoginContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
+    uiState.credentialProblem?.let { problem ->
+        Spacer(modifier = Modifier.height(12.dp))
+        CredentialProblemBanner(problem)
+    }
+
     Spacer(modifier = Modifier.height(16.dp))
 
     OutlinedTextField(
@@ -375,7 +381,22 @@ private fun ManualConfigContent(
 }
 
 @Composable
+private fun CredentialProblemBanner(problem: CredentialCorruption) {
+    val resId =
+        when (problem) {
+            CredentialCorruption.KEY_INVALIDATED -> R.string.error_credentials_key_invalidated
+            CredentialCorruption.UNREADABLE -> R.string.error_credentials_unreadable
+        }
+    WarningBanner(stringResource(resId))
+}
+
+@Composable
 private fun HttpWarningBanner() {
+    WarningBanner(stringResource(R.string.warning_http_insecure))
+}
+
+@Composable
+private fun WarningBanner(message: String) {
     Card(
         colors =
             CardDefaults.cardColors(
@@ -394,7 +415,7 @@ private fun HttpWarningBanner() {
             )
             Spacer(modifier = Modifier.padding(4.dp))
             Text(
-                text = stringResource(R.string.warning_http_insecure),
+                text = message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )

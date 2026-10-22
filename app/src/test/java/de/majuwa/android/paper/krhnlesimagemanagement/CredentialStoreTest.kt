@@ -1,0 +1,257 @@
+package de.majuwa.android.paper.krhnlesimagemanagement
+
+import android.content.Context
+import android.util.Log
+import androidx.test.core.app.ApplicationProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialCipher
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.SoftwareKeyProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowLog
+import java.security.KeyStoreException
+import java.security.ProviderException
+import java.security.UnrecoverableKeyException
+
+/**
+ * Regression tests for issue #31 / #50: undecryptable credentials must surface as
+ * [CredentialState.Corrupted] (and be logged) instead of looking like "never configured".
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+class CredentialStoreTest {
+    private lateinit var context: Context
+    private lateinit var keys: SoftwareKeyProvider
+    private lateinit var store: CredentialStore
+
+    @Before
+    fun setup() {
+        context = ApplicationProvider.getApplicationContext()
+        keys = SoftwareKeyProvider()
+        store = CredentialStore(context, CredentialCipher(keys))
+        runBlocking { store.clear() }
+        ShadowLog.clear()
+    }
+
+    @Test
+    fun `state is missing when nothing is stored`() =
+        runTest {
+            assertEquals(CredentialState.Missing, store.credentialState.first())
+            assertFalse(store.isConfigured.first())
+            assertTrue(warnings().isEmpty())
+        }
+
+    @Test
+    fun `state is valid after save`() =
+        runTest {
+            store.save("https://cloud.example/remote.php/dav/files/u/", "user", "pw")
+            assertEquals(CredentialState.Valid, store.credentialState.first())
+            assertTrue(store.isConfigured.first())
+            assertEquals("pw", store.password())
+            assertEquals("user", store.username())
+        }
+
+    @Test
+    fun `garbage ciphertext is corrupted, fails closed and is logged without the value`() =
+        runTest {
+            store.save("https://cloud.example/", "user", "pw")
+            val garbage = "R0FSQkFHRS1DSVBIRVJURVhU"
+            securePrefs().edit().putString("password", garbage).commit()
+
+            assertEquals(
+                CredentialState.Corrupted(CredentialCorruption.UNREADABLE),
+                store.credentialState.first(),
+            )
+            assertFalse(store.isConfigured.first())
+            assertNull(store.password())
+            assertFalse(store.isLoggedIn())
+            assertEquals("", store.webDavConfig.first().password)
+
+            val logs = warnings()
+            assertTrue("expected a warning to be logged", logs.any { "password" in it.msg })
+            assertTrue(logs.none { garbage in it.msg || "pw" == it.msg })
+        }
+
+    @Test
+    fun `lost key makes both fields unreadable`() =
+        runTest {
+            store.save("https://cloud.example/", "user", "pw")
+            keys.rotate()
+            assertEquals(
+                CredentialState.Corrupted(CredentialCorruption.UNREADABLE),
+                store.credentialState.first(),
+            )
+            assertTrue(warnings().any { "username" in it.msg })
+        }
+
+    @Test
+    fun `invalidated key is reported as key invalidated`() =
+        runTest {
+            store.save("https://cloud.example/", "user", "pw")
+            keys.invalidated = true
+            assertEquals(
+                CredentialState.Corrupted(CredentialCorruption.KEY_INVALIDATED),
+                store.credentialState.first(),
+            )
+            assertFalse(store.isConfigured.first())
+            assertTrue(warnings().any { "KEY_INVALIDATED" in it.msg })
+        }
+
+    @Test
+    fun `re-login after key invalidation recovers to valid`() =
+        runTest {
+            store.save("https://cloud.example/", "user", "pw")
+            keys.invalidated = true
+
+            store.save("https://cloud.example/", "user", "new-pw")
+
+            assertEquals(CredentialState.Valid, store.credentialState.first())
+            assertEquals("new-pw", store.password())
+            assertTrue(store.isConfigured.first())
+        }
+
+    @Test
+    fun `clear after corruption returns to missing`() =
+        runTest {
+            store.save("https://cloud.example/", "user", "pw")
+            keys.rotate()
+            store.clear()
+            assertEquals(CredentialState.Missing, store.credentialState.first())
+        }
+
+    @Test
+    fun `long-lived collectors observe recovery after re-login with the same url`() =
+        runTest {
+            store.save(URL, "user", "pw")
+            keys.invalidated = true
+            val state = collectLatest(store.credentialState)
+            val configured = collectLatest(store.isConfigured)
+            awaitValue(state) { it == CredentialState.Corrupted(CredentialCorruption.KEY_INVALIDATED) }
+            awaitValue(configured) { it == false }
+
+            // Same URL: no DataStore value changes except the credentials version bump.
+            store.save(URL, "user", "new-pw")
+
+            awaitValue(state) { it == CredentialState.Valid }
+            awaitValue(configured) { it == true }
+            assertEquals("new-pw", store.webDavConfig.first().password)
+        }
+
+    @Test
+    fun `long-lived collectors observe unreadable prefs being replaced by a save`() =
+        runTest {
+            store.save(URL, "user", "pw")
+            securePrefs().edit().putString("password", "R0FSQkFHRQ==").commit()
+            val state = collectLatest(store.credentialState)
+            awaitValue(state) { it == CredentialState.Corrupted(CredentialCorruption.UNREADABLE) }
+
+            store.save(URL, "user", "pw")
+
+            awaitValue(state) { it == CredentialState.Valid }
+        }
+
+    @Test
+    fun `long-lived collectors observe clear even when DataStore holds nothing else`() =
+        runTest {
+            securePrefs().edit().putString("password", "R0FSQkFHRQ==").commit()
+            val state = collectLatest(store.credentialState)
+            awaitValue(state) { it == CredentialState.Corrupted(CredentialCorruption.UNREADABLE) }
+
+            store.clear()
+
+            awaitValue(state) { it == CredentialState.Missing }
+        }
+
+    @Test
+    fun `failed encryption leaves previously stored credentials and url unchanged`() =
+        runTest {
+            store.save(URL, "user", "pw")
+            val before = securePrefs().all.toMap()
+            keys.keyFailure = { KeyStoreException("boom") }
+
+            val error = runCatching { store.save("https://other.example/", "other", "other-pw") }.exceptionOrNull()
+
+            assertTrue("expected CredentialSaveException but was $error", error is CredentialSaveException)
+            assertEquals(0, keys.deleteCount)
+            keys.keyFailure = null
+            assertEquals(URL, store.serverUrl.first())
+            assertEquals(before, securePrefs().all.toMap())
+            assertEquals("pw", store.password())
+            assertEquals("user", store.username())
+        }
+
+    @Test
+    fun `re-login recovers from an unrecoverable key thrown by the key provider`() =
+        runTest {
+            store.save(URL, "user", "pw")
+            keys.keyFailure = { ProviderException(UnrecoverableKeyException("gone")) }
+
+            store.save(URL, "user", "new-pw")
+
+            assertEquals(1, keys.deleteCount)
+            assertEquals(CredentialState.Valid, store.credentialState.first())
+            assertEquals("new-pw", store.password())
+        }
+
+    @Test
+    fun `a persisting decrypt failure is logged once, not on every read`() =
+        runTest {
+            store.save(URL, "user", "pw")
+            securePrefs().edit().putString("password", "R0FSQkFHRQ==").commit()
+
+            repeat(3) {
+                store.credentialState.first()
+                store.isConfigured.first()
+                store.webDavConfig.first()
+                store.password()
+            }
+
+            assertEquals(1, warnings().count { "password" in it.msg })
+        }
+
+    private fun <T> TestScope.collectLatest(flow: Flow<T>): StateFlow<T?> {
+        val latest = MutableStateFlow<T?>(null)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { flow.collect { latest.value = it } }
+        return latest
+    }
+
+    private suspend fun <T> awaitValue(
+        flow: StateFlow<T?>,
+        predicate: (T?) -> Boolean,
+    ) {
+        withContext(Dispatchers.Default) {
+            withTimeout(AWAIT_TIMEOUT_MS) { flow.first(predicate) }
+        }
+    }
+
+    private fun securePrefs() = context.getSharedPreferences("krhnles_secure", Context.MODE_PRIVATE)
+
+    private fun warnings() = ShadowLog.getLogsForTag("CredentialStore").filter { it.type == Log.WARN }
+
+    private companion object {
+        const val URL = "https://cloud.example/remote.php/dav/files/u/"
+        const val AWAIT_TIMEOUT_MS = 5_000L
+    }
+}

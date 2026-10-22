@@ -1,15 +1,20 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.nextcloudlogin.LoginFlowState
 import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +43,11 @@ data class SettingsUiState(
     val httpWarning: Boolean = false,
     /** True when uploads should be restricted to Wi-Fi (unmetered) connections. */
     val wifiOnly: Boolean = false,
+    /** Non-null when credentials are stored but cannot be decrypted; the UI explains why the user must log in again. */
+    val credentialProblem: CredentialCorruption? = null,
 )
+
+private const val TAG = "SettingsViewModel"
 
 class SettingsViewModel
     @JvmOverloads
@@ -67,6 +76,13 @@ class SettingsViewModel
                             baseFolder = config.baseFolder,
                             isLoggedIn = config.isValid,
                         )
+                    }
+                }
+            }
+            viewModelScope.launch {
+                credentialStore.credentialState.collect { state ->
+                    _uiState.update {
+                        it.copy(credentialProblem = (state as? CredentialState.Corrupted)?.reason)
                     }
                 }
             }
@@ -127,13 +143,14 @@ class SettingsViewModel
                         is LoginFlowState.Authenticated -> {
                             val webDavUrl =
                                 "${loginState.server}/remote.php/dav/files/${loginState.loginName}/"
-                            credentialStore.save(
-                                webDavUrl,
-                                loginState.loginName,
-                                loginState.appPassword,
-                            )
+                            val saved =
+                                persistCredentials(webDavUrl, loginState.loginName, loginState.appPassword)
                             _uiState.update {
-                                it.copy(isWaitingForBrowser = false, isLoggedIn = true)
+                                if (saved) {
+                                    it.copy(isWaitingForBrowser = false, isLoggedIn = true, credentialProblem = null)
+                                } else {
+                                    it.copy(isLoading = false, isWaitingForBrowser = false)
+                                }
                             }
                         }
 
@@ -180,8 +197,11 @@ class SettingsViewModel
                 return
             }
             viewModelScope.launch {
-                credentialStore.save(normalizedUrl, state.manualUsername, state.manualPassword)
-                _uiState.update { it.copy(isLoggedIn = true, manualUrl = normalizedUrl) }
+                if (persistCredentials(normalizedUrl, state.manualUsername, state.manualPassword)) {
+                    _uiState.update {
+                        it.copy(isLoggedIn = true, manualUrl = normalizedUrl, credentialProblem = null)
+                    }
+                }
             }
         }
 
@@ -216,6 +236,23 @@ class SettingsViewModel
                 _uiState.update { SettingsUiState() }
             }
         }
+
+        /** Saves credentials; on failure shows a user-facing error and returns false instead of crashing. */
+        private suspend fun persistCredentials(
+            url: String,
+            username: String,
+            password: String,
+        ): Boolean =
+            try {
+                credentialStore.save(url, username, password)
+                true
+            } catch (e: CredentialSaveException) {
+                Log.w(TAG, "Saving credentials failed", e)
+                _uiState.update {
+                    it.copy(error = getApplication<Application>().getString(R.string.error_credentials_save_failed))
+                }
+                false
+            }
 
         private fun normalizeUrl(url: String): String {
             val trimmed = url.trim()

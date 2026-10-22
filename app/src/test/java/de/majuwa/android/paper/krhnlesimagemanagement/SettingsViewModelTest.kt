@@ -2,8 +2,11 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -274,6 +278,113 @@ class SettingsViewModelTest {
             assertFalse(fakeCredentials.wifiOnlyValue())
         }
 
+    // ── Credential corruption (issue #31 / #50) ─────────────────────────────
+
+    @Test
+    fun `valid credentials report no credential problem`() =
+        runTest {
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.credentialProblem)
+        }
+
+    @Test
+    fun `key invalidated credentials surface problem`() =
+        runTest {
+            fakeCredentials.credentialStateOverride.value =
+                CredentialState.Corrupted(CredentialCorruption.KEY_INVALIDATED)
+            advanceUntilIdle()
+            assertEquals(CredentialCorruption.KEY_INVALIDATED, viewModel.uiState.value.credentialProblem)
+        }
+
+    @Test
+    fun `unreadable credentials surface problem`() =
+        runTest {
+            fakeCredentials.credentialStateOverride.value =
+                CredentialState.Corrupted(CredentialCorruption.UNREADABLE)
+            advanceUntilIdle()
+            assertEquals(CredentialCorruption.UNREADABLE, viewModel.uiState.value.credentialProblem)
+        }
+
+    @Test
+    fun `credential problem clears after manual re-login`() =
+        runTest {
+            fakeCredentials.clear()
+            fakeCredentials.credentialStateOverride.value =
+                CredentialState.Corrupted(CredentialCorruption.KEY_INVALIDATED)
+            advanceUntilIdle()
+            assertEquals(CredentialCorruption.KEY_INVALIDATED, viewModel.uiState.value.credentialProblem)
+
+            viewModel.onManualUrlChange("https://cloud.example.com/dav/")
+            viewModel.onManualUsernameChange("user")
+            viewModel.onManualPasswordChange("new-pass")
+            viewModel.saveManualConfig()
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.credentialProblem)
+            assertTrue(viewModel.uiState.value.isLoggedIn)
+        }
+
+    @Test
+    fun `saveManualConfig shows an error instead of crashing when saving fails`() =
+        runTest {
+            fakeCredentials.clear()
+            fakeCredentials.saveFailure = CredentialSaveException(IllegalStateException("keystore"))
+            advanceUntilIdle()
+
+            viewModel.onManualUrlChange("https://cloud.example.com/dav/")
+            viewModel.onManualUsernameChange("user")
+            viewModel.onManualPasswordChange("new-pass")
+            viewModel.saveManualConfig()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            val expected = RuntimeEnvironment.getApplication().getString(R.string.error_credentials_save_failed)
+            assertEquals(expected, state.error)
+            assertFalse(state.isLoggedIn)
+
+            // Retrying after the failure is possible and succeeds once the store works again.
+            fakeCredentials.saveFailure = null
+            viewModel.saveManualConfig()
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.isLoggedIn)
+        }
+
+    @Test
+    fun `credential problem is cleared by a successful save even if the state flow lags`() =
+        runTest {
+            fakeCredentials.clear()
+            advanceUntilIdle()
+            // Simulate a repository whose credentialState does not re-emit on save.
+            val lagging = LaggingCredentialRepository(fakeCredentials)
+            val vm =
+                SettingsViewModel(
+                    application = RuntimeEnvironment.getApplication(),
+                    credentialStore = lagging,
+                    uploadedPhotosRepository = fakeUploadedPhotos,
+                )
+            advanceUntilIdle()
+            assertEquals(CredentialCorruption.KEY_INVALIDATED, vm.uiState.value.credentialProblem)
+
+            vm.onManualUrlChange("https://cloud.example.com/dav/")
+            vm.onManualUsernameChange("user")
+            vm.onManualPasswordChange("new-pass")
+            vm.saveManualConfig()
+            advanceUntilIdle()
+
+            assertNull(vm.uiState.value.credentialProblem)
+            assertTrue(vm.uiState.value.isLoggedIn)
+        }
+
+    private class LaggingCredentialRepository(
+        delegate: FakeCredentialRepository,
+    ) : CredentialRepository by delegate {
+        override val credentialState: Flow<CredentialState> =
+            flow {
+                emit(CredentialState.Corrupted(CredentialCorruption.KEY_INVALIDATED))
+                awaitCancellation()
+            }
+    }
+
     private class TrackingCredentialRepository : CredentialRepository {
         val activeCollectors = AtomicInteger(0)
 
@@ -301,6 +412,11 @@ class SettingsViewModelTest {
         override val isConfigured: Flow<Boolean> =
             flow {
                 emit(false)
+            }
+
+        override val credentialState: Flow<CredentialState> =
+            flow {
+                emit(CredentialState.Missing)
             }
 
         override fun password(): String? = null

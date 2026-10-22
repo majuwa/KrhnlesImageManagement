@@ -113,6 +113,9 @@
     <string name="placeholder_webdav_url">https://cloud.example.com/remote.php/dav/files/user/</string>
     <string name="label_username">Username</string>
     <string name="label_password">Password / App Token</string>
+    <string name="error_credentials_key_invalidated">Your stored credentials could not be decrypted because the device security settings changed. Please log in again.</string>
+    <string name="error_credentials_unreadable">Your stored credentials could not be read and have been ignored. Please log in again.</string>
+    <string name="error_credentials_save_failed">Your credentials could not be stored securely on this device. Please try again.</string>
     <string name="warning_http_insecure">Insecure connection — credentials will be sent in plaintext. Use HTTPS.</string>
 
     <!-- Albums -->

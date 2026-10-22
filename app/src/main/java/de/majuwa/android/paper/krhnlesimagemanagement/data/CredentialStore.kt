@@ -2,92 +2,156 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
+import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
+import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.security.GeneralSecurityException
+import java.security.ProviderException
+import java.util.concurrent.ConcurrentHashMap
 
 private val Context.credentialDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "credentials",
 )
 
-private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
-private const val KEY_ALIAS = "krhnles_master_key"
-private const val CIPHER_TRANSFORMATION = "AES/GCM/NoPadding"
-private const val GCM_TAG_LENGTH_BITS = 128
 private const val PREFS_FILE_NAME = "krhnles_secure"
+private const val FIELD_USERNAME = "username"
+private const val FIELD_PASSWORD = "password"
+private const val TAG = "CredentialStore"
 
-class CredentialStore(
+/**
+ * Both credential fields decrypted once for a single DataStore emission. All credential-derived flows map
+ * from this snapshot so each emission costs one decryption per field per collector.
+ */
+private data class CredentialSnapshot(
+    val serverUrl: String?,
+    val baseFolder: String,
+    val username: DecryptResult,
+    val password: DecryptResult,
+) {
+    val usernameValue: String? get() = (username as? DecryptResult.Success)?.value
+    val passwordValue: String? get() = (password as? DecryptResult.Success)?.value
+}
+
+class CredentialStore internal constructor(
     private val context: Context,
+    private val cipher: CredentialCipher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CredentialRepository {
+    constructor(context: Context) : this(context, CredentialCipher(AndroidKeystoreKeyProvider()))
+
     private companion object {
         val KEY_AUTO_DATE_FOLDERS = booleanPreferencesKey("auto_date_folders")
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
         val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only")
+
+        /**
+         * Bumped in every DataStore edit that accompanies a change of the encrypted prefs, so that the
+         * credential flows re-read (and re-decrypt) them even when no DataStore value changed.
+         */
+        val KEY_CREDENTIALS_VERSION = longPreferencesKey("credentials_version")
     }
 
     private val securePrefs: SharedPreferences by lazy {
         context.getSharedPreferences(PREFS_FILE_NAME, Context.MODE_PRIVATE)
     }
 
+    /** Last failure logged per field; a failure is logged once until the field's outcome changes. */
+    private val lastLoggedFailure = ConcurrentHashMap<String, DecryptResult.Failure>()
+
+    private val snapshot: Flow<CredentialSnapshot> =
+        context.credentialDataStore.data
+            .map { prefs ->
+                CredentialSnapshot(
+                    serverUrl = prefs[KEY_SERVER_URL],
+                    baseFolder = prefs[KEY_BASE_FOLDER] ?: "",
+                    username = decryptField(FIELD_USERNAME),
+                    password = decryptField(FIELD_PASSWORD),
+                )
+            }.flowOn(ioDispatcher)
+
     val serverUrl: Flow<String?> = context.credentialDataStore.data.map { it[KEY_SERVER_URL] }
     override val autoDateFoldersEnabled: Flow<Boolean> =
         context.credentialDataStore.data.map { it[KEY_AUTO_DATE_FOLDERS] ?: false }
 
-    // Username is read from encrypted prefs, but piggybacks on DataStore emissions
-    // (DataStore is always updated alongside encrypted prefs in save()).
-    val username: Flow<String?> = context.credentialDataStore.data.map { username() }
+    val username: Flow<String?> = snapshot.map { it.usernameValue }
     val baseFolder: Flow<String> = context.credentialDataStore.data.map { it[KEY_BASE_FOLDER] ?: "" }
 
     override val wifiOnly: Flow<Boolean> = context.credentialDataStore.data.map { it[KEY_WIFI_ONLY] ?: false }
 
     override val isConfigured: Flow<Boolean> =
-        context.credentialDataStore.data.map { prefs ->
-            val url = prefs[KEY_SERVER_URL]
-            !url.isNullOrBlank() && !username().isNullOrBlank() && !password().isNullOrBlank()
+        snapshot.map {
+            !it.serverUrl.isNullOrBlank() && !it.usernameValue.isNullOrBlank() && !it.passwordValue.isNullOrBlank()
         }
 
     override val webDavConfig: Flow<WebDavConfig> =
-        context.credentialDataStore.data.map { prefs ->
+        snapshot.map {
             WebDavConfig(
-                url = prefs[KEY_SERVER_URL] ?: "",
-                username = username() ?: "",
-                password = password() ?: "",
-                baseFolder = prefs[KEY_BASE_FOLDER] ?: "",
+                url = it.serverUrl ?: "",
+                username = it.usernameValue ?: "",
+                password = it.passwordValue ?: "",
+                baseFolder = it.baseFolder,
             )
         }
 
-    override fun password(): String? = decryptValue(securePrefs.getString("password", null))
+    override val credentialState: Flow<CredentialState> = snapshot.map { credentialStateOf(it.username, it.password) }
 
-    fun username(): String? = decryptValue(securePrefs.getString("username", null))
+    override fun password(): String? = (decryptField(FIELD_PASSWORD) as? DecryptResult.Success)?.value
 
+    fun username(): String? = (decryptField(FIELD_USERNAME) as? DecryptResult.Success)?.value
+
+    /**
+     * Encrypts both values first, then commits them to the secure prefs, and only then writes the server URL
+     * (plus a [KEY_CREDENTIALS_VERSION] bump) to DataStore. A failed encryption therefore leaves all
+     * previously stored values (including the server URL) untouched, and the DataStore emission is
+     * guaranteed to observe the new prefs.
+     *
+     * @throws CredentialSaveException if encryption or persisting fails.
+     */
     override suspend fun save(
         serverUrl: String,
         username: String,
         password: String,
     ) {
-        context.credentialDataStore.edit { prefs ->
-            prefs[KEY_SERVER_URL] = serverUrl
+        withContext(ioDispatcher) {
+            try {
+                val encryptedUsername = cipher.encrypt(username)
+                val encryptedPassword = cipher.encrypt(password)
+                val committed =
+                    securePrefs
+                        .edit()
+                        .putString(FIELD_USERNAME, encryptedUsername)
+                        .putString(FIELD_PASSWORD, encryptedPassword)
+                        .commit()
+                if (!committed) throw IOException("Writing encrypted credentials failed")
+                context.credentialDataStore.edit { prefs ->
+                    prefs[KEY_SERVER_URL] = serverUrl
+                    bumpCredentialsVersion(prefs)
+                }
+            } catch (e: GeneralSecurityException) {
+                throw CredentialSaveException(e)
+            } catch (e: ProviderException) {
+                throw CredentialSaveException(e)
+            } catch (e: IOException) {
+                throw CredentialSaveException(e)
+            }
         }
-        securePrefs
-            .edit()
-            .putString("username", encryptValue(username))
-            .putString("password", encryptValue(password))
-            .apply()
     }
 
     override suspend fun saveBaseFolder(folder: String) {
@@ -103,58 +167,56 @@ class CredentialStore(
     }
 
     override suspend fun clear() {
-        context.credentialDataStore.edit { it.clear() }
-        securePrefs.edit().clear().apply()
+        withContext(ioDispatcher) {
+            // apply() updates the in-memory prefs synchronously, so the DataStore emission below
+            // already observes the cleared values; the disk write may complete in the background.
+            securePrefs.edit().clear().apply()
+            context.credentialDataStore.edit { prefs ->
+                // Read the version before clearing so the bump always produces a new value (and an emission).
+                val version = prefs[KEY_CREDENTIALS_VERSION] ?: 0L
+                prefs.clear()
+                prefs[KEY_CREDENTIALS_VERSION] = version + 1
+            }
+        }
     }
 
     override fun isLoggedIn(): Boolean = !password().isNullOrBlank()
 
-    // ── Keystore encryption helpers ─────────────────────────────────────────
+    private fun bumpCredentialsVersion(prefs: MutablePreferences) {
+        prefs[KEY_CREDENTIALS_VERSION] = (prefs[KEY_CREDENTIALS_VERSION] ?: 0L) + 1
+    }
 
-    private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        keyStore.getEntry(KEY_ALIAS, null)?.let { entry ->
-            return (entry as KeyStore.SecretKeyEntry).secretKey
+    private fun decryptField(field: String): DecryptResult {
+        val result = cipher.decrypt(securePrefs.getString(field, null))
+        if (result is DecryptResult.Failure) {
+            if (lastLoggedFailure.put(field, result) != result) {
+                // Never log the ciphertext or plaintext — only which field failed and why.
+                Log.w(TAG, "Failed to decrypt stored $field (${result.reason}): ${result.causeType}")
+            }
+        } else {
+            lastLoggedFailure.remove(field)
         }
-        val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
-        keyGen.init(
-            KeyGenParameterSpec
-                .Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
-        return keyGen.generateKey()
+        return result
     }
 
-    private fun encryptValue(plaintext: String): String {
-        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-        val iv = cipher.iv
-        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
-        // Layout: [ivLen (1 byte)] [iv] [ciphertext]
-        val combined = ByteArray(1 + iv.size + ciphertext.size)
-        combined[0] = iv.size.toByte()
-        iv.copyInto(combined, destinationOffset = 1)
-        ciphertext.copyInto(combined, destinationOffset = 1 + iv.size)
-        return Base64.encodeToString(combined, Base64.NO_WRAP)
-    }
+    private fun credentialStateOf(vararg results: DecryptResult): CredentialState {
+        val reasons = results.filterIsInstance<DecryptResult.Failure>().map { it.reason }
+        return when {
+            CredentialCorruption.KEY_INVALIDATED in reasons -> {
+                CredentialState.Corrupted(CredentialCorruption.KEY_INVALIDATED)
+            }
 
-    private fun decryptValue(encoded: String?): String? {
-        if (encoded == null) return null
-        return runCatching {
-            val combined = Base64.decode(encoded, Base64.NO_WRAP)
-            if (combined.size < 2) return null
-            val ivLen = combined[0].toInt() and 0xFF
-            if (ivLen != 12) return null
-            val ciphertextStart = 1 + ivLen
-            if (combined.size <= ciphertextStart) return null
-            val iv = combined.copyOfRange(1, ciphertextStart)
-            val ciphertext = combined.copyOfRange(ciphertextStart, combined.size)
-            val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
-            String(cipher.doFinal(ciphertext), Charsets.UTF_8)
-        }.getOrNull()
+            reasons.isNotEmpty() -> {
+                CredentialState.Corrupted(CredentialCorruption.UNREADABLE)
+            }
+
+            results.all { it is DecryptResult.Success } -> {
+                CredentialState.Valid
+            }
+
+            else -> {
+                CredentialState.Missing
+            }
+        }
     }
 }

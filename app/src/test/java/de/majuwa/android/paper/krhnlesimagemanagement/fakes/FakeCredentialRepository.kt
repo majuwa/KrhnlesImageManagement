@@ -1,9 +1,12 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 class FakeCredentialRepository(
@@ -23,15 +26,28 @@ class FakeCredentialRepository(
 
     override val wifiOnly: Flow<Boolean> = wifiOnlyState
 
+    /** Overrides the derived credential state when non-null (e.g. to simulate corruption). */
+    val credentialStateOverride = MutableStateFlow<CredentialState?>(null)
+
+    override val credentialState: Flow<CredentialState> =
+        combine(configState, credentialStateOverride) { config, override ->
+            override ?: if (config.isValid) CredentialState.Valid else CredentialState.Missing
+        }
+
     override fun password(): String? = configState.value.password.ifBlank { null }
 
     override fun isLoggedIn(): Boolean = !password().isNullOrBlank()
+
+    /** When non-null, [save] throws this instead of storing anything (e.g. Keystore failure after retry). */
+    var saveFailure: CredentialSaveException? = null
 
     override suspend fun save(
         serverUrl: String,
         username: String,
         password: String,
     ) {
+        saveFailure?.let { throw it }
+        credentialStateOverride.value = null
         configState.value =
             configState.value.copy(
                 url = serverUrl,
@@ -57,6 +73,7 @@ class FakeCredentialRepository(
 
     override suspend fun clear() {
         configState.value = WebDavConfig()
+        credentialStateOverride.value = null
         wifiOnlyState.value = false
         autoDateFoldersState.value = false
     }

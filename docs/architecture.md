@@ -14,10 +14,12 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── Photo.kt             # Photo data class (id, uri, date, size, mime)
 │   ├── WebDavConfig.kt      # WebDAV connection configuration
 │   ├── LoginFlowState.kt    # Sealed class for Nextcloud Login Flow v2 states
+│   ├── CredentialState.kt   # Stored-credential health (Missing / Valid / Corrupted + CredentialCorruption reason)
 │   └── UploadState.kt       # Sealed interface for upload progress states
 ├── data/
 │   ├── MediaRepository.kt         # Queries device photos via ContentResolver
 │   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
+│   ├── CredentialCipher.kt        # AES-GCM encrypt/decrypt with classified DecryptResult; injectable CredentialKeyProvider
 │   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
 │   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
@@ -54,7 +56,14 @@ Two authentication methods are supported:
 Credentials are stored securely:
 - URL and base folder in DataStore Preferences
 - Username and password/app token encrypted via Android Keystore (AES-256-GCM) in standard SharedPreferences
-- Corrupted encrypted values fail closed (treated as missing credentials) to avoid crashes
+- Crypto lives in `CredentialCipher` (format `Base64([ivLen][iv][ciphertext+tag])`), backed by an injectable `CredentialKeyProvider` (`AndroidKeystoreKeyProvider` in production, a software AES key in unit tests because the Keystore is unavailable under Robolectric)
+- `CredentialCipher.decrypt()` maps missing values, format violations and every `GeneralSecurityException` / `ProviderException` / `IOException` to `DecryptResult.Missing`, `Success`, or `Failure(reason)` (other runtime exceptions are not caught) where the reason is `KEY_INVALIDATED` (`KeyPermanentlyInvalidatedException` / `UnrecoverableKeyException` / `UnrecoverableEntryException` anywhere in the cause chain) or `UNREADABLE` (malformed data, GCM tag mismatch, lost key, `UnexpectedKeyEntryException` when the alias holds a non-secret-key entry, other Keystore errors)
+- Corrupted encrypted values fail closed (treated as not configured, never used for requests) and failures are logged via `Log.w` with field name and exception type only — never ciphertext or plaintext; a persisting failure is logged once per field until its outcome changes
+- All credential-derived flows (`credentialState`, `isConfigured`, `webDavConfig`, `username`) derive from one private snapshot flow that decrypts both fields once per DataStore emission and runs `flowOn(ioDispatcher)` (internal constructor parameter, default `Dispatchers.IO`) to keep Keystore work off the main thread
+- Because DataStore does not observe the secure SharedPreferences, `save()` and `clear()` bump a `credentials_version` key in the same DataStore edit, forcing an emission even when the server URL is unchanged
+- `save()` is ordered for atomicity: encrypt both values → `commit()` them to the secure prefs → DataStore edit (`server_url` + version bump). A failed encryption leaves the previous credentials and URL untouched; failures surface as `CredentialSaveException`, which `SettingsViewModel` turns into `R.string.error_credentials_save_failed` instead of crashing
+- `CredentialRepository.credentialState` exposes `CredentialState.Missing / Valid / Corrupted(reason)`; `SettingsViewModel` maps it to `SettingsUiState.credentialProblem` and the login screen shows a localized banner explaining why the user must log in again (issue #31 / #50)
+- If obtaining the key or initialising the cipher during encryption fails with an error classified as `KEY_INVALIDATED` (same cause-chain predicate as decrypt), `CredentialCipher.encrypt()` deletes the key, regenerates it, and retries once, so re-login after a security-settings change succeeds; other errors propagate without deleting the key
 
 ## Data Flow
 
