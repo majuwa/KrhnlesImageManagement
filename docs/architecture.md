@@ -35,6 +35,8 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── uploadhistory/
 │   │   ├── UploadHistoryScreen.kt    # Upload log list + clear actions
 │   │   └── UploadHistoryViewModel.kt # Exposes persisted upload history
+│   ├── navigation/
+│   │   └── BackStackEntries.kt      # rememberParentEntry(): parent back-stack entry lookup keyed on the current entry
 │   ├── settings/
 │   │   ├── SettingsScreen.kt        # Nextcloud login + manual WebDAV config
 │   │   └── SettingsViewModel.kt     # Auth state + connection test; clears upload tracking on logout
@@ -64,6 +66,21 @@ Credentials are stored securely:
 - `save()` is ordered for atomicity: encrypt both values → `commit()` them to the secure prefs → DataStore edit (`server_url` + version bump). A failed encryption leaves the previous credentials and URL untouched; failures surface as `CredentialSaveException`, which `SettingsViewModel` turns into `R.string.error_credentials_save_failed` instead of crashing
 - `CredentialRepository.credentialState` exposes `CredentialState.Missing / Valid / Corrupted(reason)`; `SettingsViewModel` maps it to `SettingsUiState.credentialProblem` and the login screen shows a localized banner explaining why the user must log in again (issue #31 / #50)
 - If obtaining the key or initialising the cipher during encryption fails with an error classified as `KEY_INVALIDATED` (same cause-chain predicate as decrypt), `CredentialCipher.encrypt()` deletes the key, regenerates it, and retries once, so re-login after a security-settings change succeeds; other errors propagate without deleting the key
+
+## Navigation & Shared Albums State
+
+`KrhnlesApp.kt` hosts a single `NavHost`. The Albums tab (`albums`) owns an `AlbumsViewModel`; its sub-routes (`albums/detail`, `albums/viewer`, `albums/duplicates`, `albums/blur`) share that ViewModel by scoping it to the Albums back-stack entry via the private helper `sharedAlbumsViewModel()`:
+
+```kotlin
+composable(route) { backStack ->
+    val vm = sharedAlbumsViewModel(navController, backStack)
+    // = viewModel(rememberParentEntry(navController, backStack, ROUTE_ALBUMS))
+}
+```
+
+`rememberParentEntry()` (`ui/navigation/BackStackEntries.kt`) remembers `navController.getBackStackEntry(parentRoute)` keyed on the destination's own `NavBackStackEntry`: the lookup is cached across recompositions and re-resolved whenever the current entry changes, which is the form the navigation-compose `UnrememberedGetBackStackEntry` lint check accepts. Keying on a constant such as the route string is forbidden, and the check must never be silenced (issues #24 / #43).
+
+`NoLintSuppressionRegressionTest` (backed by `LintSuppressionScanner` in the test source set) enforces this in `./gradlew test`: it scans every source set under `app/src` (`.kt`, `.kts`, `.java`) for `@Suppress`/`@SuppressLint`/`@SuppressWarnings` (any use-site target such as `@file:`, qualified or not, single- or multi-line) and `noinspection` comments naming the issue, and fails if `app/build.gradle.kts`, `app/lint*.xml`, any `app/*baseline*.xml` or the root `lint.xml` mention the issue id at all. The module and root directories are passed to unit tests as the system properties `krhnles.moduleDir` / `krhnles.projectDir` (`testOptions.unitTests.all` in `app/build.gradle.kts`); the test falls back to the working directory and fails loudly if `src/main` is not found. The test spells the issue id as a concatenation so the scan of its own source set does not flag its fixtures.
 
 ## Data Flow
 

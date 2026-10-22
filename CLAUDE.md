@@ -15,8 +15,9 @@ To provide a manual, user-curated image backup flow where users select local dev
 ## 📏 Coding Standards & Rules
 1. **Compose Best Practices:** Ensure states are hoisted appropriately. Use `LazyVerticalGrid` for image loading to ensure high performance.
 2. **Permissions:** Handle Android 13+ granular media permissions (`READ_MEDIA_IMAGES`) gracefully with appropriate user prompts.
-3. **Background Persistence:** Uploads *must* use `WorkManager` so they do not fail if the user closes the app.
-4. **Error Handling:** WebDAV connections fail often due to self-signed certificates or bad URLs. Always provide clear, user-friendly error messages and retry mechanisms.
+3. **Navigation-scoped state:** Child destinations that share a parent's ViewModel resolve the parent entry with `rememberParentEntry(navController, backStack, PARENT_ROUTE)` (`ui/navigation/BackStackEntries.kt`), keyed on the composable's own `NavBackStackEntry`. Album sub-routes use `sharedAlbumsViewModel(navController, backStack)` in `KrhnlesApp.kt`. Never `remember` a `getBackStackEntry()` call with a constant key and never suppress `UnrememberedGetBackStackEntry` by any mechanism — annotation, `noinspection`, Gradle `lint {}` options, `lint.xml` or a baseline (guarded by `NoLintSuppressionRegressionTest`). Source-scanning unit tests get the module dir via the `krhnles.moduleDir` system property.
+4. **Background Persistence:** Uploads *must* use `WorkManager` so they do not fail if the user closes the app.
+5. **Error Handling:** WebDAV connections fail often due to self-signed certificates or bad URLs. Always provide clear, user-friendly error messages and retry mechanisms.
 
 ## 🔒 Security Conventions
 - **Credential storage:** Both **username and password** are encrypted via the Android Keystore (AES-256-GCM) and stored in standard `SharedPreferences` (`krhnles_secure`). Only the server URL and base folder (non-sensitive) live in the unencrypted DataStore.

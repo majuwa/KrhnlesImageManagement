@@ -40,6 +40,14 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            // Absolute paths for source-scanning tests (e.g. NoLintSuppressionRegressionTest),
+            // so they do not depend on the test JVM's working directory.
+            val moduleDir = project.projectDir.absolutePath
+            val rootDir = rootProject.projectDir.absolutePath
+            all {
+                it.systemProperty("krhnles.moduleDir", moduleDir)
+                it.systemProperty("krhnles.projectDir", rootDir)
+            }
         }
     }
     lint {
