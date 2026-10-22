@@ -16,12 +16,15 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 data class SettingsUiState(
     val autoDateFoldersEnabled: Boolean = false,
@@ -33,7 +36,7 @@ data class SettingsUiState(
     val isLoading: Boolean = false,
     val isWaitingForBrowser: Boolean = false,
     val isTesting: Boolean = false,
-    val testResult: String? = null,
+    val testResult: ConnectionTestResult? = null,
     val error: String? = null,
     val useManualConfig: Boolean = false,
     val manualUrl: String = "",
@@ -59,6 +62,9 @@ class SettingsViewModel
             NextcloudLoginFlow(),
         private val uploadedPhotosRepository: UploadedPhotosRepositoryContract =
             UploadedPhotosStore(application),
+        private val connectionTester: suspend (WebDavConfig) -> Result<Unit> = { config ->
+            WebDavClient(config).testConnection()
+        },
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -68,7 +74,12 @@ class SettingsViewModel
 
         init {
             viewModelScope.launch {
+                var lastConnection: Triple<String, String, String>? = null
                 credentialStore.webDavConfig.collect { config ->
+                    val connection = Triple(config.url, config.username, config.password)
+                    // A result (or a running test) for other credentials/server must not survive the change.
+                    if (lastConnection != null && connection != lastConnection) cancelConnectionTest()
+                    lastConnection = connection
                     _uiState.update {
                         it.copy(
                             webDavUrl = config.url,
@@ -205,31 +216,54 @@ class SettingsViewModel
             }
         }
 
+        // Non-null while a connection test runs; used to drop overlapping requests (issue #22 / #41).
+        // Released when the test completes (every failure becomes a result, WebDavClient bounds the
+        // call with an overall timeout and cancels it with the coroutine), when it is cancelled by
+        // logout or a credential/server change, or when viewModelScope is cancelled.
+        private var testConnectionJob: Job? = null
+
+        /**
+         * Tests the stored WebDAV configuration once. The config is read with [first] — never
+         * `collect` — so no subscription outlives the test. Calls while a test is running are ignored.
+         */
         fun testConnection() {
-            viewModelScope.launch {
-                _uiState.update { it.copy(isTesting = true, testResult = null) }
+            if (testConnectionJob?.isActive == true) return
+            testConnectionJob =
+                viewModelScope.launch {
+                    _uiState.update { it.copy(isTesting = true, testResult = null) }
+                    val result = runConnectionTest()
+                    // A test cancelled by logout or a config change must never publish its stale result.
+                    ensureActive()
+                    _uiState.update { it.copy(isTesting = false, testResult = result) }
+                }
+        }
+
+        /** Runs the check; returns a result for every outcome and only throws on cancellation. */
+        private suspend fun runConnectionTest(): ConnectionTestResult =
+            runCatching {
                 val config = credentialStore.webDavConfig.first()
                 if (!config.isValid) {
-                    _uiState.update { it.copy(isTesting = false, testResult = "Not configured.") }
-                    return@launch
+                    ConnectionTestResult.NotConfigured
+                } else {
+                    connectionTester(config).getOrThrow()
+                    ConnectionTestResult.Success
                 }
-                val client = WebDavClient(config)
-                val result = client.testConnection()
-                _uiState.update {
-                    it.copy(
-                        isTesting = false,
-                        testResult =
-                            if (result.isSuccess) {
-                                "Connection successful!"
-                            } else {
-                                "Failed: ${result.exceptionOrNull()?.message}"
-                            },
-                    )
-                }
+            }.getOrElse { failure ->
+                if (failure is CancellationException) throw failure
+                // Log the type only: exception messages may contain server details (never shown in the UI).
+                Log.w(TAG, "Connection test failed: ${failure.javaClass.simpleName}")
+                failure.toConnectionTestResult()
             }
+
+        /** Cancels a running test and clears its result, e.g. because the credentials changed. */
+        private fun cancelConnectionTest() {
+            testConnectionJob?.cancel()
+            testConnectionJob = null
+            _uiState.update { it.copy(isTesting = false, testResult = null) }
         }
 
         fun logout() {
+            cancelConnectionTest()
             viewModelScope.launch {
                 credentialStore.clear()
                 uploadedPhotosRepository.clear()

@@ -3,7 +3,10 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 import android.os.Build
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Credentials
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -12,9 +15,14 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.Response
 import okio.BufferedSink
+import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class WebDavClient(
     private val config: WebDavConfig,
@@ -41,23 +49,31 @@ class WebDavClient(
     private val baseUrl: String
         get() = config.url.trimEnd('/')
 
-    suspend fun testConnection(): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val request =
-                    Request
-                        .Builder()
-                        .url(baseUrl)
-                        .method("PROPFIND", null)
-                        .header("Depth", "0")
-                        .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful && response.code != 207) {
-                        error("Connection failed: HTTP ${response.code} ${response.message}")
-                    }
-                }
+    /**
+     * Sends a `PROPFIND` (Depth 0) to the base URL to verify the server and credentials.
+     *
+     * Unlike uploads, the whole call is bounded by [timeoutMillis] (a per-call OkHttp call timeout,
+     * so the shared client used for large uploads keeps no overall limit) and is cancelled when the
+     * calling coroutine is cancelled. A non-success status fails with [WebDavHttpException]; a call
+     * timeout fails with an [java.io.InterruptedIOException]. Coroutine cancellation is rethrown,
+     * never wrapped in the result.
+     */
+    suspend fun testConnection(timeoutMillis: Long = CONNECTION_TEST_TIMEOUT_MILLIS): Result<Unit> =
+        runCatching {
+            val request =
+                Request
+                    .Builder()
+                    .url(baseUrl)
+                    .method("PROPFIND", null)
+                    .header("Depth", "0")
+                    .build()
+            val call = client.newCall(request)
+            call.timeout().timeout(timeoutMillis, TimeUnit.MILLISECONDS)
+            val (code, message) = call.awaitStatus()
+            if (code !in HTTP_SUCCESS_CODES) {
+                throw WebDavHttpException(code, "Connection failed: HTTP $code $message")
             }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     /**
      * Creates all path segments leading to [folderPath].
@@ -148,6 +164,30 @@ class WebDavClient(
             }
         }
 
+    /** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
+    private suspend fun Call.awaitStatus(): Pair<Int, String> =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancel() }
+            enqueue(
+                object : Callback {
+                    override fun onFailure(
+                        call: Call,
+                        e: IOException,
+                    ) {
+                        continuation.resumeWithException(e)
+                    }
+
+                    override fun onResponse(
+                        call: Call,
+                        response: Response,
+                    ) {
+                        val status = response.use { it.code to it.message }
+                        continuation.resume(status)
+                    }
+                },
+            )
+        }
+
     private fun buildPathUrl(segments: List<String>): HttpUrl =
         requireBaseHttpUrl()
             .newBuilder()
@@ -183,4 +223,18 @@ class WebDavClient(
             }
         }
     }
+
+    companion object {
+        /** Overall limit for [testConnection] (connect + TLS + request + response headers). */
+        const val CONNECTION_TEST_TIMEOUT_MILLIS = 30_000L
+
+        /** 2xx, including 207 Multi-Status, which is the normal PROPFIND answer. */
+        private val HTTP_SUCCESS_CODES = 200..299
+    }
 }
+
+/** A WebDAV request completed but the server answered with the non-success HTTP status [code]. */
+class WebDavHttpException(
+    val code: Int,
+    message: String,
+) : IOException(message)

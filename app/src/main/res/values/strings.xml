@@ -13,6 +13,17 @@
     <string name="action_grant_permission">Grant Permission</string>
     <string name="action_save_folder">Save folder</string>
     <string name="action_test_connection">Test Connection</string>
+    <string name="connection_test_success">Connection successful!</string>
+    <string name="connection_test_not_configured">Not configured.</string>
+    <string name="connection_test_error_certificate">Secure connection failed: the server\'s certificate is not trusted (it may be self-signed or expired).</string>
+    <string name="connection_test_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
+    <string name="connection_test_error_unreachable">Could not reach the server. Check the address and that the server is online.</string>
+    <string name="connection_test_error_timeout">The server did not respond in time. Please try again.</string>
+    <string name="connection_test_error_auth">Access denied. Check your username and app password, then log in again.</string>
+    <string name="connection_test_error_not_found">WebDAV folder not found on the server. Check the server address.</string>
+    <string name="connection_test_error_http">The server responded with an error (HTTP %1$d). Please try again later.</string>
+    <string name="connection_test_error_invalid_url">The server address is not a valid URL. Check it and log in again.</string>
+    <string name="connection_test_error_unknown">Connection test failed. Please try again.</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_connect_browser">Connect via Browser</string>
     <string name="action_save_connect">Save &amp; Connect</string>

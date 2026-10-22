@@ -1,18 +1,26 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.ByteArrayInputStream
+import java.io.InterruptedIOException
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class WebDavClientTest {
@@ -68,6 +76,45 @@ class WebDavClientTest {
             val result = client.testConnection()
             assertTrue(result.isFailure)
             assertTrue(result.exceptionOrNull()!!.message!!.contains("401"))
+            assertEquals(401, (result.exceptionOrNull() as WebDavHttpException).code)
+        }
+
+    @Test
+    fun `testConnection fails with a timeout when the whole call exceeds its limit`() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(207).setHeadersDelay(5, TimeUnit.SECONDS))
+
+            val started = System.nanoTime()
+            val result = client.testConnection(timeoutMillis = 200)
+            val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+
+            assertTrue(result.exceptionOrNull() is InterruptedIOException)
+            assertTrue("Call timeout not enforced: $elapsedMillis ms", elapsedMillis < 4_000)
+        }
+
+    @Test
+    fun `testConnection is cancelled with its coroutine and does not wrap the cancellation`() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(207).setHeadersDelay(5, TimeUnit.SECONDS))
+            var outcome: Result<Unit>? = null
+
+            val started = System.nanoTime()
+            val job = launch(Dispatchers.IO) { outcome = client.testConnection() }
+            server.takeRequest(2, TimeUnit.SECONDS)
+            job.cancelAndJoin()
+            val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+
+            assertTrue(job.isCancelled)
+            assertNull("Cancellation must propagate, not become a Result", outcome)
+            assertTrue("Cancel did not abort the call: $elapsedMillis ms", elapsedMillis < 4_000)
+        }
+
+    @Test
+    fun `testConnection reports HTTP 404 as typed exception`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(404))
+            val result = client.testConnection()
+            assertEquals(404, (result.exceptionOrNull() as WebDavHttpException).code)
         }
 
     @Test

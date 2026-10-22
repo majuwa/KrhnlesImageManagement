@@ -181,9 +181,9 @@ private fun LoggedInContent(
     uiState.testResult?.let { result ->
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = result,
+            text = connectionTestMessage(result),
             color =
-                if (result.startsWith("Connection successful")) {
+                if (result is ConnectionTestResult.Success) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.error
@@ -422,3 +422,19 @@ private fun WarningBanner(message: String) {
         }
     }
 }
+
+@Composable
+private fun connectionTestMessage(result: ConnectionTestResult): String =
+    when (result) {
+        ConnectionTestResult.Success -> stringResource(R.string.connection_test_success)
+        ConnectionTestResult.NotConfigured -> stringResource(R.string.connection_test_not_configured)
+        ConnectionTestResult.CertificateError -> stringResource(R.string.connection_test_error_certificate)
+        ConnectionTestResult.UnknownHost -> stringResource(R.string.connection_test_error_unknown_host)
+        ConnectionTestResult.ServerUnreachable -> stringResource(R.string.connection_test_error_unreachable)
+        ConnectionTestResult.Timeout -> stringResource(R.string.connection_test_error_timeout)
+        ConnectionTestResult.AuthFailed -> stringResource(R.string.connection_test_error_auth)
+        ConnectionTestResult.NotFound -> stringResource(R.string.connection_test_error_not_found)
+        is ConnectionTestResult.HttpError -> stringResource(R.string.connection_test_error_http, result.code)
+        ConnectionTestResult.InvalidUrl -> stringResource(R.string.connection_test_error_invalid_url)
+        ConnectionTestResult.UnknownError -> stringResource(R.string.connection_test_error_unknown)
+    }

@@ -52,6 +52,9 @@ A lightweight, privacy-focused Android application designed to selectively back 
 2. Enter the full WebDAV URL, username, and password/app token
 3. Tap "Save & Connect"
 
+### Test Connection
+In Settings, "Test Connection" checks the stored server and credentials (it gives up after 30 seconds). Failures are explained in plain language: an untrusted (e.g. self-signed or expired) certificate, a server name that cannot be found, an unreachable server, a timeout, rejected credentials (HTTP 401/403), a missing WebDAV folder (HTTP 404), or another HTTP error code. Tap the button again to retry. Logging out or changing the server or credentials clears the previous result.
+
 ### Upload Options
 - **Base upload folder:** Choose the remote root folder that all uploads go into.
 - **Auto date folders:** Optional toggle in Settings that skips the occasion dialog and uploads into `YYYY/MM-Month` folders such as `Photos/2026/05-May/`. Selections that span multiple months are queued as separate background uploads automatically.

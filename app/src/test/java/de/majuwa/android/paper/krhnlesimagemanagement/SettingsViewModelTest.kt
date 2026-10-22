@@ -3,14 +3,18 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.ConnectionTestResult
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -20,6 +24,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +35,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.IOException
+import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -167,16 +174,22 @@ class SettingsViewModelTest {
             assertTrue(viewModel.uiState.value.autoDateFoldersEnabled)
         }
 
+    // ── Connection test (issue #22 / #41) ───────────────────────────────────
+
+    private fun trackingViewModel(
+        credentials: CredentialRepository,
+        tester: suspend (WebDavConfig) -> Result<Unit> = { Result.success(Unit) },
+    ) = SettingsViewModel(
+        application = RuntimeEnvironment.getApplication() as Application,
+        credentialStore = credentials,
+        connectionTester = tester,
+    )
+
     @Test
     fun `testConnection cancels config flow after first emission`() =
         runTest {
             val trackingCredentials = TrackingCredentialRepository()
-            val app = RuntimeEnvironment.getApplication() as Application
-            val trackingViewModel =
-                SettingsViewModel(
-                    application = app,
-                    credentialStore = trackingCredentials,
-                )
+            val trackingViewModel = trackingViewModel(trackingCredentials)
 
             advanceUntilIdle()
             val collectorsBeforeTest = trackingCredentials.activeCollectors.get()
@@ -186,7 +199,253 @@ class SettingsViewModelTest {
             assertTrue(collectorsBeforeTest > 0)
             assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
             assertFalse(trackingViewModel.uiState.value.isTesting)
-            assertEquals("Not configured.", trackingViewModel.uiState.value.testResult)
+            assertEquals(ConnectionTestResult.NotConfigured, trackingViewModel.uiState.value.testResult)
+        }
+
+    @Test
+    fun `testConnection success leaves no lingering config collector`() =
+        runTest {
+            val trackingCredentials = TrackingCredentialRepository(VALID_CONFIG)
+            val testedConfigs = mutableListOf<WebDavConfig>()
+            val vm =
+                trackingViewModel(trackingCredentials) { config ->
+                    testedConfigs += config
+                    Result.success(Unit)
+                }
+            advanceUntilIdle()
+            val collectorsBeforeTest = trackingCredentials.activeCollectors.get()
+
+            vm.testConnection()
+            advanceUntilIdle()
+
+            assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
+            assertEquals(listOf(VALID_CONFIG), testedConfigs)
+            assertFalse(vm.uiState.value.isTesting)
+            assertEquals(ConnectionTestResult.Success, vm.uiState.value.testResult)
+        }
+
+    @Test
+    fun `testConnection failure leaves no lingering config collector and reports typed error`() =
+        runTest {
+            val trackingCredentials = TrackingCredentialRepository(VALID_CONFIG)
+            val vm =
+                trackingViewModel(trackingCredentials) {
+                    Result.failure(WebDavHttpException(401, "Connection failed: HTTP 401 Unauthorized"))
+                }
+            advanceUntilIdle()
+            val collectorsBeforeTest = trackingCredentials.activeCollectors.get()
+
+            vm.testConnection()
+            advanceUntilIdle()
+
+            assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
+            assertFalse(vm.uiState.value.isTesting)
+            assertEquals(ConnectionTestResult.AuthFailed, vm.uiState.value.testResult)
+        }
+
+    @Test
+    fun `repeated testConnection calls leave no lingering config collectors`() =
+        runTest {
+            val trackingCredentials = TrackingCredentialRepository(VALID_CONFIG)
+            val vm = trackingViewModel(trackingCredentials)
+            advanceUntilIdle()
+            val collectorsBeforeTest = trackingCredentials.activeCollectors.get()
+
+            repeat(5) {
+                vm.testConnection()
+                advanceUntilIdle()
+            }
+
+            assertEquals(collectorsBeforeTest, trackingCredentials.activeCollectors.get())
+        }
+
+    @Test
+    fun `testConnection ignores calls while a test is in progress`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val invocations = AtomicInteger(0)
+            val vm =
+                trackingViewModel(TrackingCredentialRepository(VALID_CONFIG)) {
+                    invocations.incrementAndGet()
+                    gate.await()
+                    Result.success(Unit)
+                }
+            advanceUntilIdle()
+
+            vm.testConnection()
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.isTesting)
+            vm.testConnection()
+            vm.testConnection()
+            advanceUntilIdle()
+            assertEquals(1, invocations.get())
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isTesting)
+            assertEquals(ConnectionTestResult.Success, vm.uiState.value.testResult)
+            assertEquals(1, invocations.get())
+        }
+
+    @Test
+    fun `testConnection can run again after the previous test finished`() =
+        runTest {
+            val invocations = AtomicInteger(0)
+            val vm =
+                trackingViewModel(TrackingCredentialRepository(VALID_CONFIG)) {
+                    invocations.incrementAndGet()
+                    Result.success(Unit)
+                }
+            advanceUntilIdle()
+
+            vm.testConnection()
+            advanceUntilIdle()
+            vm.testConnection()
+            advanceUntilIdle()
+
+            assertEquals(2, invocations.get())
+        }
+
+    private fun fakeViewModel(tester: suspend (WebDavConfig) -> Result<Unit>) =
+        SettingsViewModel(
+            application = RuntimeEnvironment.getApplication() as Application,
+            credentialStore = fakeCredentials,
+            uploadedPhotosRepository = fakeUploadedPhotos,
+            connectionTester = tester,
+        )
+
+    @Test
+    fun `logout cancels a running test so a new session can test again without stale results`() =
+        runTest {
+            val staleGate = CompletableDeferred<Unit>()
+            val testedUrls = mutableListOf<String>()
+            val vm =
+                fakeViewModel { config ->
+                    testedUrls += config.url
+                    if (testedUrls.size == 1) {
+                        // Simulates a blocking call that ignores cancellation and then reports a failure.
+                        withContext(NonCancellable) { staleGate.await() }
+                        Result.failure(WebDavHttpException(401, "old server"))
+                    } else {
+                        Result.success(Unit)
+                    }
+                }
+            advanceUntilIdle()
+            vm.testConnection()
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.isTesting)
+
+            vm.logout()
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isTesting)
+            fakeCredentials.save("https://new.example.com/dav/", "newuser", "newpass")
+            advanceUntilIdle()
+
+            vm.testConnection()
+            advanceUntilIdle()
+            assertEquals(listOf(VALID_URL, "https://new.example.com/dav/"), testedUrls)
+            assertEquals(ConnectionTestResult.Success, vm.uiState.value.testResult)
+
+            // The old job finally returns: its result belongs to the old session and must be dropped.
+            staleGate.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(ConnectionTestResult.Success, vm.uiState.value.testResult)
+            assertFalse(vm.uiState.value.isTesting)
+        }
+
+    @Test
+    fun `credential change clears a previous test result`() =
+        runTest {
+            val vm = fakeViewModel { Result.success(Unit) }
+            advanceUntilIdle()
+            vm.testConnection()
+            advanceUntilIdle()
+            assertEquals(ConnectionTestResult.Success, vm.uiState.value.testResult)
+
+            fakeCredentials.save("https://other.example.com/dav/", "testuser", "testpass")
+            advanceUntilIdle()
+
+            assertNull(vm.uiState.value.testResult)
+        }
+
+    @Test
+    fun `credential change cancels a running test and drops its result`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val vm =
+                fakeViewModel {
+                    gate.await()
+                    Result.success(Unit)
+                }
+            advanceUntilIdle()
+            vm.testConnection()
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.isTesting)
+
+            fakeCredentials.save(VALID_URL, "testuser", "changed-password")
+            advanceUntilIdle()
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            assertFalse(vm.uiState.value.isTesting)
+            assertNull(vm.uiState.value.testResult)
+        }
+
+    @Test
+    fun `base folder change keeps the test result`() =
+        runTest {
+            val vm = fakeViewModel { Result.success(Unit) }
+            advanceUntilIdle()
+            vm.testConnection()
+            advanceUntilIdle()
+
+            fakeCredentials.saveBaseFolder("Other")
+            advanceUntilIdle()
+
+            assertEquals(ConnectionTestResult.Success, vm.uiState.value.testResult)
+        }
+
+    @Test
+    fun `config read failure reports an error and releases the guard`() =
+        runTest {
+            val invocations = AtomicInteger(0)
+            val vm =
+                trackingViewModel(FailingSecondReadCredentialRepository(VALID_CONFIG)) {
+                    invocations.incrementAndGet()
+                    Result.success(Unit)
+                }
+            advanceUntilIdle()
+
+            vm.testConnection()
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isTesting)
+            assertEquals(ConnectionTestResult.UnknownError, vm.uiState.value.testResult)
+
+            vm.testConnection()
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isTesting)
+            assertEquals(0, invocations.get())
+        }
+
+    @Test
+    fun `throwing tester reports an error instead of crashing and releases the guard`() =
+        runTest {
+            val invocations = AtomicInteger(0)
+            val vm =
+                trackingViewModel(TrackingCredentialRepository(VALID_CONFIG)) {
+                    invocations.incrementAndGet()
+                    throw UnknownHostException("cloud.example.com")
+                }
+            advanceUntilIdle()
+
+            vm.testConnection()
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isTesting)
+            assertEquals(ConnectionTestResult.UnknownHost, vm.uiState.value.testResult)
+
+            vm.testConnection()
+            advanceUntilIdle()
+            assertEquals(2, invocations.get())
         }
 
     @Test
@@ -385,7 +644,24 @@ class SettingsViewModelTest {
             }
     }
 
-    private class TrackingCredentialRepository : CredentialRepository {
+    /** Emits [config] to the first (init) collector; every later collection fails like a broken DataStore. */
+    private class FailingSecondReadCredentialRepository(
+        private val config: WebDavConfig,
+        private val delegate: TrackingCredentialRepository = TrackingCredentialRepository(config),
+    ) : CredentialRepository by delegate {
+        private val collections = AtomicInteger(0)
+
+        override val webDavConfig: Flow<WebDavConfig> =
+            flow {
+                if (collections.getAndIncrement() > 0) throw IOException("DataStore read failed")
+                emit(config)
+                awaitCancellation()
+            }
+    }
+
+    private class TrackingCredentialRepository(
+        private val config: WebDavConfig = WebDavConfig(),
+    ) : CredentialRepository {
         val activeCollectors = AtomicInteger(0)
 
         override val autoDateFoldersEnabled: Flow<Boolean> =
@@ -397,7 +673,7 @@ class SettingsViewModelTest {
             flow {
                 activeCollectors.incrementAndGet()
                 try {
-                    emit(WebDavConfig())
+                    emit(config)
                     awaitCancellation()
                 } finally {
                     activeCollectors.decrementAndGet()
@@ -436,5 +712,16 @@ class SettingsViewModelTest {
         override suspend fun saveAutoDateFolders(enabled: Boolean) = Unit
 
         override suspend fun clear() = Unit
+    }
+
+    private companion object {
+        const val VALID_URL = "https://cloud.example.com/remote.php/dav/files/user/"
+
+        val VALID_CONFIG =
+            WebDavConfig(
+                url = "https://cloud.example.com/remote.php/dav/files/user/",
+                username = "user",
+                password = "secret",
+            )
     }
 }
