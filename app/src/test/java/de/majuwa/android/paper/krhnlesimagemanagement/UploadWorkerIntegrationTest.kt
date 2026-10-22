@@ -1,8 +1,10 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import android.app.Notification
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
+import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import junit.framework.TestCase.assertEquals
@@ -163,6 +165,33 @@ class UploadWorkerIntegrationTest {
             // Assert: Queue file should be deleted after completion
             assertTrue(!queueFile.exists())
         }
+
+    @Test
+    fun progressNotification_usesDedicatedNotificationIcon() {
+        assertDedicatedIcon(buildWorker().buildProgressNotification(current = 1, total = 3))
+    }
+
+    @Test
+    fun completionNotification_usesDedicatedNotificationIcon() {
+        val worker = buildWorker()
+        assertDedicatedIcon(worker.buildCompletionNotification(uploaded = 3, failed = 0))
+        assertDedicatedIcon(
+            worker.buildCompletionNotification(uploaded = 2, failed = 1, retryQueueFilePath = "retry.json"),
+        )
+    }
+
+    @Test
+    fun failureNotification_usesDedicatedNotificationIcon() {
+        assertDedicatedIcon(buildWorker().buildFailureNotification("boom"))
+    }
+
+    private fun buildWorker(): UploadWorker = TestListenableWorkerBuilder<UploadWorker>(context).build()
+
+    private fun assertDedicatedIcon(notification: Notification) {
+        val iconRes = notification.smallIcon.resId
+        assertEquals(R.drawable.ic_notification_upload, iconRes)
+        assertTrue(iconRes != R.drawable.ic_launcher_foreground)
+    }
 
     private fun createTestQueueFile(
         folderName: String,

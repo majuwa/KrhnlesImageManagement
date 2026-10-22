@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.core.net.toUri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -46,6 +47,7 @@ class UploadWorker(
         const val KEY_UPLOADED_COUNT = "uploaded_count"
         const val KEY_FAILED_COUNT = "failed_count"
         const val NOTIFICATION_ID = 1001
+        val NOTIFICATION_ICON = R.drawable.ic_notification_upload
         private const val CHANNEL_ID = "upload_channel"
         private const val REQUEST_CODE_RETRY = 2001
         private const val TAG = "UploadWorker"
@@ -287,7 +289,12 @@ class UploadWorker(
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
 
-    private fun buildProgressNotification(
+    private fun uploadNotificationBuilder(): NotificationCompat.Builder =
+        NotificationCompat
+            .Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(IconCompat.createWithResource(applicationContext, NOTIFICATION_ICON))
+
+    internal fun buildProgressNotification(
         current: Int,
         total: Int,
     ): Notification {
@@ -297,9 +304,7 @@ class UploadWorker(
             } else {
                 "$current / $total"
             }
-        return NotificationCompat
-            .Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+        return uploadNotificationBuilder()
             .setContentTitle(applicationContext.getString(R.string.notification_uploading_title))
             .setContentText(text)
             .setProgress(total, current, total == 0)
@@ -313,6 +318,14 @@ class UploadWorker(
         failed: Int,
         retryQueueFilePath: String? = null,
     ) {
+        notifyIfPermitted(buildCompletionNotification(uploaded, failed, retryQueueFilePath))
+    }
+
+    internal fun buildCompletionNotification(
+        uploaded: Int,
+        failed: Int,
+        retryQueueFilePath: String? = null,
+    ): Notification {
         val text =
             if (failed == 0) {
                 applicationContext.resources.getQuantityString(
@@ -329,9 +342,7 @@ class UploadWorker(
                 )
             }
         val builder =
-            NotificationCompat
-                .Builder(applicationContext, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+            uploadNotificationBuilder()
                 .setContentTitle(applicationContext.getString(R.string.notification_upload_complete))
                 .setContentText(text)
                 .setOngoing(false)
@@ -354,20 +365,19 @@ class UploadWorker(
             builder.addAction(0, retryLabel, retryPendingIntent)
         }
 
-        notifyIfPermitted(builder.build())
+        return builder.build()
     }
 
     private fun showFailureNotification(message: String) {
-        val notification =
-            NotificationCompat
-                .Builder(applicationContext, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle(applicationContext.getString(R.string.notification_upload_failed))
-                .setContentText(message)
-                .setOngoing(false)
-                .build()
-        notifyIfPermitted(notification)
+        notifyIfPermitted(buildFailureNotification(message))
     }
+
+    internal fun buildFailureNotification(message: String): Notification =
+        uploadNotificationBuilder()
+            .setContentTitle(applicationContext.getString(R.string.notification_upload_failed))
+            .setContentText(message)
+            .setOngoing(false)
+            .build()
 
     private fun createNotificationChannel() {
         val channel =
