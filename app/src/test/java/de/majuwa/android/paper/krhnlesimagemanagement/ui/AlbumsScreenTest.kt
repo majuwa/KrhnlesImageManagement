@@ -100,7 +100,7 @@ class AlbumsScreenTest {
     @Test
     fun `shows error message on load failure`() {
         val fakeRepo = FakeAlbumsRepository()
-        fakeRepo.albums = Result.failure(RuntimeException("Connection refused"))
+        fakeRepo.albums = Result.failure(java.net.ConnectException("Connection refused"))
         val viewModel = createViewModel(fakeRepo)
 
         composeTestRule.setContent {
@@ -110,7 +110,11 @@ class AlbumsScreenTest {
         }
 
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Connection refused").assertIsDisplayed()
+        // Localized, user-friendly text instead of the raw exception message.
+        composeTestRule
+            .onNodeWithText("Could not reach the server. Check your internet connection and that the server is online.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Connection refused").assertDoesNotExist()
     }
 
     @Test

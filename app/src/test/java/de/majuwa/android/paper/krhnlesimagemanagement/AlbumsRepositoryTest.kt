@@ -510,20 +510,110 @@ class AlbumsRepositoryTest {
         }
 
     @Test
-    fun `credentials are not sent to another origin`() =
+    fun `credentials are not sent to another origin after a redirect`() =
         runTest {
             repo = createRepo()
             val other = MockWebServer().apply { start() }
             try {
+                server.enqueue(
+                    MockResponse().setResponseCode(302).setHeader("Location", other.url("/x.jpg").toString()),
+                )
                 other.enqueue(MockResponse().setResponseCode(404))
 
-                runCatching { repo.downloadBitmapForHash(other.url("/x.jpg").toString()) }
+                runCatching { repo.downloadBitmapForHash(server.url("/remote.php/dav/files/user/A/x.jpg").toString()) }
 
                 val request = other.takeRequest()
                 assertNull("Authorization leaked to another origin", request.getHeader("Authorization"))
             } finally {
                 other.shutdown()
             }
+        }
+
+    // ── downloadBitmapForHash URL validation ────────────────────────────────
+
+    private fun assertDownloadRefused(url: String) =
+        runTest {
+            repo = createRepo(baseFolder = "Photos")
+
+            val failure = runCatching { repo.downloadBitmapForHash(url) }.exceptionOrNull()
+
+            assertTrue("expected UnsafeHrefException for $url, got $failure", failure is UnsafeHrefException)
+            assertEquals("no request may be sent", 0, server.requestCount)
+        }
+
+    @Test
+    fun `thumbnail download from another origin is refused without a request`() {
+        val other = MockWebServer().apply { start() }
+        try {
+            assertDownloadRefused(other.url("/remote.php/dav/files/user/Photos/A/x.jpg").toString())
+            assertEquals(0, other.requestCount)
+        } finally {
+            other.shutdown()
+        }
+    }
+
+    @Test
+    fun `thumbnail download outside the base folder is refused`() =
+        assertDownloadRefused(server.url("/remote.php/dav/files/user/Other/x.jpg").toString())
+
+    @Test
+    fun `thumbnail download of another user is refused`() =
+        assertDownloadRefused(server.url("/remote.php/dav/files/admin/Photos/x.jpg").toString())
+
+    @Test
+    fun `thumbnail download with traversal is refused`() =
+        assertDownloadRefused(server.url("/").toString() + "remote.php/dav/files/user/Photos/A/%2e%2e/%2e%2e/x.jpg")
+
+    @Test
+    fun `non-preview Nextcloud endpoint is refused`() =
+        assertDownloadRefused(server.url("/index.php/apps/memories/api/describe").toString())
+
+    @Test
+    fun `Memories preview with extra path segments is refused`() =
+        assertDownloadRefused(server.url("/index.php/apps/memories/api/image/preview/42/x").toString())
+
+    @Test
+    fun `malformed thumbnail URL is refused`() = assertDownloadRefused("not a url")
+
+    @Test
+    fun `thumbnail below the base folder is downloaded`() =
+        runTest {
+            repo = createRepo(baseFolder = "Photos")
+            server.enqueue(MockResponse().setResponseCode(404))
+
+            val failure =
+                runCatching {
+                    repo.downloadBitmapForHash(server.url("/remote.php/dav/files/user/Photos/A/x.jpg").toString())
+                }.exceptionOrNull()
+
+            assertEquals("/remote.php/dav/files/user/Photos/A/x.jpg", server.takeRequest().path)
+            assertEquals("typed HTTP status", 404, (failure as WebDavHttpException).code)
+        }
+
+    @Test
+    fun `Memories preview of a file id is downloaded`() =
+        runTest {
+            repo = createRepo(baseFolder = "Photos")
+            server.enqueue(MockResponse().setResponseCode(404))
+
+            runCatching {
+                repo.downloadBitmapForHash(
+                    server.url("/index.php/apps/memories/api/image/preview/42?x=512&y=512&a=1").toString(),
+                )
+            }
+
+            assertEquals("/index.php/apps/memories/api/image/preview/42?x=512&y=512&a=1", server.takeRequest().path)
+        }
+
+    @Test
+    fun `listAlbums failure carries the HTTP status`() =
+        runTest {
+            repo = createRepo()
+            server.enqueue(MockResponse().setResponseCode(401))
+
+            val failure = repo.listAlbums().exceptionOrNull()
+
+            assertEquals(401, (failure as WebDavHttpException).code)
         }
 
     // ── deleteAlbum ─────────────────────────────────────────────────────────

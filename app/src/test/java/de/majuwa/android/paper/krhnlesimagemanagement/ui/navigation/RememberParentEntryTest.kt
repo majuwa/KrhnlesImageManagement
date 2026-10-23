@@ -20,6 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,8 +38,17 @@ class RememberParentEntryTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    /** Stand-in for the parent-scoped AlbumsViewModel. */
+    /** Stand-in for a parent-scoped ViewModel (e.g. AlbumDetailViewModel). */
     class SharedViewModel : ViewModel()
+
+    /** Stand-in for a review-scoped ViewModel (duplicate / blur review). */
+    class ChildViewModel : ViewModel() {
+        var cleared = false
+
+        override fun onCleared() {
+            cleared = true
+        }
+    }
 
     @Test
     fun `re-resolves parent entry after the parent entry was replaced`() {
@@ -115,6 +125,47 @@ class RememberParentEntryTest {
     }
 
     @Test
+    fun `resolves a parent route with arguments by its pattern and shares its ViewModel`() {
+        lateinit var navController: NavHostController
+        var parentVm: SharedViewModel? = null
+        var childSharedVm: SharedViewModel? = null
+        var childOwnVm: ChildViewModel? = null
+
+        // Mirrors the album detail (parent with href argument) and a review (child) route.
+        composeTestRule.setContent {
+            navController = rememberNavController()
+            NavHost(navController = navController, startDestination = ROOT) {
+                composable(ROOT) {}
+                composable(DETAIL_PATTERN) { parentVm = viewModel() }
+                composable(REVIEW) { entry ->
+                    val detailEntry = rememberParentEntry(navController, entry, DETAIL_PATTERN)
+                    childSharedVm = viewModel(viewModelStoreOwner = detailEntry)
+                    childOwnVm = viewModel()
+                }
+            }
+        }
+
+        composeTestRule.runOnIdle { navController.navigate("detail?href=%2FSummer%2F") }
+        composeTestRule.runOnIdle { navController.navigate(REVIEW) }
+        val firstReviewVm =
+            composeTestRule.runOnIdle {
+                assertSame("Review must share the album detail ViewModel", parentVm, childSharedVm)
+                childOwnVm
+            }
+
+        // Leave the review and the album, then open another album and its review.
+        composeTestRule.runOnIdle { navController.popBackStack(ROOT, inclusive = false) }
+        composeTestRule.runOnIdle { navController.navigate("detail?href=%2FWinter%2F") }
+        composeTestRule.runOnIdle { navController.navigate(REVIEW) }
+
+        composeTestRule.runOnIdle {
+            assertSame("Review must bind to the new album detail entry", parentVm, childSharedVm)
+            assertNotSame("Review-scoped state must not survive leaving the review", firstReviewVm, childOwnVm)
+            assertTrue("Popped review ViewModel must be cleared", firstReviewVm!!.cleared)
+        }
+    }
+
+    @Test
     fun `caches the lookup across recompositions with the same current entry`() {
         val parentEntry = mockk<NavBackStackEntry>()
         val navController = mockk<NavController>()
@@ -149,5 +200,8 @@ class RememberParentEntryTest {
         const val FORCED_RECOMPOSITIONS = 3
         const val PARENT = "parent"
         const val CHILD = "parent/child"
+        const val ROOT = "root"
+        const val DETAIL_PATTERN = "detail?href={href}"
+        const val REVIEW = "detail/review"
     }
 }

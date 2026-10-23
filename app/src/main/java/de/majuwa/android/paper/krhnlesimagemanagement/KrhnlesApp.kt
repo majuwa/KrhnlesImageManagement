@@ -24,10 +24,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurReviewScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicateReviewScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.rememberParentEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
@@ -44,6 +47,9 @@ private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_UPLOAD_HISTORY = "photos/history"
 private const val ROUTE_ALBUMS = "albums"
 private const val ROUTE_ALBUM_DETAIL = "albums/detail"
+
+/** Route pattern of the album detail destination; its back-stack entry owns [AlbumDetailViewModel]. */
+private const val ROUTE_ALBUM_DETAIL_PATTERN = "$ROUTE_ALBUM_DETAIL?href={href}"
 private const val ROUTE_VIEWER = "albums/viewer"
 private const val ROUTE_DUPLICATES = "albums/duplicates"
 private const val ROUTE_BLUR = "albums/blur"
@@ -133,7 +139,7 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
             }
 
             composable(
-                route = "$ROUTE_ALBUM_DETAIL?href={href}",
+                route = ROUTE_ALBUM_DETAIL_PATTERN,
                 arguments =
                     listOf(
                         navArgument("href") {
@@ -143,7 +149,8 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
                     ),
             ) { backStack ->
                 val albumHref = backStack.arguments?.getString("href") ?: ""
-                val vm = sharedAlbumsViewModel(navController, backStack)
+                // Owned by this entry; shared with the viewer and the reviews opened from it.
+                val vm: AlbumDetailViewModel = viewModel()
                 AlbumDetailScreen(
                     viewModel = vm,
                     albumHref = albumHref,
@@ -176,9 +183,12 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
                         },
                     ),
             ) { backStack ->
-                val vm = sharedAlbumsViewModel(navController, backStack)
+                // Scan state is scoped to this review entry and discarded when it is left.
+                val vm: DuplicatesViewModel = viewModel()
                 DuplicateReviewScreen(
                     viewModel = vm,
+                    detailViewModel = sharedAlbumDetailViewModel(navController, backStack),
+                    albumHref = backStack.arguments?.getString("href") ?: "",
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
@@ -193,9 +203,12 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
                         },
                     ),
             ) { backStack ->
-                val vm = sharedAlbumsViewModel(navController, backStack)
+                // Scan state is scoped to this review entry and discarded when it is left.
+                val vm: BlurViewModel = viewModel()
                 BlurReviewScreen(
                     viewModel = vm,
+                    detailViewModel = sharedAlbumDetailViewModel(navController, backStack),
+                    albumHref = backStack.arguments?.getString("href") ?: "",
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
@@ -215,7 +228,7 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
                     ),
             ) { backStack ->
                 val initialIndex = backStack.arguments?.getInt("index") ?: 0
-                val vm = sharedAlbumsViewModel(navController, backStack)
+                val vm = sharedAlbumDetailViewModel(navController, backStack)
                 FullscreenViewerScreen(
                     viewModel = vm,
                     initialIndex = initialIndex,
@@ -227,11 +240,12 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
 }
 
 /**
- * Returns the [AlbumsViewModel] scoped to the Albums tab's back-stack entry so every album
- * sub-route shares the live Albums state. [currentEntry] is the calling destination's own entry.
+ * Returns the [AlbumDetailViewModel] scoped to the album detail back-stack entry so the viewer
+ * and the duplicate / blur review share the live state of the album they were opened from.
+ * [currentEntry] is the calling destination's own entry.
  */
 @Composable
-private fun sharedAlbumsViewModel(
+private fun sharedAlbumDetailViewModel(
     navController: NavController,
     currentEntry: NavBackStackEntry,
-): AlbumsViewModel = viewModel(rememberParentEntry(navController, currentEntry, ROUTE_ALBUMS))
+): AlbumDetailViewModel = viewModel(rememberParentEntry(navController, currentEntry, ROUTE_ALBUM_DETAIL_PATTERN))

@@ -73,12 +73,16 @@ When a deletion with at least one failure finishes, the app SHALL show a message
 - **WHEN** the outcome has been shown
 - **THEN** it is consumed and not shown again, e.g. when the album screen is shown again later
 
-### Requirement: Leaving a review while deleting is not possible
-While the duplicate or blur review is deleting photos, Back and the top-bar back button SHALL NOT leave the review. When the deletion it started has finished, the review SHALL navigate back exactly once.
+### Requirement: Leaving a screen while deleting is not possible
+While the duplicate review, the blur review or the album screen (selection mode) is deleting photos, Back and the screen's top-bar navigation buttons (back, clear selection) SHALL NOT leave the screen or abandon the deletion. When the deletion started by a review has finished, the review SHALL navigate back exactly once; the album screen stays open and shows the outcome.
 
 #### Scenario: Back during deletion
 - **WHEN** the user presses Back while the review shows its deleting state
 - **THEN** the review stays open and navigates back once the deletion has finished
+
+#### Scenario: Back during a selection-mode deletion
+- **WHEN** the user confirms deleting the selected photos on the album screen and presses Back while the deletion runs
+- **THEN** the album screen stays open, the back and clear-selection buttons are disabled, and every selected photo is still deleted
 
 ### Requirement: Deletion failures never crash the app
 Any failure during a deletion other than cancellation SHALL be reported as failed deletions instead of terminating the app. A failing photo is counted individually; if the deletion cannot start at all, every requested photo counts as failed.

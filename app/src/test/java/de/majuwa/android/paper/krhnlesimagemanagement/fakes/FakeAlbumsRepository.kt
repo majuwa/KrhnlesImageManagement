@@ -48,8 +48,18 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
 
     override fun fullImageUrl(photo: RemotePhoto): String = "https://fake.server/full/${photo.href}"
 
-    override suspend fun downloadBitmapForHash(url: String): Bitmap =
-        downloadBitmapFactory?.invoke() ?: downloadBitmapResult ?: error("No bitmap configured in FakeAlbumsRepository")
+    /** Every URL passed to [downloadBitmapForHash], in call order. */
+    val downloadedUrls = mutableListOf<String>()
+
+    /** Invoked (and may suspend or throw) on every [downloadBitmapForHash] call before the bitmap is returned. */
+    var onDownloadBitmap: suspend (String) -> Unit = {}
+
+    override suspend fun downloadBitmapForHash(url: String): Bitmap {
+        downloadedUrls += url
+        onDownloadBitmap(url)
+        return downloadBitmapFactory?.invoke() ?: downloadBitmapResult
+            ?: error("No bitmap configured in FakeAlbumsRepository")
+    }
 
     override suspend fun deletePhoto(photo: RemotePhoto): Result<Unit> {
         deletedPhotos.add(photo)

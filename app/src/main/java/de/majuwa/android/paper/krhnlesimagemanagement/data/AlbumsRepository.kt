@@ -131,20 +131,34 @@ class AlbumsRepository(
     /**
      * Downloads [url] and decodes it into a [Bitmap] suitable for hash computation.
      * The returned bitmap must be recycled by the caller.
+     *
+     * Only URLs this repository hands out as thumbnails are requested: a file strictly below the
+     * configured base folder, or the Nextcloud Memories preview of a file id on the configured
+     * Nextcloud base. Anything else fails with [UnsafeHrefException] without sending a request.
      */
     override suspend fun downloadBitmapForHash(url: String): Bitmap =
         withContext(Dispatchers.IO) {
+            val target =
+                url.toHttpUrlOrNull()?.takeIf {
+                    resolveWebDavHref(baseFolderUrl, url) != null || it.isMemoriesPreviewUrl(nextcloudBase, baseHttpUrl)
+                } ?: run {
+                    // The URL itself is not logged: it may be derived from server-controlled data.
+                    Log.w(TAG, "Refusing a thumbnail download outside the configured server / folder")
+                    throw UnsafeHrefException()
+                }
             val request =
                 Request
                     .Builder()
-                    .url(url)
+                    .url(target)
                     .get()
                     .build()
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) error("HTTP ${response.code} for $url")
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Thumbnail download failed: HTTP ${response.code}")
+                }
                 val bytes = response.body.bytes()
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    ?: error("Could not decode bitmap for $url")
+                    ?: error("Could not decode thumbnail bitmap")
             }
         }
 
@@ -247,7 +261,7 @@ class AlbumsRepository(
                         .build()
                 client.newCall(req).execute().use { it.code == 200 }
             } catch (e: Exception) {
-                Log.w(TAG, "Memories API check failed", e)
+                Log.w(TAG, "Memories API check failed: ${e.javaClass.simpleName}")
                 false
             }
         }
@@ -264,7 +278,7 @@ class AlbumsRepository(
         val xml =
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful && response.code != 207) {
-                    error("PROPFIND failed: HTTP ${response.code}")
+                    throw WebDavHttpException(response.code, "PROPFIND failed: HTTP ${response.code}")
                 }
                 response.body.string()
             }
@@ -339,6 +353,22 @@ class AlbumsRepository(
             return ext in IMAGE_EXTENSIONS
         }
     }
+}
+
+/** Path of the Memories preview endpoint below the Nextcloud base (see `AlbumsRepository.buildUrl`). */
+private val MEMORIES_PREVIEW_SEGMENTS = listOf("index.php", "apps", "memories", "api", "image", "preview")
+
+/** `<nextcloudBase>/index.php/apps/memories/api/image/preview/<fileId>` on the origin of [configured]. */
+private fun HttpUrl.isMemoriesPreviewUrl(
+    nextcloudBase: String?,
+    configured: HttpUrl,
+): Boolean {
+    val base = nextcloudBase?.toHttpUrlOrNull() ?: return false
+    if (!hasSameOriginAs(configured) || encodedFragment != null) return false
+    val prefix = base.nonEmptyPathSegments() + MEMORIES_PREVIEW_SEGMENTS
+    return pathSegments.size == prefix.size + 1 &&
+        pathSegments.take(prefix.size) == prefix &&
+        pathSegments.last().let { id -> id.isNotEmpty() && id.all(Char::isLetterOrDigit) }
 }
 
 /** A server-supplied href points outside the configured WebDAV folder / origin and was not requested. */

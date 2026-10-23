@@ -6,9 +6,11 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurState
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesState
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.PhotoDeletionOutcome
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -35,45 +37,50 @@ import org.robolectric.RuntimeEnvironment
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Exercises the three photo-deletion entry points of [AlbumsViewModel]
- * (duplicate review, blur review, album selection mode) against the same
- * behavioural contract (`album-photo-deletion` spec, issues #28 / #47).
+ * Exercises the three photo-deletion entry points — duplicate review ([DuplicatesViewModel]),
+ * blur review ([BlurViewModel]) and album selection mode ([AlbumDetailViewModel]) — against the
+ * same behavioural contract (`album-photo-deletion` spec, issues #28 / #47). The review entry
+ * points delete through the album detail's shared orchestration (issues #29 / #48).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(ParameterizedRobolectricTestRunner::class)
-class AlbumsViewModelPhotoDeletionTest(
+class AlbumPhotoDeletionTest(
     private val path: DeletePath,
 ) {
     enum class DeletePath { DUPLICATES, BLUR, SELECTION }
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeRepo: FakeAlbumsRepository
-    private lateinit var viewModel: AlbumsViewModel
+    private lateinit var viewModel: AlbumDetailViewModel
+    private lateinit var duplicatesViewModel: DuplicatesViewModel
+    private lateinit var blurViewModel: BlurViewModel
 
     private val photoA = RemotePhoto("a.jpg", "/Album/a.jpg", "1", "image/jpeg")
     private val photoB = RemotePhoto("b.jpg", "/Album/b.jpg", "2", "image/jpeg")
     private val photoC = RemotePhoto("c.jpg", "/Album/c.jpg", "3", "image/jpeg")
     private val allPhotos = listOf(photoA, photoB, photoC)
 
-    private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract): AlbumsViewModel =
-        AlbumsViewModel(
-            application = RuntimeEnvironment.getApplication() as Application,
-            credentialRepo =
-                FakeCredentialRepository(
-                    WebDavConfig(
-                        url = "https://cloud.example.com/remote.php/dav/files/user/",
-                        username = "user",
-                        password = "pass",
-                    ),
-                ),
-            repoFactory = repoFactory,
+    private val app get() = RuntimeEnvironment.getApplication() as Application
+
+    private val credentials =
+        FakeCredentialRepository(
+            WebDavConfig(
+                url = "https://cloud.example.com/remote.php/dav/files/user/",
+                username = "user",
+                password = "pass",
+            ),
         )
+
+    private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract): AlbumDetailViewModel =
+        AlbumDetailViewModel(application = app, credentialRepo = credentials, repoFactory = repoFactory)
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeRepo = FakeAlbumsRepository().apply { photos = Result.success(allPhotos) }
         viewModel = createViewModel { fakeRepo }
+        duplicatesViewModel = DuplicatesViewModel(analysisDispatcher = testDispatcher)
+        blurViewModel = BlurViewModel(analysisDispatcher = testDispatcher)
     }
 
     @After
@@ -89,22 +96,22 @@ class AlbumsViewModelPhotoDeletionTest(
 
     private fun delete(photos: List<RemotePhoto>): Boolean =
         when (path) {
-            DeletePath.DUPLICATES -> viewModel.deletePhotos(photos)
-            DeletePath.BLUR -> viewModel.deleteBlurryPhotos(photos)
+            DeletePath.DUPLICATES -> duplicatesViewModel.deletePhotos(photos, viewModel)
+            DeletePath.BLUR -> blurViewModel.deleteBlurryPhotos(photos, viewModel)
             DeletePath.SELECTION -> viewModel.deleteSelectedPhotos(photos)
         }
 
     private fun isBusy(): Boolean =
         when (path) {
-            DeletePath.DUPLICATES -> viewModel.duplicatesState.value == DuplicatesState.Deleting
-            DeletePath.BLUR -> viewModel.blurState.value == BlurState.Deleting
+            DeletePath.DUPLICATES -> duplicatesViewModel.duplicatesState.value == DuplicatesState.Deleting
+            DeletePath.BLUR -> blurViewModel.blurState.value == BlurState.Deleting
             DeletePath.SELECTION -> viewModel.isDeletingPhotos.value
         }
 
     private fun assertIdle() {
         when (path) {
-            DeletePath.DUPLICATES -> assertEquals(DuplicatesState.Idle, viewModel.duplicatesState.value)
-            DeletePath.BLUR -> assertEquals(BlurState.Idle, viewModel.blurState.value)
+            DeletePath.DUPLICATES -> assertEquals(DuplicatesState.Idle, duplicatesViewModel.duplicatesState.value)
+            DeletePath.BLUR -> assertEquals(BlurState.Idle, blurViewModel.blurState.value)
             DeletePath.SELECTION -> assertFalse(viewModel.isDeletingPhotos.value)
         }
     }
@@ -284,8 +291,16 @@ class AlbumsViewModelPhotoDeletionTest(
             runCurrent()
             assertFalse("second call must be ignored", delete(listOf(photoA, photoB)))
             assertFalse(viewModel.deleteSelectedPhotos(listOf(photoC)))
-            assertFalse(viewModel.deletePhotos(listOf(photoC)))
-            assertFalse(viewModel.deleteBlurryPhotos(listOf(photoC)))
+            assertFalse(duplicatesViewModel.deletePhotos(listOf(photoC), viewModel))
+            assertFalse(blurViewModel.deleteBlurryPhotos(listOf(photoC), viewModel))
+            // A rejected request leaves the busy state of the other entry points untouched.
+            if (path != DeletePath.SELECTION) assertFalse(viewModel.isDeletingPhotos.value)
+            if (path !=
+                DeletePath.DUPLICATES
+            ) {
+                assertEquals(DuplicatesState.Idle, duplicatesViewModel.duplicatesState.value)
+            }
+            if (path != DeletePath.BLUR) assertEquals(BlurState.Idle, blurViewModel.blurState.value)
             gate.complete(Unit)
             advanceUntilIdle()
 
@@ -318,4 +333,34 @@ class AlbumsViewModelPhotoDeletionTest(
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
         fun paths(): List<Array<Any>> = DeletePath.entries.map { arrayOf(it) }
     }
+
+    @Test
+    fun `deletion after a configuration change deletes nothing and counts every photo as failed`() =
+        runTest(testDispatcher) {
+            loadAlbum()
+            // Review results (or a selection) that outlive a server / account change.
+            credentials.save("https://other.example.com/remote.php/dav/files/me/", "me", "secret")
+            advanceUntilIdle()
+
+            assertTrue(delete(listOf(photoA, photoB)))
+            advanceUntilIdle()
+
+            assertTrue("nothing is deleted with the new credentials", fakeRepo.deletedPhotos.isEmpty())
+            assertEquals(PhotoDeletionOutcome(2), outcome())
+            assertIdle()
+        }
+
+    @Test
+    fun `photos that are not in the loaded album count as failed and are not deleted`() =
+        runTest(testDispatcher) {
+            loadAlbum()
+            val foreign = RemotePhoto("x.jpg", "/Other/x.jpg", "9", "image/jpeg")
+
+            delete(listOf(photoA, foreign))
+            advanceUntilIdle()
+
+            assertEquals(listOf(photoA), fakeRepo.deletedPhotos)
+            assertEquals(PhotoDeletionOutcome(1), outcome())
+            assertEquals(listOf(photoB.href, photoC.href), remainingHrefs())
+        }
 }

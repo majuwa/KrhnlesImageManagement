@@ -57,6 +57,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -75,11 +76,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DuplicateReviewScreen(
-    viewModel: AlbumsViewModel,
+    viewModel: DuplicatesViewModel,
+    detailViewModel: AlbumDetailViewModel,
+    albumHref: String,
     onNavigateBack: () -> Unit,
 ) {
     val duplicatesState by viewModel.duplicatesState.collectAsStateWithLifecycle()
-    val detailState by viewModel.detailState.collectAsStateWithLifecycle()
+    val detailState by detailViewModel.detailState.collectAsStateWithLifecycle()
 
     // Set when this screen started a deletion; navigate back once it has finished. The outcome
     // (failure snackbar) is shown by the album detail screen, which is visible after navigating back.
@@ -94,24 +97,34 @@ fun DuplicateReviewScreen(
     // Leaving is blocked while deleting, so the deletion always finishes on this screen.
     BackHandler(enabled = isDeleting) { /* consume Back until the deletion has finished */ }
 
-    // Start analysis when the screen first appears
-    LaunchedEffect(Unit) { viewModel.findDuplicates() }
+    // Loads the album, stops the scan when the album becomes unavailable (logout / server change)
+    // and starts it once the album is loaded (ignored by the ViewModel unless it is Idle, so a
+    // recreated screen keeps a running scan, its results or a running deletion).
+    val albumReady =
+        rememberReviewAlbumReady(
+            detailViewModel = detailViewModel,
+            albumHref = albumHref,
+            isDeleting = isDeleting,
+            onAlbumUnavailable = viewModel::cancelScan,
+            onAlbumReady = { album ->
+                viewModel.findDuplicates(album.photos, album.thumbnailUrls, detailViewModel.repositories)
+            },
+        )
 
-    // toDelete: set of photo hrefs the user wants to remove
-    var toDelete by rememberSaveable { mutableStateOf(emptySet<String>()) }
-
-    // Pre-populate toDelete when results arrive (keep first photo in each group by default)
-    LaunchedEffect(duplicatesState) {
-        if (duplicatesState is DuplicatesState.Found) {
-            val groups = (duplicatesState as DuplicatesState.Found).groups
-            val defaultDelete =
-                groups
-                    .flatMap { group -> group.drop(1) } // skip the first (best candidate)
-                    .map { it.href }
-                    .toSet()
-            toDelete = defaultDelete
+    // toDelete: set of photo hrefs the user wants to remove; pre-filled once per result (keep the
+    // first photo in each group by default) and kept across recreation.
+    val defaultSelection =
+        remember(duplicatesState) {
+            (duplicatesState as? DuplicatesState.Found)
+                ?.groups
+                ?.flatMap { group -> group.drop(1) } // skip the first (best candidate)
+                ?.map { it.href }
+                ?.toSet()
         }
-    }
+    var toDelete by rememberReviewSelection(
+        isScanning = duplicatesState is DuplicatesState.Loading,
+        defaultSelection = defaultSelection,
+    )
 
     // URL of the photo currently being previewed via long-press (null = no preview)
     var previewUrl by remember { mutableStateOf<String?>(null) }
@@ -140,77 +153,83 @@ fun DuplicateReviewScreen(
             )
         },
     ) { padding ->
-        AnimatedContent(
-            targetState = duplicatesState,
-            contentKey = { it::class }, // only animate on state-type change, not on Loading progress ticks
+        ReviewAlbumGate(
+            albumError = detailState.error,
+            isDeleting = isDeleting,
+            showLoading = !albumReady && duplicatesState == DuplicatesState.Idle,
             modifier = Modifier.fillMaxSize().padding(padding),
-            label = "duplicates-content",
-        ) { state ->
-            when (state) {
-                is DuplicatesState.Loading -> {
-                    LoadingContent(state)
-                }
-
-                is DuplicatesState.NoneFound -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            stringResource(R.string.empty_duplicates),
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(32.dp),
-                        )
+            onRetryAlbum = detailViewModel::reload,
+        ) {
+            AnimatedContent(
+                targetState = duplicatesState,
+                contentKey = { it::class }, // only animate on state-type change, not on Loading progress ticks
+                modifier = Modifier.fillMaxSize().padding(padding),
+                label = "duplicates-content",
+            ) { state ->
+                when (state) {
+                    is DuplicatesState.Loading -> {
+                        LoadingContent(state)
                     }
-                }
 
-                is DuplicatesState.Found -> {
-                    GroupsContent(
-                        groups = state.groups,
-                        thumbnailUrls = detailState.thumbnailUrls,
-                        toDelete = toDelete,
-                        onToggle = { href ->
-                            toDelete =
-                                if (href in toDelete) toDelete - href else toDelete + href
-                        },
-                        onLongPress = { url -> previewUrl = url },
-                        onConfirm = {
-                            val photosToDelete =
-                                state.groups
-                                    .flatten()
-                                    .filter { it.href in toDelete }
-                            if (viewModel.deletePhotos(photosToDelete)) awaitingDeletion = true
-                        },
-                        deleteCount = toDelete.size,
-                    )
-                }
-
-                is DuplicatesState.Error -> {
-                    Column(
-                        Modifier.fillMaxSize().padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            state.message,
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Button(onClick = { viewModel.findDuplicates() }) { Text(stringResource(R.string.action_retry)) }
-                    }
-                }
-
-                DuplicatesState.Deleting -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(16.dp))
-                            Text(stringResource(R.string.status_deleting_photos))
+                    is DuplicatesState.NoneFound -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                stringResource(R.string.empty_duplicates),
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(32.dp),
+                            )
                         }
                     }
-                }
 
-                DuplicatesState.Idle -> {
-                    // transient — findDuplicates() is called immediately in LaunchedEffect
+                    is DuplicatesState.Found -> {
+                        GroupsContent(
+                            groups = state.groups,
+                            thumbnailUrls = detailState.thumbnailUrls,
+                            toDelete = toDelete,
+                            onToggle = { href ->
+                                toDelete =
+                                    if (href in toDelete) toDelete - href else toDelete + href
+                            },
+                            onLongPress = { url -> previewUrl = url },
+                            onConfirm = {
+                                val photosToDelete =
+                                    state.groups
+                                        .flatten()
+                                        .filter { it.href in toDelete }
+                                if (viewModel.deletePhotos(photosToDelete, detailViewModel)) awaitingDeletion = true
+                            },
+                            deleteCount = toDelete.size,
+                        )
+                    }
+
+                    is DuplicatesState.Error -> {
+                        ScanErrorContent(error = state.error) {
+                            if (albumReady) {
+                                viewModel.retryFindDuplicates(
+                                    detailState.photos,
+                                    detailState.thumbnailUrls,
+                                    detailViewModel.repositories,
+                                )
+                            } else {
+                                detailViewModel.reload()
+                            }
+                        }
+                    }
+
+                    DuplicatesState.Deleting -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator()
+                                Spacer(Modifier.height(16.dp))
+                                Text(stringResource(R.string.status_deleting_photos))
+                            }
+                        }
+                    }
+
+                    DuplicatesState.Idle -> {
+                        // transient — findDuplicates() is called immediately in LaunchedEffect
+                    }
                 }
             }
         }

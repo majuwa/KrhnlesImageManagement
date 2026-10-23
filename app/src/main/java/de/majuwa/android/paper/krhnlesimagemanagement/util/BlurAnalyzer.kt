@@ -33,7 +33,7 @@ import kotlin.coroutines.resumeWithException
  *
  * **Must be closed** via [close] when no longer needed to release the ML Kit detector.
  */
-class BlurAnalyzer {
+class BlurAnalyzer : BlurScorer {
     private val detector =
         ObjectDetection.getClient(
             ObjectDetectorOptions
@@ -47,7 +47,7 @@ class BlurAnalyzer {
      * Returns a sharpness score for [bitmap]. Higher = sharper.
      * The caller owns [bitmap] and must recycle it; this function does not recycle it.
      */
-    suspend fun computeBlurScore(bitmap: Bitmap): Double {
+    override suspend fun computeBlurScore(bitmap: Bitmap): Double {
         val working = BlurDetector.scaledBitmap(bitmap)
         try {
             val width = working.width
@@ -74,7 +74,7 @@ class BlurAnalyzer {
     ): Boolean = computeBlurScore(bitmap) < threshold
 
     /** Releases the underlying ML Kit detector. */
-    fun close() = detector.close()
+    override fun close() = detector.close()
 
     private fun boxVariance(
         gray: IntArray,

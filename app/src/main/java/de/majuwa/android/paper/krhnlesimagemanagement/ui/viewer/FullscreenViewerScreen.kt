@@ -53,7 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
 import kotlinx.coroutines.delay
 
 private const val CONTROLS_HIDE_DELAY_MS = 3_000L
@@ -61,7 +61,7 @@ private const val MAX_ZOOM = 8f
 
 @Composable
 fun FullscreenViewerScreen(
-    viewModel: AlbumsViewModel,
+    viewModel: AlbumDetailViewModel,
     initialIndex: Int,
     onNavigateBack: () -> Unit,
 ) {

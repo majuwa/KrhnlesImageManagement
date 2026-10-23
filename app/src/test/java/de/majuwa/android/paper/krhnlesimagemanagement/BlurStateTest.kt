@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -41,9 +42,9 @@ class BlurStateTest {
     }
 
     @Test
-    fun `Error carries message`() {
-        val state = BlurState.Error("Network failed")
-        assertEquals("Network failed", state.message)
+    fun `Error carries a typed error`() {
+        val state = BlurState.Error(AlbumsError.Timeout)
+        assertEquals(AlbumsError.Timeout, state.error)
     }
 
     @Test

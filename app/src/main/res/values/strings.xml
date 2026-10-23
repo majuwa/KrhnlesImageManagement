@@ -140,6 +140,17 @@
     <string name="error_album_name_unchanged">Please choose a different album name.</string>
     <string name="snackbar_delete_album_failed">Failed to delete album \"%1$s\".</string>
     <string name="snackbar_rename_album_failed">Failed to rename album \"%1$s\".</string>
+    <string name="albums_error_not_configured">You are not logged in. Log in under Settings to see your albums.</string>
+    <string name="albums_error_invalid_url">The server address is not a valid URL. Check it in Settings and log in again.</string>
+    <string name="albums_error_configuration_changed">Your server settings changed. Go back and open the album again.</string>
+    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted (it may be self-signed or expired).</string>
+    <string name="albums_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
+    <string name="albums_error_unreachable">Could not reach the server. Check your internet connection and that the server is online.</string>
+    <string name="albums_error_timeout">The server did not respond in time. Please try again.</string>
+    <string name="albums_error_auth">Access denied. Check your username and app password, then log in again.</string>
+    <string name="albums_error_not_found">The album was not found on the server. It may have been moved or deleted.</string>
+    <string name="albums_error_http">The server responded with an error (HTTP %1$d). Please try again later.</string>
+    <string name="albums_error_unknown">Something went wrong while talking to the server. Please try again.</string>
 
     <!-- Album detail -->
     <string name="empty_album_photos">No photos in this album.</string>

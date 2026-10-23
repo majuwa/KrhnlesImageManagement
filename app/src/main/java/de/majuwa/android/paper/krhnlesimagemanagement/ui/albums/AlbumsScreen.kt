@@ -146,7 +146,7 @@ fun AlbumsScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = state.error ?: "",
+                        text = state.error?.let { albumsErrorMessage(resources, it) }.orEmpty(),
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(16.dp),
                         textAlign = TextAlign.Center,

@@ -182,6 +182,34 @@ class WebDavXmlParserTest {
     }
 
     @Test
+    fun `ignores an oc fileid that is not alphanumeric`() {
+        val ids = listOf("1/../../x", "12?x=1", "1 2", "a%2Fb", "")
+        ids.forEach { id ->
+            val xml =
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+                  <d:response>
+                    <d:href>/webdav/photo.png</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:displayname>photo.png</d:displayname>
+                        <d:getcontenttype>image/png</d:getcontenttype>
+                        <oc:fileid>$id</oc:fileid>
+                      </d:prop>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """.trimIndent()
+
+            val entries = parsePropfindXml(xml)
+
+            assertEquals(1, entries.size)
+            assertNull("fileid '$id' must be dropped", entries[0].fileId)
+        }
+    }
+
+    @Test
     fun `contentType defaults to empty string when missing`() {
         val xml =
             """

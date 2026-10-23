@@ -44,7 +44,9 @@ internal fun parsePropfindXml(xml: String): List<WebDavEntry> {
                 .getElementsByTagNameNS(DAV_NS, "collection")
                 .length > 0
         val contentType = resp.firstTextNS(DAV_NS, "getcontenttype") ?: ""
-        val fileId = resp.firstTextNS(OC_NS, "fileid")
+        // The id ends up in a Memories preview URL: accept plain alphanumerics only, so a
+        // malicious server cannot inject path segments or query parameters.
+        val fileId = resp.firstTextNS(OC_NS, "fileid")?.trim()?.takeIf { FILE_ID_REGEX.matches(it) }
         entries +=
             WebDavEntry(
                 href = href,
@@ -89,3 +91,5 @@ internal fun buildNextcloudBase(url: String): String? {
     val idx = url.indexOf("/remote.php/")
     return if (idx > 0) url.substring(0, idx) else null
 }
+
+private val FILE_ID_REGEX = Regex("[A-Za-z0-9]+")

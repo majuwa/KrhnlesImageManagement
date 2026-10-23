@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 
 import android.content.res.Resources
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FindReplace
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -63,7 +65,7 @@ import kotlinx.coroutines.flow.filterNotNull
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumDetailScreen(
-    viewModel: AlbumsViewModel,
+    viewModel: AlbumDetailViewModel,
     albumHref: String,
     onOpenPhoto: (index: Int) -> Unit,
     onFindDuplicates: () -> Unit,
@@ -80,6 +82,10 @@ fun AlbumDetailScreen(
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
     LaunchedEffect(albumHref) { viewModel.loadAlbum(albumHref) }
+
+    // Leaving is blocked while a selection-mode deletion runs, so it always finishes on this screen
+    // (it runs in this entry's ViewModel and would be cancelled when the entry is popped).
+    BackHandler(enabled = isDeletingPhotos) { /* consume Back until the deletion has finished */ }
 
     // Outcome of any photo deletion (selection mode here, or the duplicate / blur review that
     // navigated back to this screen). Consumed first, so it is shown at most once; collected (not
@@ -129,6 +135,7 @@ fun AlbumDetailScreen(
             if (selectionMode) {
                 SelectionTopBar(
                     selectedCount = selectedHrefs.size,
+                    enabled = !isDeletingPhotos,
                     onClearSelection = { selectedHrefs = emptySet() },
                     onDeleteClick = { showDeleteConfirmation = true },
                 )
@@ -141,7 +148,7 @@ fun AlbumDetailScreen(
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(enabled = !isDeletingPhotos, onClick = onNavigateBack) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.cd_back),
@@ -171,6 +178,7 @@ fun AlbumDetailScreen(
                 }
             },
             onPhotoLongClick = { href -> selectedHrefs = selectedHrefs + href },
+            onRetry = viewModel::reload,
         )
     }
 }
@@ -179,18 +187,19 @@ fun AlbumDetailScreen(
 @Composable
 private fun SelectionTopBar(
     selectedCount: Int,
+    enabled: Boolean,
     onClearSelection: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     TopAppBar(
         title = { Text(pluralStringResource(R.plurals.selected_count, selectedCount, selectedCount)) },
         navigationIcon = {
-            IconButton(onClick = onClearSelection) {
+            IconButton(enabled = enabled, onClick = onClearSelection) {
                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_cancel_selection))
             }
         },
         actions = {
-            IconButton(onClick = onDeleteClick) {
+            IconButton(enabled = enabled, onClick = onDeleteClick) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete_selected))
             }
         },
@@ -210,6 +219,7 @@ private fun AlbumDetailContent(
     modifier: Modifier = Modifier,
     onPhotoClick: (index: Int) -> Unit,
     onPhotoLongClick: (href: String) -> Unit,
+    onRetry: () -> Unit,
 ) {
     when {
         isDeletingPhotos -> {
@@ -223,14 +233,7 @@ private fun AlbumDetailContent(
         }
 
         state.error != null -> {
-            Box(modifier = modifier, contentAlignment = Alignment.Center) {
-                Text(
-                    text = state.error,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp),
-                    textAlign = TextAlign.Center,
-                )
-            }
+            AlbumDetailError(error = state.error, modifier = modifier, onRetry = onRetry)
         }
 
         state.photos.isEmpty() -> {
@@ -256,6 +259,30 @@ private fun AlbumDetailContent(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun AlbumDetailError(
+    error: AlbumsError,
+    modifier: Modifier = Modifier,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = modifier.padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = albumsErrorMessage(LocalResources.current, error),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+        )
+        // Retrying cannot help without credentials or after the server changed under this album.
+        if (error != AlbumsError.NotConfigured && error != AlbumsError.ConfigurationChanged) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
         }
     }
 }

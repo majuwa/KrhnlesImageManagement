@@ -14,7 +14,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Secure Login:** Nextcloud Login Flow v2 (browser-based) or manual WebDAV configuration. Credentials are encrypted at rest; if they can no longer be decrypted (e.g. after device security settings change), Settings explains why and asks you to log in again. If saving credentials fails, an error is shown and you can retry.
 - **Cloud Album Browser:** Browse albums (folders) stored on your WebDAV/Nextcloud server.
 - **Cloud Duplicate Detector:** Scan an album for near-duplicate images and bulk-delete the extras.
-- **Delete Photos from Album:** Long-press any photo in an album to enter selection mode. Select multiple photos, then tap the delete icon in the top bar. A confirmation dialog is shown before any server deletion. Photos that could not be deleted stay in the album, and a snackbar on the album screen reports how many deletions failed — also after deleting from the duplicate or blur review, which return to the album once the deletion has finished (Back is disabled while deleting). Photos that were already deleted elsewhere (server answers "not found") are treated as deleted.
+- **Delete Photos from Album:** Long-press any photo in an album to enter selection mode. Select multiple photos, then tap the delete icon in the top bar. A confirmation dialog is shown before any server deletion. Photos that could not be deleted stay in the album, and a snackbar on the album screen reports how many deletions failed — also after deleting from the duplicate or blur review, which return to the album once the deletion has finished. Back (and the top-bar back / cancel-selection buttons) is disabled while any deletion runs, so it always finishes. Photos that were already deleted elsewhere (server answers "not found") are treated as deleted. Logging out or switching servers while a duplicate or blur review is open stops its scan and shows an error instead of its results. Rotating the screen during a duplicate or blur scan, on its results or while deleting keeps the scan, your selection and the deletion.
 - **Manage Remote Albums:** Long-press an album in the Albums tab to rename it or delete it from the server, with confirmation and inline validation.
 
 ## 🔮 Future Roadmap
@@ -54,6 +54,8 @@ A lightweight, privacy-focused Android application designed to selectively back 
 3. Tap "Save & Connect"
 
 ### Test Connection
+If the album list, an album or a duplicate / blur scan cannot be loaded, the same plain-language explanations are shown (not logged in, invalid server address, certificate, server not found / unreachable, timeout, access denied, not found, HTTP error); retry with the Retry button (album, scans) or the reload icon (album list). Logging out or switching servers while an album is open closes that album's photos instead of continuing to use the old server.
+
 In Settings, "Test Connection" checks the stored server and credentials (it gives up after 30 seconds). Failures are explained in plain language: an untrusted (e.g. self-signed or expired) certificate, a server name that cannot be found, an unreachable server, a timeout, rejected credentials (HTTP 401/403), a missing WebDAV folder (HTTP 404), or another HTTP error code. Tap the button again to retry. Logging out or changing the server or credentials clears the previous result.
 
 ### Upload Options

@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -62,11 +63,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BlurReviewScreen(
-    viewModel: AlbumsViewModel,
+    viewModel: BlurViewModel,
+    detailViewModel: AlbumDetailViewModel,
+    albumHref: String,
     onNavigateBack: () -> Unit,
 ) {
     val blurState by viewModel.blurState.collectAsStateWithLifecycle()
-    val detailState by viewModel.detailState.collectAsStateWithLifecycle()
+    val detailState by detailViewModel.detailState.collectAsStateWithLifecycle()
 
     // Set when this screen started a deletion; navigate back once it has finished. The outcome
     // (failure snackbar) is shown by the album detail screen, which is visible after navigating back.
@@ -81,17 +84,28 @@ fun BlurReviewScreen(
     // Leaving is blocked while deleting, so the deletion always finishes on this screen.
     BackHandler(enabled = isDeleting) { /* consume Back until the deletion has finished */ }
 
-    LaunchedEffect(Unit) { viewModel.findBlurryPhotos() }
+    // Loads the album, stops the scan when the album becomes unavailable (logout / server change)
+    // and starts it once the album is loaded (ignored by the ViewModel unless it is Idle, so a
+    // recreated screen keeps a running scan, its results or a running deletion).
+    val albumReady =
+        rememberReviewAlbumReady(
+            detailViewModel = detailViewModel,
+            albumHref = albumHref,
+            isDeleting = isDeleting,
+            onAlbumUnavailable = viewModel::cancelScan,
+            onAlbumReady = { album ->
+                viewModel.findBlurryPhotos(album.photos, album.thumbnailUrls, detailViewModel.repositories)
+            },
+        )
 
-    var toDelete by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    // Pre-select all blurry photos once per result; kept across recreation.
+    val defaultSelection =
+        remember(blurState) { (blurState as? BlurState.Found)?.blurryPhotos?.map { it.href }?.toSet() }
+    var toDelete by rememberReviewSelection(
+        isScanning = blurState is BlurState.Scanning,
+        defaultSelection = defaultSelection,
+    )
     var previewUrl by remember { mutableStateOf<String?>(null) }
-
-    // Pre-select all blurry photos when results arrive
-    LaunchedEffect(blurState) {
-        if (blurState is BlurState.Found) {
-            toDelete = (blurState as BlurState.Found).blurryPhotos.map { it.href }.toSet()
-        }
-    }
 
     previewUrl?.let { url ->
         PhotoPreviewDialog(url = url, onDismiss = { previewUrl = null })
@@ -117,77 +131,84 @@ fun BlurReviewScreen(
             )
         },
     ) { padding ->
-        AnimatedContent(
-            targetState = blurState,
-            contentKey = { it::class },
+        ReviewAlbumGate(
+            albumError = detailState.error,
+            isDeleting = isDeleting,
+            showLoading = !albumReady && blurState == BlurState.Idle,
             modifier = Modifier.fillMaxSize().padding(padding),
-            label = "blur-content",
-        ) { state ->
-            when (state) {
-                is BlurState.Scanning -> {
-                    BlurScanningContent(state)
-                }
-
-                is BlurState.NoneFound -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            stringResource(R.string.empty_blurry),
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(32.dp),
-                        )
+            onRetryAlbum = detailViewModel::reload,
+        ) {
+            AnimatedContent(
+                targetState = blurState,
+                contentKey = { it::class },
+                modifier = Modifier.fillMaxSize().padding(padding),
+                label = "blur-content",
+            ) { state ->
+                when (state) {
+                    is BlurState.Scanning -> {
+                        BlurScanningContent(state)
                     }
-                }
 
-                is BlurState.Found -> {
-                    BlurResultsContent(
-                        photos = state.blurryPhotos,
-                        scores = state.scores,
-                        thumbnailUrls = detailState.thumbnailUrls,
-                        toDelete = toDelete,
-                        onToggle = { href ->
-                            toDelete = if (href in toDelete) toDelete - href else toDelete + href
-                        },
-                        onLongPress = { url -> previewUrl = url },
-                        onConfirm = {
-                            val photosToDelete =
-                                state.blurryPhotos.filter { it.href in toDelete }
-                            if (viewModel.deleteBlurryPhotos(photosToDelete)) awaitingDeletion = true
-                        },
-                        deleteCount = toDelete.size,
-                    )
-                }
-
-                is BlurState.Error -> {
-                    Column(
-                        Modifier.fillMaxSize().padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            state.message,
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Button(onClick = { viewModel.findBlurryPhotos() }) {
-                            Text(stringResource(R.string.action_retry))
+                    is BlurState.NoneFound -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                stringResource(R.string.empty_blurry),
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(32.dp),
+                            )
                         }
                     }
-                }
 
-                BlurState.Deleting -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(16.dp))
-                            Text(stringResource(R.string.status_deleting_photos))
+                    is BlurState.Found -> {
+                        BlurResultsContent(
+                            photos = state.blurryPhotos,
+                            scores = state.scores,
+                            thumbnailUrls = detailState.thumbnailUrls,
+                            toDelete = toDelete,
+                            onToggle = { href ->
+                                toDelete = if (href in toDelete) toDelete - href else toDelete + href
+                            },
+                            onLongPress = { url -> previewUrl = url },
+                            onConfirm = {
+                                val photosToDelete =
+                                    state.blurryPhotos.filter { it.href in toDelete }
+                                if (viewModel.deleteBlurryPhotos(photosToDelete, detailViewModel)) {
+                                    awaitingDeletion =
+                                        true
+                                }
+                            },
+                            deleteCount = toDelete.size,
+                        )
+                    }
+
+                    is BlurState.Error -> {
+                        ScanErrorContent(error = state.error) {
+                            if (albumReady) {
+                                viewModel.retryFindBlurryPhotos(
+                                    detailState.photos,
+                                    detailState.thumbnailUrls,
+                                    detailViewModel.repositories,
+                                )
+                            } else {
+                                detailViewModel.reload()
+                            }
                         }
                     }
-                }
 
-                BlurState.Idle -> {
-                    // transient — findBlurryPhotos() is called immediately in LaunchedEffect
+                    BlurState.Deleting -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator()
+                                Spacer(Modifier.height(16.dp))
+                                Text(stringResource(R.string.status_deleting_photos))
+                            }
+                        }
+                    }
+
+                    BlurState.Idle -> {
+                        // transient — findBlurryPhotos() is called immediately in LaunchedEffect
+                    }
                 }
             }
         }

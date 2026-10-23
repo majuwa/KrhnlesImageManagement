@@ -5,11 +5,10 @@ import app.cash.turbine.test
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
-import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsState
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -104,48 +103,43 @@ class AlbumsViewModelTest {
     @Test
     fun `loadAlbums sets error on failure`() =
         runTest {
-            fakeRepo.albums = Result.failure(RuntimeException("Network error"))
+            fakeRepo.albums = Result.failure(java.net.UnknownHostException("cloud.example.com"))
 
             viewModel.loadAlbums()
             advanceUntilIdle()
 
             val state = viewModel.albumsState.value
             assertFalse(state.isLoading)
-            assertEquals("Network error", state.error)
+            assertEquals("typed error instead of raw exception text", AlbumsError.UnknownHost, state.error)
         }
 
-    // ── loadAlbum (detail) ──────────────────────────────────────────────────
-
     @Test
-    fun `loadAlbum populates detail state with photos`() =
+    fun `loadAlbums with a repository factory throwing IllegalArgumentException shows an error instead of crashing`() =
         runTest {
-            val photos =
-                listOf(
-                    RemotePhoto("beach.jpg", "/Summer/beach.jpg", "1", "image/jpeg"),
-                    RemotePhoto("sunset.jpg", "/Summer/sunset.jpg", "2", "image/jpeg"),
+            viewModel =
+                AlbumsViewModel(
+                    application = RuntimeEnvironment.getApplication() as Application,
+                    credentialRepo = fakeCredentials,
+                    repoFactory = { throw IllegalArgumentException("Invalid WebDAV URL") },
                 )
-            fakeRepo.photos = Result.success(photos)
 
-            viewModel.loadAlbum("/Summer/")
+            viewModel.loadAlbums()
             advanceUntilIdle()
 
-            val detail = viewModel.detailState.value
-            assertEquals("Summer", detail.albumName)
-            assertEquals(2, detail.photos.size)
-            assertFalse(detail.isLoading)
+            val state = viewModel.albumsState.value
+            assertFalse(state.isLoading)
+            assertEquals(AlbumsError.InvalidServerUrl, state.error)
         }
 
     @Test
-    fun `loadAlbum sets error on failure`() =
+    fun `loadAlbums without stored credentials shows not configured`() =
         runTest {
-            fakeRepo.photos = Result.failure(RuntimeException("Not found"))
+            fakeCredentials.clear()
 
-            viewModel.loadAlbum("/Missing/")
+            viewModel.loadAlbums()
             advanceUntilIdle()
 
-            val detail = viewModel.detailState.value
-            assertEquals("Not found", detail.error)
-            assertFalse(detail.isLoading)
+            assertEquals(AlbumsError.NotConfigured, viewModel.albumsState.value.error)
         }
 
     // ── deleteAlbum ─────────────────────────────────────────────────────────
@@ -228,33 +222,26 @@ class AlbumsViewModelTest {
             )
         }
 
-    // ── deleteSelectedPhotos ────────────────────────────────────────────────
-
     @Test
-    fun `deleteSelectedPhotos updates isDeletingPhotos flag`() =
+    fun `loadAlbums recreates the repository so configuration changes are picked up`() =
         runTest {
-            val photo = RemotePhoto("a.jpg", "/a.jpg", "1", "image/jpeg")
-            fakeRepo.photos = Result.success(listOf(photo))
+            val created = mutableListOf<WebDavConfig>()
+            viewModel =
+                AlbumsViewModel(
+                    application = RuntimeEnvironment.getApplication() as Application,
+                    credentialRepo = fakeCredentials,
+                    repoFactory = { config ->
+                        created += config
+                        fakeRepo
+                    },
+                )
 
-            viewModel.loadAlbum("/Album/")
+            viewModel.loadAlbums()
+            advanceUntilIdle()
+            fakeCredentials.save("https://other.example.com/dav/", "user2", "pass2")
+            viewModel.loadAlbums()
             advanceUntilIdle()
 
-            viewModel.isDeletingPhotos.test {
-                assertEquals(false, awaitItem()) // initial
-
-                viewModel.deleteSelectedPhotos(listOf(photo))
-
-                assertEquals(true, awaitItem()) // deleting
-                assertEquals(false, awaitItem()) // done
-                cancelAndConsumeRemainingEvents()
-            }
+            assertEquals(listOf(validConfig.url, "https://other.example.com/dav/"), created.map { it.url })
         }
-
-    // ── resetDuplicatesState / resetBlurState ───────────────────────────────
-
-    @Test
-    fun `resetDuplicatesState sets state to Idle`() {
-        viewModel.resetDuplicatesState()
-        assertEquals(DuplicatesState.Idle, viewModel.duplicatesState.value)
-    }
 }

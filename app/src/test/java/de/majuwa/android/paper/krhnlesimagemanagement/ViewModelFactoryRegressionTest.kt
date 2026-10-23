@@ -1,7 +1,10 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import org.junit.Assert.assertNotNull
@@ -10,8 +13,8 @@ import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 
 /**
- * Ensures every [AndroidViewModel] has a single-argument (Application) constructor
- * so that [AndroidViewModelFactory] can instantiate it via reflection.
+ * Ensures every `AndroidViewModel` has a single-argument (Application) constructor
+ * so that `AndroidViewModelFactory` can instantiate it via reflection.
  *
  * Kotlin default parameters do NOT generate a JVM overload with fewer parameters
  * unless [@JvmOverloads] is present — this test catches that mistake.
@@ -28,6 +31,7 @@ class ViewModelFactoryRegressionTest(
                 arrayOf(PhotoGridViewModel::class.java),
                 arrayOf(SettingsViewModel::class.java),
                 arrayOf(AlbumsViewModel::class.java),
+                arrayOf(AlbumDetailViewModel::class.java),
             )
     }
 
@@ -38,6 +42,30 @@ class ViewModelFactoryRegressionTest(
             "${vmClass.simpleName} must have a (Application) constructor " +
                 "for AndroidViewModelFactory — did you forget @JvmOverloads?",
             ctor,
+        )
+    }
+}
+
+/** Plain `ViewModel`s need a no-argument constructor for the default `NewInstanceFactory`. */
+@RunWith(Parameterized::class)
+class PlainViewModelFactoryRegressionTest(
+    private val vmClass: Class<*>,
+) {
+    companion object {
+        @JvmStatic
+        @Parameterized.Parameters(name = "{0}")
+        fun viewModelClasses(): List<Array<Any>> =
+            listOf(
+                arrayOf(DuplicatesViewModel::class.java),
+                arrayOf(BlurViewModel::class.java),
+            )
+    }
+
+    @Test
+    fun `has a no-argument constructor`() {
+        assertNotNull(
+            "${vmClass.simpleName} must have a no-arg constructor — did you forget @JvmOverloads?",
+            vmClass.getConstructor(),
         )
     }
 }
