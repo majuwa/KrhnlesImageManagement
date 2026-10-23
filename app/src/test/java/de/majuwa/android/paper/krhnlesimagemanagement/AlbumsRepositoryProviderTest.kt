@@ -79,6 +79,33 @@ class AlbumsRepositoryProviderTest {
         }
 
     @Test
+    fun `invalidate and close close the old repository`() =
+        runTest {
+            val first = provider.get().getOrThrow() as FakeAlbumsRepository
+            provider.invalidate()
+            assertEquals(1, first.closeCalls)
+
+            val second = provider.get().getOrThrow() as FakeAlbumsRepository
+            provider.close()
+            assertEquals(1, second.closeCalls)
+            assertEquals("not closed twice", 1, first.closeCalls)
+        }
+
+    @Test
+    fun `a rebuild after a configuration change closes the old repository`() =
+        runTest {
+            val first = provider.get().getOrThrow() as FakeAlbumsRepository
+            credentials.save("https://two.example.com/dav/", "u2", "p2")
+            provider.get().getOrThrow()
+            assertEquals(1, first.closeCalls)
+
+            val second = provider.current as FakeAlbumsRepository
+            credentials.clear()
+            provider.get()
+            assertEquals(1, second.closeCalls)
+        }
+
+    @Test
     fun `a changed configuration is picked up without invalidate`() =
         runTest {
             val first = provider.get().getOrThrow()

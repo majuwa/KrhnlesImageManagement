@@ -70,6 +70,9 @@ interface AlbumsRepositoryContract {
     suspend fun deletePhoto(photo: RemotePhoto): Result<Unit>
 
     suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit>
+
+    /** Releases background work (e.g. retries) of a repository that is dropped; no-op by default. */
+    fun close() {}
 }
 
 /**

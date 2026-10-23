@@ -42,6 +42,10 @@ class AlbumsViewModel
     ) : AndroidViewModel(application) {
         private val repos = AlbumsRepositoryProvider(credentialRepo, repoFactory = repoFactory)
 
+        override fun onCleared() {
+            repos.close()
+        }
+
         private val _albumsState = MutableStateFlow(AlbumsState())
         val albumsState: StateFlow<AlbumsState> = _albumsState.asStateFlow()
 

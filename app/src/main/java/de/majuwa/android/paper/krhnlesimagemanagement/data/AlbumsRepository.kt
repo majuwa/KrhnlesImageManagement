@@ -14,10 +14,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.Credentials
 import okhttp3.HttpUrl
@@ -62,6 +59,8 @@ class AlbumsRepository internal constructor(
     private val limits: PropfindListingLimits,
     private val maxThumbnailBytes: Long = MAX_THUMBNAIL_BYTES,
     readTimeoutMillis: Long = ALBUMS_READ_TIMEOUT_MS,
+    private val memoriesCheckTimeoutMs: Long = MEMORIES_CHECK_TIMEOUT_MS,
+    private val memoriesRetryBackoffMs: Long = MEMORIES_RETRY_BACKOFF_MS,
 ) : AlbumsRepositoryContract {
     constructor(config: WebDavConfig) : this(config, PropfindListingLimits())
 
@@ -104,10 +103,19 @@ class AlbumsRepository internal constructor(
     /** https://cloud.example.com — null if URL doesn't contain /remote.php/ */
     private val nextcloudBase: String? = buildNextcloudBase(config.url)
 
-    @Volatile private var memoriesAvailable: Boolean? = null
-    private val memoriesMutex = Mutex()
+    private val memories =
+        MemoriesAvailability(
+            isNextcloud = nextcloudBase != null,
+            checkTimeoutMs = memoriesCheckTimeoutMs,
+            retryBackoffMs = memoriesRetryBackoffMs,
+            check = ::checkMemories,
+        )
+    private val memoriesAvailable: Boolean? get() = memories.available
 
     // ── Public API ────────────────────────────────────────────────────────────
+
+    /** Cancels background Memories retries so a dropped repository never sends another request. */
+    override fun close() = memories.close()
 
     /**
      * Album folders below the base folder, from one streamed PROPFIND with the byte cap only: a
@@ -137,7 +145,7 @@ class AlbumsRepository internal constructor(
         resultOf {
             val albumUrl = requireSafeHref(albumHref).withoutTrailingSlash()
             coroutineScope {
-                launch { ensureMemoriesChecked() }
+                launch { memories.ensureChecked() }
                 executePropfind(albumUrl) { stream, job -> readPhotoListing(stream, albumUrl, job, limits, onProgress) }
             }
         }
@@ -168,7 +176,7 @@ class AlbumsRepository internal constructor(
      * Subsequent calls are instant.
      */
     override suspend fun thumbnailUrl(photo: RemotePhoto): String {
-        ensureMemoriesChecked()
+        memories.ensureChecked()
         return buildUrl(photo, size = THUMB_SIZE)
     }
 
@@ -176,7 +184,7 @@ class AlbumsRepository internal constructor(
     override fun fullImageUrl(photo: RemotePhoto): String = buildUrl(photo, size = FULL_SIZE)
 
     suspend fun isMemoriesAvailable(): Boolean {
-        ensureMemoriesChecked()
+        memories.ensureChecked()
         return memoriesAvailable == true
     }
 
@@ -215,8 +223,7 @@ class AlbumsRepository internal constructor(
             val bytes =
                 LimitedInputStream(response.body.byteStream(), maxThumbnailBytes, ::ThumbnailTooLargeException)
                     .use { it.readBytes() }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                ?: error("Could not decode thumbnail bitmap")
+            decodeDownsampled(bytes) ?: error("Could not decode thumbnail bitmap")
         }
     }
 
@@ -286,7 +293,7 @@ class AlbumsRepository internal constructor(
         size: Int,
     ): String {
         val base = nextcloudBase
-        val id = photo.fileId
+        val id = photo.fileId?.takeIf { FILE_ID_REGEX.matches(it) }
         return if (memoriesAvailable == true && base != null && id != null) {
             "$base/index.php/apps/memories/api/image/preview/$id?x=$size&y=$size&a=1"
         } else {
@@ -295,21 +302,9 @@ class AlbumsRepository internal constructor(
         }
     }
 
-    private suspend fun ensureMemoriesChecked() {
-        if (memoriesAvailable != null) return
-        // withTimeoutOrNull so the mutex is never held indefinitely (CLAUDE.md: locks need timeouts)
-        withTimeoutOrNull(MEMORIES_CHECK_TIMEOUT_MS) {
-            memoriesMutex.withLock {
-                if (memoriesAvailable == null) {
-                    memoriesAvailable = checkMemories()
-                }
-            }
-        } ?: run { memoriesAvailable = false }
-    }
-
-    private suspend fun checkMemories(): Boolean =
+    private suspend fun checkMemories(): MemoriesCheck =
         withContext(Dispatchers.IO) {
-            val base = nextcloudBase ?: return@withContext false
+            val base = nextcloudBase ?: return@withContext MemoriesCheck.UNAVAILABLE
             try {
                 val req =
                     Request
@@ -317,12 +312,14 @@ class AlbumsRepository internal constructor(
                         .url("$base/index.php/apps/memories/api/describe")
                         .get()
                         .build()
-                executeCancellable(client.newCall(req)) { response, _ -> response.code == 200 }
+                executeCancellable(client.newCall(req)) { response, _ ->
+                    memoriesCheckForStatus(response.code)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Memories API check failed: ${e.javaClass.simpleName}")
-                false
+                MemoriesCheck.INCONCLUSIVE
             }
         }
 
@@ -374,6 +371,9 @@ class AlbumsRepository internal constructor(
         const val THUMB_SIZE = 512
         const val FULL_SIZE = 2048
         const val MEMORIES_CHECK_TIMEOUT_MS = 5_000L
+
+        /** Minimum pause before an inconclusive Memories check is repeated. */
+        const val MEMORIES_RETRY_BACKOFF_MS = 30_000L
 
         /** DELETE answers meaning "already deleted": 404 Not Found, 410 Gone. */
         val ALREADY_GONE_CODES = setOf(404, 410)
@@ -599,7 +599,7 @@ private fun HttpUrl.isMemoriesPreviewUrl(
     val prefix = base.nonEmptyPathSegments() + MEMORIES_PREVIEW_SEGMENTS
     return pathSegments.size == prefix.size + 1 &&
         pathSegments.take(prefix.size) == prefix &&
-        pathSegments.last().let { id -> id.isNotEmpty() && id.all(Char::isLetterOrDigit) }
+        pathSegments.last().let { id -> id.isNotEmpty() && id.all(::isAsciiAlphanumeric) }
 }
 
 /** The image downloaded by [AlbumsRepository.downloadBitmapForHash] exceeds [MAX_THUMBNAIL_BYTES]. */
@@ -607,3 +607,44 @@ class ThumbnailTooLargeException : IOException("Thumbnail exceeds the size limit
 
 /** A server-supplied href points outside the configured WebDAV folder / origin and was not requested. */
 class UnsafeHrefException : IllegalArgumentException("Refusing href outside the configured WebDAV folder")
+
+/**
+ * Largest power-of-two `inSampleSize` that keeps the longest side of a [width] x [height] image at
+ * or above [target] px (the analysis size of dHash and blur detection); 1 for smaller images.
+ */
+internal fun thumbnailSampleSize(
+    width: Int,
+    height: Int,
+    target: Int = AlbumsRepository.THUMB_SIZE,
+): Int {
+    require(target > 0) { "target must be positive" }
+    var sample = 1
+    val longest = maxOf(width, height)
+    while (longest / (sample * 2) >= target) sample *= 2
+    return sample
+}
+
+/** Decodes [bytes] at roughly [AlbumsRepository.THUMB_SIZE] px instead of full size; `null` if undecodable. */
+internal fun decodeDownsampled(bytes: ByteArray): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    checkPixelLimit(bounds.outWidth, bounds.outHeight)
+    val options =
+        BitmapFactory.Options().apply { inSampleSize = thumbnailSampleSize(bounds.outWidth, bounds.outHeight) }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+}
+
+/** Largest decodable image (width x height) for scans; larger ones are rejected before any pixel is decoded. */
+internal const val MAX_THUMBNAIL_PIXELS: Long = 100_000_000L
+
+/** Rejects decompression bombs: a tiny file can announce a huge canvas that costs CPU and memory to decode. */
+internal fun checkPixelLimit(
+    width: Int,
+    height: Int,
+) {
+    if (width.toLong() * height > MAX_THUMBNAIL_PIXELS) throw ThumbnailTooLargeException()
+}
+
+/** ASCII letters and digits only ([Char.isLetterOrDigit] also accepts e.g. Arabic-Indic digits). */
+internal fun isAsciiAlphanumeric(c: Char): Boolean = c in '0'..'9' || c in 'a'..'z' || c in 'A'..'Z'

@@ -105,6 +105,10 @@ class AlbumDetailViewModel
         PhotoDeletionLauncher {
         private val repos = AlbumsRepositoryProvider(credentialRepo, repoFactory = repoFactory)
 
+        override fun onCleared() {
+            repos.close()
+        }
+
         /**
          * This album's repository (one OkHttp client per album flow), shared with the duplicate and
          * blur review opened from it. Always reflects the current configuration.

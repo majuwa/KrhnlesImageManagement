@@ -23,6 +23,14 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
     /** Creates a fresh bitmap per download (callers recycle it); takes precedence over [downloadBitmapResult]. */
     var downloadBitmapFactory: (() -> Bitmap)? = null
 
+    /** Number of [close] calls. */
+    var closeCalls = 0
+        private set
+
+    override fun close() {
+        closeCalls++
+    }
+
     val deletedPhotos = mutableListOf<RemotePhoto>()
     val deletedAlbums = mutableListOf<RemoteAlbum>()
     val renamedAlbums = mutableListOf<Pair<RemoteAlbum, String>>()

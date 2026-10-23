@@ -550,4 +550,4 @@ internal fun buildNextcloudBase(url: String): String? {
     return if (idx > 0) url.substring(0, idx) else null
 }
 
-private val FILE_ID_REGEX = Regex("[A-Za-z0-9]+")
+internal val FILE_ID_REGEX = Regex("[A-Za-z0-9]+")

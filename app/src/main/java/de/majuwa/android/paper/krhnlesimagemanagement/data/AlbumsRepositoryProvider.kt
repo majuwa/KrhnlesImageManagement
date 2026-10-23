@@ -45,6 +45,8 @@ class AlbumsRepositoryUnavailableException(
  *   sent with outdated credentials.
  * - [get] is serialized by a [Mutex] (acquired with a timeout, CLAUDE.md lock rule), so concurrent
  *   callers share one repository instead of building several.
+ * - A repository that is replaced or dropped ([invalidate], [close], configuration change) is closed, so
+ *   its background work stops with it.
  * - [invalidate] bumps a generation counter: a repository whose build overlapped an [invalidate]
  *   is returned to its caller but never cached.
  */
@@ -84,7 +86,8 @@ class AlbumsRepositoryProvider(
         cached.get()?.let { entry ->
             if (entry.generation == buildGeneration && entry.config == config) return Result.success(entry.repository)
         }
-        cached.set(null) // outdated configuration: never hand out the old repository again
+        // outdated configuration: never hand out (or leave running) the old repository
+        cached.getAndSet(null)?.repository?.close()
         if (!config.isValid) {
             return Result.failure(
                 AlbumsRepositoryUnavailableException(AlbumsRepositoryUnavailableException.Reason.NOT_CONFIGURED),
@@ -108,8 +111,11 @@ class AlbumsRepositoryProvider(
     /** Drops the cached repository so the next [get] builds a new one. */
     fun invalidate() {
         generation.incrementAndGet()
-        cached.set(null)
+        cached.getAndSet(null)?.repository?.close()
     }
+
+    /** Invalidates and releases the cached repository; for the owner's `onCleared()`. */
+    fun close() = invalidate()
 
     private companion object {
         /** Upper bound for waiting on the lock plus reading the configuration. */

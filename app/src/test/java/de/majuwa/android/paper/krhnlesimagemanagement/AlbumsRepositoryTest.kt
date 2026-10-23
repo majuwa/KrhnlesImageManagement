@@ -682,9 +682,4 @@ class AlbumsRepositoryTest {
             val photo = RemotePhoto("img.jpg", "@attacker.example/img.jpg", "42", "image/jpeg")
             assertEquals("", repo.fullImageUrl(photo))
         }
-
-    // Note: Memories API integration tests (thumbnailUrl / fullImageUrl with Memories)
-    // are skipped in unit tests because ensureMemoriesChecked() uses withTimeoutOrNull
-    // which interacts poorly with runTest's virtual time dispatcher.
-    // These should be tested as instrumented tests on a real device.
 }
