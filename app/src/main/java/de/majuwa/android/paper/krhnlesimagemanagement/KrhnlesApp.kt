@@ -1,19 +1,28 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -32,6 +41,12 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicateReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.rememberParentEntry
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingExit
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingScreen
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.ROUTE_ONBOARDING
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.ROUTE_PHOTOS
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.StartupViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
@@ -42,8 +57,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHis
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 
-private const val ROUTE_PHOTOS = "photos"
-private const val ROUTE_SETTINGS = "settings"
+internal const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_UPLOAD_HISTORY = "photos/history"
 private const val ROUTE_ALBUMS = "albums"
 private const val ROUTE_ALBUM_DETAIL = "albums/detail"
@@ -54,8 +68,43 @@ private const val ROUTE_VIEWER = "albums/viewer"
 private const val ROUTE_DUPLICATES = "albums/duplicates"
 private const val ROUTE_BLUR = "albums/blur"
 
+/**
+ * Resolves the start destination once (see [StartupViewModel]) and keeps it in saveable state so a
+ * recreated activity reuses it without waiting. Until it is known only the theme background is shown,
+ * never a possibly wrong destination.
+ */
 @Composable
-fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
+fun KrhnlesApp(
+    onStartUpload: (batches: List<UploadBatch>) -> Unit,
+    startupViewModel: StartupViewModel = viewModel(),
+) {
+    val resolved by startupViewModel.destination.collectAsStateWithLifecycle()
+    var savedStart by rememberSaveable { mutableStateOf<String?>(null) }
+    val startRoute = savedStart ?: resolved?.route
+    LaunchedEffect(startRoute) {
+        if (savedStart == null && startRoute != null) savedStart = startRoute
+    }
+    if (startRoute == null) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+    } else {
+        KrhnlesNavigation(startRoute, onStartUpload)
+    }
+}
+
+/**
+ * Leaves onboarding: the photo grid becomes the root of the back stack (onboarding is removed) and,
+ * for [OnboardingExit.Settings], Settings is put on top so Back from Settings lands on the photos.
+ */
+internal fun NavController.completeOnboarding(exit: OnboardingExit) {
+    navigate(ROUTE_PHOTOS) { popUpTo(ROUTE_ONBOARDING) { inclusive = true } }
+    if (exit == OnboardingExit.Settings) navigate(ROUTE_SETTINGS)
+}
+
+@Composable
+private fun KrhnlesNavigation(
+    startRoute: String,
+    onStartUpload: (batches: List<UploadBatch>) -> Unit,
+) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
@@ -70,6 +119,8 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
                     NavigationBarItem(
                         selected = currentRoute == ROUTE_PHOTOS,
                         onClick = {
+                            // popUpTo(ROUTE_PHOTOS), never the graph start destination: the start may
+                            // be onboarding, which is not on the back stack once onboarding was left.
                             navController.navigate(ROUTE_PHOTOS) {
                                 launchSingleTop = true
                                 restoreState = true
@@ -97,9 +148,17 @@ fun KrhnlesApp(onStartUpload: (batches: List<UploadBatch>) -> Unit) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = ROUTE_PHOTOS,
+            startDestination = startRoute,
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
         ) {
+            composable(ROUTE_ONBOARDING) {
+                val vm: OnboardingViewModel = viewModel()
+                OnboardingScreen(
+                    viewModel = vm,
+                    onExit = { navController.completeOnboarding(it) },
+                )
+            }
+
             composable(ROUTE_PHOTOS) {
                 val vm: PhotoGridViewModel = viewModel()
                 PhotoGridScreen(

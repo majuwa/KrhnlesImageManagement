@@ -234,4 +234,14 @@
     <string name="notification_retry_failed">Retry Failed (%d)</string>
     <string name="channel_name_uploads">Photo Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_step_indicator">Step %1$d of %2$d</string>
+    <string name="onboarding_action_next">Next</string>
+    <string name="onboarding_action_skip">Skip</string>
+    <string name="onboarding_action_connect_now">Connect now</string>
+    <string name="onboarding_overview_title">Back up your photos your way</string>
+    <string name="onboarding_overview_body">Pick the photos you want to keep, give them an occasion name and upload them to your own Nextcloud or WebDAV server. Uploads continue in the background.</string>
+    <string name="onboarding_connect_title">Connect your server</string>
+    <string name="onboarding_connect_body">Open Settings and log in with your Nextcloud account, or enter your WebDAV address and app password. You can skip this and set it up later.</string>
 </resources>

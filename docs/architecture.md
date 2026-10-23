@@ -21,6 +21,7 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── CredentialStore.kt         # Encrypted credential storage (Android Keystore AES-256-GCM + SharedPreferences)
 │   ├── CredentialCipher.kt        # AES-GCM encrypt/decrypt with classified DecryptResult; injectable CredentialKeyProvider
 │   ├── UploadHistoryStore.kt      # Persists upload history entries in DataStore
+│   ├── OnboardingStore.kt         # OnboardingRepository: `onboarding_completed` flag in its own DataStore `app_preferences` (excluded from backup)
 │   ├── UploadedPhotosStore.kt     # DataStore-backed storage of uploaded photo IDs (prevents duplicate uploads)
 │   ├── NextcloudAuthRepository.kt # Nextcloud Login Flow v2 implementation
 │   ├── Repositories.kt            # Repository interfaces (CredentialRepository, UploadedPhotosRepositoryContract, …)
@@ -54,6 +55,11 @@ de.majuwa.android.paper.krhnlesimagemanagement/
 │   ├── uploadhistory/
 │   │   ├── UploadHistoryScreen.kt    # Upload log list + clear actions
 │   │   └── UploadHistoryViewModel.kt # Exposes persisted upload history
+│   ├── onboarding/
+│   │   ├── StartDestination.kt      # ROUTE_* consts, isExistingUser(), resolveStartDestination() (pure)
+│   │   ├── StartupViewModel.kt      # Resolves the start destination once (timeout → photos), silent flag for existing users
+│   │   ├── OnboardingViewModel.kt   # Page (SavedStateHandle), finish(): persist then one-shot exit
+│   │   └── OnboardingScreen.kt      # Overview + Connect pages, Skip on both
 │   ├── navigation/
 │   │   └── BackStackEntries.kt      # rememberParentEntry(): parent back-stack entry lookup keyed on the current entry
 │   ├── settings/
@@ -126,6 +132,12 @@ After process death a restored review entry gets a fresh detail ViewModel; the r
 `rememberParentEntry()` (`ui/navigation/BackStackEntries.kt`) remembers `navController.getBackStackEntry(parentRoute)` keyed on the destination's own `NavBackStackEntry`: the lookup is cached across recompositions and re-resolved whenever the current entry changes, which is the form the navigation-compose `UnrememberedGetBackStackEntry` lint check accepts. Keying on a constant such as the route string is forbidden, and the check must never be silenced (issues #24 / #43).
 
 `NoLintSuppressionRegressionTest` (backed by `LintSuppressionScanner` in the test source set) enforces this in `./gradlew test`: it scans every source set under `app/src` (`.kt`, `.kts`, `.java`) for `@Suppress`/`@SuppressLint`/`@SuppressWarnings` (any use-site target such as `@file:`, qualified or not, single- or multi-line) and `noinspection` comments naming the issue, and fails if `app/build.gradle.kts`, `app/lint*.xml`, any `app/*baseline*.xml` or the root `lint.xml` mention the issue id at all. The module and root directories are passed to unit tests as the system properties `krhnles.moduleDir` / `krhnles.projectDir` (`testOptions.unitTests.all` in `app/build.gradle.kts`); the test falls back to the working directory and fails loudly if `src/main` is not found. The test spells the issue id as a concatenation so the scan of its own source set does not flag its fixtures.
+
+## Onboarding & Start Destination
+
+`KrhnlesApp` asks `StartupViewModel` once for the start route. Onboarding is the start iff `onboarding_completed` is unset **and** the user is not existing (valid config, any stored server URL, or `credentialState != Missing`, so upgrade users with corrupted credentials never see it). Existing users without the flag get it set silently. Resolution has a 3 s timeout; timeouts and failures resolve to `photos`. The resolved route is kept in `rememberSaveable` (a restored value is used without waiting). While unresolved only the theme background is drawn: the platform splash dismisses at the first frame and no splash dependency is added, so a brief neutral frame is possible but a wrong destination never is. The share path (`ShareReceiverScreen`) never composes `KrhnlesApp`, so share intents are unaffected.
+
+The `onboarding` route has two pages (Overview, Connect) with Skip on both. `OnboardingViewModel.finish()` persists the flag (3 s timeout; a timeout or failure still exits), then emits a one-shot `OnboardingExit`; `NavController.completeOnboarding()` navigates to `photos` with `popUpTo(onboarding){inclusive}` and, for "Connect now", then to `settings`, so the stack is `photos`, `settings`. A never-reset `done` latch keeps `finish()` ignored and the buttons disabled after the exit was consumed. Tab navigation uses `popUpTo(photos)`, not the graph start (which may be onboarding). `StartupViewModel` reads `combine(webDavConfig, credentialState).first()` once. Back on page 0 exits the app without persisting. `datastore/app_preferences.preferences_pb` is excluded from cloud backup and device transfer.
 
 ## Accessibility (TalkBack)
 

@@ -38,6 +38,14 @@ interface CredentialRepository {
     suspend fun clear()
 }
 
+/** Persists whether the first-run onboarding was completed or skipped. */
+interface OnboardingRepository {
+    /** `false` while unset; also `false` when the store cannot be read. */
+    val completed: Flow<Boolean>
+
+    suspend fun markCompleted()
+}
+
 /** Credentials could not be encrypted or persisted; previously stored values are left unchanged. */
 class CredentialSaveException(
     cause: Throwable,

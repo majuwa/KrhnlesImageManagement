@@ -25,11 +25,13 @@ import java.security.GeneralSecurityException
 import java.security.ProviderException
 import java.util.concurrent.ConcurrentHashMap
 
+internal const val CREDENTIALS_DATASTORE_NAME = "credentials"
+
 private val Context.credentialDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "credentials",
+    name = CREDENTIALS_DATASTORE_NAME,
 )
 
-private const val PREFS_FILE_NAME = "krhnles_secure"
+internal const val PREFS_FILE_NAME = "krhnles_secure"
 private const val FIELD_USERNAME = "username"
 private const val FIELD_PASSWORD = "password"
 private const val TAG = "CredentialStore"

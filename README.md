@@ -4,6 +4,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 
 ## 🚀 Features
 
+- **First-Run Introduction:** On the first launch of a fresh install a two-page introduction explains what the app does and offers "Connect now", which opens Settings (Back from Settings returns to the photo grid). Skip is available on both pages; it is shown only once and never to users who already set up a server. Pressing Back on the first page closes the app and shows the introduction again next time. The completion flag is not part of backups, so a restored device without credentials shows the introduction again.
 - **Local Image Grid:** Browse photos stored on your device in a clean, high-performance grid.
 - **TalkBack Support:** Every photo in the grid is announced as one element ("Photo 2 of 5, taken on May 1, 2026", selected / not selected, already uploaded) with a "Select" / "Deselect" action, and each day header as one heading with its photo count and a select-all-of-the-day action. File names are never read aloud; photos without a capture date are announced as "date unknown" and grouped under "Unknown date". Album thumbnails and the fullscreen viewer announce "Photo N of M".
 - **Smart Selection:** Select images individually or batch-select them grouped by date.
