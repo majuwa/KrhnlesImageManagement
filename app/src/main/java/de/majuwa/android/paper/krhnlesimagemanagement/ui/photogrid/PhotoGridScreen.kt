@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -50,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,9 +63,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,6 +81,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.model.isKnownDate
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.previewUploadPath
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatches
@@ -472,7 +481,7 @@ private fun InnerContent(
 }
 
 @Composable
-private fun PhotoGrid(
+internal fun PhotoGrid(
     photosByDate: Map<LocalDate, List<Photo>>,
     selectedPhotoIds: Set<Long>,
     uploadedPhotoIds: Set<Long>,
@@ -480,7 +489,17 @@ private fun PhotoGrid(
     onDateHeaderClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dateFormatter = remember { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM) }
+    val locale = LocalConfiguration.current.locales[0]
+    val dateFormatter =
+        remember(locale) { DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale) }
+    val unknownDateText = stringResource(R.string.date_unknown)
+    // Formatted once per date and locale, not on every selection change; shared by header and items.
+    val formattedDates =
+        remember(photosByDate.keys, dateFormatter, unknownDateText) {
+            photosByDate.keys.associateWith { date ->
+                if (date.isKnownDate()) date.format(dateFormatter) else unknownDateText
+            }
+        }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -489,23 +508,27 @@ private fun PhotoGrid(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         photosByDate.forEach { (date, photos) ->
+            val formattedDate = formattedDates.getValue(date)
             item(
                 key = "header_$date",
                 span = { GridItemSpan(maxLineSpan) },
             ) {
                 DateHeader(
-                    formattedDate = date.format(dateFormatter),
+                    formattedDate = formattedDate,
                     photoCount = photos.size,
                     allSelected = photos.all { it.id in selectedPhotoIds },
                     onClick = { onDateHeaderClick(date) },
                 )
             }
-            items(
+            itemsIndexed(
                 items = photos,
-                key = { it.id },
-            ) { photo ->
+                key = { _, photo -> photo.id },
+            ) { index, photo ->
                 PhotoItem(
                     photo = photo,
+                    position = index + 1,
+                    total = photos.size,
+                    formattedDate = formattedDate,
                     isSelected = photo.id in selectedPhotoIds,
                     isUploaded = photo.id in uploadedPhotoIds,
                     onClick = { onPhotoClick(photo.id) },
@@ -516,18 +539,28 @@ private fun PhotoGrid(
 }
 
 @Composable
-private fun DateHeader(
+internal fun DateHeader(
     formattedDate: String,
     photoCount: Int,
     allSelected: Boolean,
     onClick: () -> Unit,
 ) {
+    val state = stringResource(if (allSelected) R.string.cd_selected else R.string.cd_not_selected)
+    val clickLabel = stringResource(if (allSelected) R.string.action_deselect_day else R.string.action_select_day)
+    // The announcement is the merged texts (date + photo_count plural); the Checkbox is decorative.
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .toggleable(value = allSelected, role = Role.Checkbox, onValueChange = { onClick() })
+                .semantics {
+                    heading()
+                    stateDescription = state
+                    onClick(label = clickLabel) {
+                        onClick()
+                        true
+                    }
+                }.background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -546,23 +579,47 @@ private fun DateHeader(
         }
         Checkbox(
             checked = allSelected,
-            onCheckedChange = { onClick() },
+            onCheckedChange = null,
+            // Keeps the 48dp touch-target size the interactive checkbox had (header height unchanged).
+            modifier = Modifier.minimumInteractiveComponentSize(),
         )
     }
 }
 
 @Composable
-private fun PhotoItem(
+internal fun PhotoItem(
     photo: Photo,
+    position: Int,
+    total: Int,
+    formattedDate: String,
     isSelected: Boolean,
     isUploaded: Boolean,
     onClick: () -> Unit,
 ) {
+    val description =
+        if (photo.hasKnownDate) {
+            stringResource(R.string.cd_photo_position_taken_on, position, total, formattedDate)
+        } else {
+            stringResource(R.string.cd_photo_position_date_unknown, position, total)
+        }
+    val selectionState = stringResource(if (isSelected) R.string.cd_selected else R.string.cd_not_selected)
+    val state =
+        if (isUploaded) stringResource(R.string.cd_photo_state_uploaded, selectionState) else selectionState
+    val clickLabel = stringResource(if (isSelected) R.string.action_deselect_photo else R.string.action_select_photo)
+    // One merged node: description + state + checkbox role; children are decorative.
     Box(
         modifier =
             Modifier
                 .aspectRatio(1f)
-                .clickable(onClick = onClick),
+                .toggleable(value = isSelected, role = Role.Checkbox, onValueChange = { onClick() })
+                .semantics {
+                    contentDescription = description
+                    stateDescription = state
+                    onClick(label = clickLabel) {
+                        onClick()
+                        true
+                    }
+                },
     ) {
         AsyncImage(
             model =
@@ -571,7 +628,7 @@ private fun PhotoItem(
                     .data(photo.uri)
                     .crossfade(true)
                     .build(),
-            contentDescription = photo.displayName,
+            contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
@@ -596,7 +653,7 @@ private fun PhotoItem(
             ) {
                 Icon(
                     imageVector = Icons.Default.Cloud,
-                    contentDescription = stringResource(R.string.cd_already_uploaded),
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(14.dp),
                 )
@@ -604,7 +661,7 @@ private fun PhotoItem(
         }
         Icon(
             imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-            contentDescription = stringResource(if (isSelected) R.string.cd_selected else R.string.cd_not_selected),
+            contentDescription = null,
             tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f),
             modifier =
                 Modifier

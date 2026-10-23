@@ -5,6 +5,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 ## 🚀 Features
 
 - **Local Image Grid:** Browse photos stored on your device in a clean, high-performance grid.
+- **TalkBack Support:** Every photo in the grid is announced as one element ("Photo 2 of 5, taken on May 1, 2026", selected / not selected, already uploaded) with a "Select" / "Deselect" action, and each day header as one heading with its photo count and a select-all-of-the-day action. File names are never read aloud; photos without a capture date are announced as "date unknown" and grouped under "Unknown date". Album thumbnails and the fullscreen viewer announce "Photo N of M".
 - **Smart Selection:** Select images individually or batch-select them grouped by date.
 - **Custom or Automatic Foldering:** Either give each upload a custom occasion name (e.g., "Summer Vacation 2026") or enable automatic `YYYY/MM-Month` folders for quick archive uploads.
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.

@@ -7,6 +7,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 
 class MediaRepository(
@@ -47,12 +48,8 @@ class MediaRepository(
                                 id,
                             )
                         val name = cursor.getString(nameColumn) ?: "unknown"
-                        val dateMillis = cursor.getLong(dateColumn)
-                        val date =
-                            Instant
-                                .ofEpochMilli(dateMillis)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDate()
+                        val dateMillis = if (cursor.isNull(dateColumn)) null else cursor.getLong(dateColumn)
+                        val date = dateTakenOf(dateMillis)
                         val size = cursor.getLong(sizeColumn)
                         val mimeType = cursor.getString(mimeColumn) ?: "image/*"
 
@@ -70,4 +67,20 @@ class MediaRepository(
                 }
             photos
         }
+
+    internal companion object {
+        /**
+         * A missing (null) or 0 `DATE_TAKEN` has no capture date and maps to [Photo.UNKNOWN_DATE] (no
+         * zone conversion). Negative values are real pre-1970 dates and keep their date.
+         */
+        fun dateTakenOf(dateMillis: Long?): LocalDate =
+            if (dateMillis == null || dateMillis == 0L) {
+                Photo.UNKNOWN_DATE
+            } else {
+                Instant
+                    .ofEpochMilli(dateMillis)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDate()
+            }
+    }
 }

@@ -38,6 +38,24 @@ class UploadBatchTest {
         assertEquals(listOf(3L), batches.last().photos.map { it.id })
     }
 
+    /** Known behaviour, unchanged by the accessibility work (#30 / #49); see docs/architecture.md. */
+    @Test
+    fun `photos without capture date are uploaded to the 1970 January folder`() {
+        val batches = resolveAutoDateUploadBatches(listOf(photo(1, Photo.UNKNOWN_DATE)))
+
+        assertEquals(listOf("1970/01-Jan"), batches.map { it.folderName })
+    }
+
+    @Test
+    fun `pre-1970 photos keep their real year and month folder`() {
+        val batches =
+            resolveAutoDateUploadBatches(
+                listOf(photo(1, LocalDate.of(1969, 12, 31)), photo(2, Photo.UNKNOWN_DATE)),
+            )
+
+        assertEquals(listOf("1969/12-Dec", "1970/01-Jan"), batches.map { it.folderName })
+    }
+
     @Test
     fun `previewUploadPath prefixes base folder when present`() {
         assertEquals("Photos/2026/05-May/", previewUploadPath("Photos", "2026/05-May"))

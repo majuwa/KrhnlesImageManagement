@@ -54,6 +54,7 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
 import kotlinx.coroutines.delay
 
 private const val CONTROLS_HIDE_DELAY_MS = 3_000L
@@ -124,7 +125,7 @@ fun FullscreenViewerScreen(
                 val url = viewModel.fullImageUrl(photo)
                 ZoomablePage(
                     url = url,
-                    contentDescription = photo.displayName,
+                    contentDescription = photoPositionDescription(page + 1, photos.size),
                     onZoomedChange = { zoomed ->
                         if (page == pagerState.currentPage) isCurrentPageZoomed = zoomed
                     },

@@ -60,6 +60,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
 import kotlinx.coroutines.flow.filterNotNull
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -252,6 +253,8 @@ private fun AlbumDetailContent(
                 itemsIndexed(state.photos, key = { _, p -> p.href }) { index, photo ->
                     PhotoGridItem(
                         photo = photo,
+                        position = index + 1,
+                        total = state.photos.size,
                         thumbUrl = state.thumbnailUrls[photo.href],
                         isSelected = photo.href in selectedHrefs,
                         onClick = { onPhotoClick(index) },
@@ -300,8 +303,10 @@ private fun DeletingContent(modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PhotoGridItem(
+internal fun PhotoGridItem(
     photo: RemotePhoto,
+    position: Int,
+    total: Int,
     thumbUrl: String?,
     isSelected: Boolean,
     onClick: () -> Unit,
@@ -322,7 +327,7 @@ private fun PhotoGridItem(
                         .data(thumbUrl)
                         .crossfade(true)
                         .build(),
-                contentDescription = photo.displayName,
+                contentDescription = photoPositionDescription(position, total),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )

@@ -31,8 +31,10 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewMo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.PhotoDeletionOutcome
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.photoDeletionFailureMessage
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurScorer
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -75,7 +77,18 @@ class PhotoDeletionOutcomeUiTest {
             repoFactory = { fakeRepo },
         )
 
-    private fun createDuplicatesViewModel(): DuplicatesViewModel = DuplicatesViewModel()
+    /**
+     * Review analysis must not hop to a real background pool here: its result would be posted to
+     * Robolectric's paused main looper, which `waitUntil` never drains (only `waitForIdle` does),
+     * so a scan finished after the last `waitForIdle` would never be resumed and the test would
+     * pass or time out depending on timing. `Unconfined` runs the analysis inline on the main
+     * thread, so the scan completes while the looper is drained (guarded by
+     * `RobolectricAnalysisDispatcherRegressionTest`).
+     */
+    private val analysisDispatcher = Dispatchers.Unconfined
+
+    private fun createDuplicatesViewModel(): DuplicatesViewModel =
+        DuplicatesViewModel(analysisDispatcher = analysisDispatcher)
 
     private val resources get() = RuntimeEnvironment.getApplication().resources
 
@@ -164,8 +177,8 @@ class PhotoDeletionOutcomeUiTest {
             viewModel.detailState.value.thumbnailUrls.size == 2
         }
 
-        composeTestRule.onNodeWithContentDescription(photoA.displayName).performTouchInput { longClick() }
-        composeTestRule.onNodeWithContentDescription(photoB.displayName).performClick()
+        composeTestRule.onNodeWithContentDescription("Photo 1 of 2").performTouchInput { longClick() }
+        composeTestRule.onNodeWithContentDescription("Photo 2 of 2").performClick()
         composeTestRule.onNodeWithContentDescription("Delete selected").performClick()
         composeTestRule.onNodeWithText("Delete").performClick()
         composeTestRule.waitUntil { viewModel.isDeletingPhotos.value }
@@ -188,6 +201,22 @@ class PhotoDeletionOutcomeUiTest {
         assertEquals(0, leftScreen)
         // Selection is cleared by the outcome; the album's back arrow works again.
         composeTestRule.onNodeWithContentDescription(resources.getString(R.string.cd_back)).assertIsEnabled()
+    }
+
+    @Test
+    fun `fullscreen viewer describes the page by position and not by file name`() {
+        val viewModel = createViewModel()
+        composeTestRule.runOnIdle { viewModel.loadAlbum("/Album/") }
+        composeTestRule.waitUntil { viewModel.detailState.value.isLoaded }
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                FullscreenViewerScreen(viewModel = viewModel, initialIndex = 1, onNavigateBack = {})
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithContentDescription("Photo 2 of 2").assertExists()
+        composeTestRule.onNodeWithContentDescription(photoB.displayName).assertDoesNotExist()
     }
 
     @Test
@@ -215,6 +244,11 @@ class PhotoDeletionOutcomeUiTest {
         composeTestRule.waitUntil(
             timeoutMillis = 5_000,
         ) { duplicatesViewModel.duplicatesState.value is DuplicatesState.Found }
+
+        // Position within the duplicate group, never the file name.
+        composeTestRule.onNodeWithContentDescription("Photo 1 of 2").assertExists()
+        composeTestRule.onNodeWithContentDescription("Photo 2 of 2").assertExists()
+        composeTestRule.onNodeWithContentDescription(photoA.displayName).assertDoesNotExist()
 
         composeTestRule.onNodeWithText("Delete 1 photo").performClick()
         composeTestRule.waitUntil { duplicatesViewModel.duplicatesState.value == DuplicatesState.Deleting }
@@ -247,6 +281,7 @@ class PhotoDeletionOutcomeUiTest {
                             override fun close() = Unit
                         }
                     },
+                analysisDispatcher = analysisDispatcher,
             )
         var navigatedBack = 0
         composeTestRule.runOnIdle { viewModel.loadAlbum("/Album/") }
@@ -264,6 +299,10 @@ class PhotoDeletionOutcomeUiTest {
             }
         }
         composeTestRule.waitUntil(timeoutMillis = 5_000) { blurViewModel.blurState.value is BlurState.Found }
+
+        composeTestRule.onNodeWithContentDescription("Photo 1 of 2").assertExists()
+        composeTestRule.onNodeWithContentDescription("Photo 2 of 2").assertExists()
+        composeTestRule.onNodeWithContentDescription(photoA.displayName).assertDoesNotExist()
 
         composeTestRule.onNodeWithText("Delete 2 photos").performClick()
         composeTestRule.waitUntil { blurViewModel.blurState.value == BlurState.Deleting }

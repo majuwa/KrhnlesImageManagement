@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -59,6 +59,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -264,7 +265,7 @@ private fun BlurResultsContent(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(photos, key = { it.href }) { photo ->
+            itemsIndexed(photos, key = { _, photo -> photo.href }) { index, photo ->
                 val thumbUrl = thumbnailUrls[photo.href]
                 val selected = photo.href in toDelete
                 val score = scores[photo.href]
@@ -298,7 +299,7 @@ private fun BlurResultsContent(
                                     .data(thumbUrl)
                                     .crossfade(true)
                                     .build(),
-                            contentDescription = photo.displayName,
+                            contentDescription = photoPositionDescription(index + 1, photos.size),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                         )

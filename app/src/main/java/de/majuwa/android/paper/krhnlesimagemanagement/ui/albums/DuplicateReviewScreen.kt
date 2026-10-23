@@ -72,6 +72,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -398,7 +399,7 @@ private fun GroupsContent(
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        itemsIndexed(group) { _, photo ->
+                        itemsIndexed(group) { photoIndex, photo ->
                             val thumbUrl = thumbnailUrls[photo.href]
                             val markedForDelete = photo.href in toDelete
                             Box(
@@ -431,7 +432,7 @@ private fun GroupsContent(
                                                 .data(thumbUrl)
                                                 .crossfade(true)
                                                 .build(),
-                                        contentDescription = photo.displayName,
+                                        contentDescription = photoPositionDescription(photoIndex + 1, group.size),
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize(),
                                     )

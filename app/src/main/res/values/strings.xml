@@ -40,6 +40,15 @@
     <string name="cd_upload">Upload</string>
     <string name="cd_back">Back</string>
     <string name="cd_reload">Reload</string>
+    <string name="cd_photo_position">Photo %1$d of %2$d</string>
+    <string name="cd_photo_position_taken_on">Photo %1$d of %2$d, taken on %3$s</string>
+    <string name="cd_photo_position_date_unknown">Photo %1$d of %2$d, date unknown</string>
+    <string name="cd_photo_state_uploaded">%1$s, already uploaded</string>
+    <string name="date_unknown">Unknown date</string>
+    <string name="action_select_photo">Select</string>
+    <string name="action_deselect_photo">Deselect</string>
+    <string name="action_select_day">Select all photos of this day</string>
+    <string name="action_deselect_day">Deselect all photos of this day</string>
     <string name="cd_selected">Selected</string>
     <string name="cd_not_selected">Not selected</string>
     <string name="cd_cancel_selection">Cancel selection</string>
@@ -54,7 +63,6 @@
     <!-- Navigation labels -->
     <string name="nav_photos">Photos</string>
     <string name="nav_albums">Albums</string>
-    <string name="cd_already_uploaded">Already uploaded</string>
 
     <!-- Titles -->
     <string name="title_settings">Settings</string>
