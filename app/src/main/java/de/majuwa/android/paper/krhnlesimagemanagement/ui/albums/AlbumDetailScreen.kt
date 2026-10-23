@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +53,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -228,9 +232,7 @@ private fun AlbumDetailContent(
         }
 
         state.isLoading -> {
-            Box(modifier = modifier, contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            AlbumLoadingContent(loadedCount = state.loadedCount, modifier = modifier)
         }
 
         state.error != null -> {
@@ -238,32 +240,105 @@ private fun AlbumDetailContent(
         }
 
         state.photos.isEmpty() -> {
-            Box(modifier = modifier, contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.empty_album_photos), style = MaterialTheme.typography.bodyLarge)
+            // A truncated listing without photos is not an empty album: say that it could not be read completely.
+            val message = if (state.isTruncated) R.string.album_truncated_empty_notice else R.string.empty_album_photos
+            Box(modifier = modifier.padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(message),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
 
         else -> {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = modifier,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                itemsIndexed(state.photos, key = { _, p -> p.href }) { index, photo ->
-                    PhotoGridItem(
-                        photo = photo,
-                        position = index + 1,
-                        total = state.photos.size,
-                        thumbUrl = state.thumbnailUrls[photo.href],
-                        isSelected = photo.href in selectedHrefs,
-                        onClick = { onPhotoClick(index) },
-                        onLongClick = { onPhotoLongClick(photo.href) },
+            Column(modifier = modifier) {
+                if (state.isTruncated) {
+                    TruncationNotice(
+                        text =
+                            pluralStringResource(
+                                R.plurals.album_truncated_notice,
+                                state.photos.size,
+                                state.photos.size,
+                            ),
                     )
                 }
+                AlbumPhotoGrid(
+                    state = state,
+                    selectedHrefs = selectedHrefs,
+                    modifier = Modifier.weight(1f),
+                    onPhotoClick = onPhotoClick,
+                    onPhotoLongClick = onPhotoLongClick,
+                )
             }
         }
     }
+}
+
+@Composable
+private fun AlbumPhotoGrid(
+    state: AlbumDetailState,
+    selectedHrefs: Set<String>,
+    modifier: Modifier,
+    onPhotoClick: (index: Int) -> Unit,
+    onPhotoLongClick: (href: String) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        itemsIndexed(state.photos, key = { _, p -> p.href }) { index, photo ->
+            PhotoGridItem(
+                photo = photo,
+                position = index + 1,
+                total = state.photos.size,
+                thumbUrl = state.thumbnailUrls[photo.href],
+                isSelected = photo.href in selectedHrefs,
+                onClick = { onPhotoClick(index) },
+                onLongClick = { onPhotoLongClick(photo.href) },
+            )
+        }
+    }
+}
+
+/** Full-screen progress while the album is listed, with the running count once photos were found. */
+@Composable
+private fun AlbumLoadingContent(
+    loadedCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            if (loadedCount > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = pluralStringResource(R.plurals.album_loading_photos, loadedCount, loadedCount),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
+    }
+}
+
+/** Non-error notice that a listing was truncated at a size limit (album detail and reviews). */
+@Composable
+internal fun TruncationNotice(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 @Composable

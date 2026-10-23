@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UnsafeHrefException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.memoriesAwareDispatcher
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -49,6 +50,14 @@ class AlbumsRepositoryTest {
             }
             append("</d:multistatus>")
         }
+
+    /**
+     * Serves [propfind] for every request except the Nextcloud Memories check (answered 404),
+     * which `listPhotos` runs concurrently with the PROPFIND.
+     */
+    private fun servePhotos(propfind: MockResponse) {
+        server.dispatcher = memoriesAwareDispatcher(propfind)
+    }
 
     @Before
     fun setUp() {
@@ -206,11 +215,11 @@ class AlbumsRepositoryTest {
                   </d:response>
                 </d:multistatus>
                 """.trimIndent()
-            server.enqueue(propfindResponse(xml))
+            servePhotos(propfindResponse(xml))
 
             val result = repo.listPhotos("/remote.php/dav/files/user/Summer25/")
             assertTrue(result.isSuccess)
-            val photos = result.getOrThrow()
+            val photos = result.getOrThrow().photos
             assertEquals(2, photos.size)
             assertEquals("beach.jpg", photos[0].displayName)
             assertEquals("100", photos[0].fileId)
@@ -257,11 +266,11 @@ class AlbumsRepositoryTest {
                   </d:response>
                 </d:multistatus>
                 """.trimIndent()
-            server.enqueue(propfindResponse(xml))
+            servePhotos(propfindResponse(xml))
 
             val result = repo.listPhotos("/remote.php/dav/files/user/NewAlbum/")
             assertTrue(result.isSuccess)
-            val photos = result.getOrThrow()
+            val photos = result.getOrThrow().photos
             assertEquals(2, photos.size)
             assertEquals("photo.jpg", photos[0].displayName)
             assertEquals("shot.HEIC", photos[1].displayName)
@@ -458,7 +467,7 @@ class AlbumsRepositoryTest {
     fun `listPhotos skips entries with unsafe hrefs`() =
         runTest {
             repo = createRepo()
-            server.enqueue(
+            servePhotos(
                 propfindResponse(
                     multistatus(
                         "/remote.php/dav/files/user/Summer25/" to null,
@@ -471,7 +480,7 @@ class AlbumsRepositoryTest {
                 ),
             )
 
-            val photos = repo.listPhotos("/remote.php/dav/files/user/Summer25/").getOrThrow()
+            val photos = repo.listPhotos("/remote.php/dav/files/user/Summer25/").getOrThrow().photos
 
             assertEquals(listOf("/remote.php/dav/files/user/Summer25/ok%20%C3%A4.jpg"), photos.map { it.href })
         }

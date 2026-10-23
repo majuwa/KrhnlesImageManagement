@@ -19,12 +19,15 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.PhotoDeletionOut
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,6 +38,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.IOException
 
 /**
  * Album detail state of [AlbumDetailViewModel] (split from `AlbumsViewModel`, issues #29 / #48).
@@ -71,6 +75,7 @@ class AlbumDetailViewModelTest {
             application = RuntimeEnvironment.getApplication() as Application,
             credentialRepo = credentials,
             repoFactory = repoFactory,
+            backgroundDispatcher = testDispatcher,
         )
 
     @After
@@ -379,5 +384,197 @@ class AlbumDetailViewModelTest {
 
             assertFalse("busy state must not stay stuck", scoped.isDeletingPhotos.value)
             assertTrue(fakeRepo.deletedPhotos.isEmpty())
+        }
+
+    // ── Streamed listing (issues #27 / #46) ─────────────────────────────────
+
+    @Test
+    fun `the running count is shown while loading and the photos are published once at the end`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.photos = Result.success(listOf(beach, sunset))
+            fakeRepo.onListPhotos = { onProgress ->
+                onProgress(100)
+                gate.await()
+            }
+
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            val loading = viewModel.detailState.value
+            assertTrue(loading.isLoading)
+            assertEquals(100, loading.loadedCount)
+            assertTrue("nothing published before the listing completes", loading.photos.isEmpty())
+            assertFalse(loading.isLoaded)
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            val loaded = viewModel.detailState.value
+            assertFalse(loaded.isLoading)
+            assertTrue(loaded.isLoaded)
+            assertEquals(listOf(beach, sunset), loaded.photos)
+            assertEquals(2, loaded.thumbnailUrls.size)
+            assertEquals(2, loaded.loadedCount)
+            assertFalse(loaded.isTruncated)
+        }
+
+    @Test
+    fun `a truncated listing is loaded and flagged`() =
+        runTest {
+            fakeRepo.photos = Result.success(listOf(beach))
+            fakeRepo.photosTruncated = true
+
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            val detail = viewModel.detailState.value
+            assertTrue(detail.isLoaded)
+            assertTrue(detail.isTruncated)
+            assertNull(detail.error)
+        }
+
+    @Test
+    fun `reload while the album is still loading does not start a second listing`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.photos = Result.success(listOf(beach))
+            fakeRepo.onListPhotos = { gate.await() }
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            viewModel.reload() // e.g. Retry in a review while the album is loading
+            advanceUntilIdle()
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(1, fakeRepo.listPhotosCalls)
+            assertTrue(viewModel.detailState.value.isLoaded)
+        }
+
+    @Test
+    fun `logout during loading publishes no photos`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.photos = Result.success(listOf(beach))
+            fakeRepo.onListPhotos = { gate.await() }
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            credentials.clear()
+            advanceUntilIdle()
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            val detail = viewModel.detailState.value
+            assertEquals(AlbumsError.NotConfigured, detail.error)
+            assertTrue(detail.photos.isEmpty())
+            assertEquals(0, detail.loadedCount)
+            assertFalse(detail.isLoaded)
+        }
+
+    @Test
+    fun `late progress of a listing cancelled by logout does not leak into the reload after login`() =
+        runTest {
+            var reportProgress: (Int) -> Unit = {}
+            fakeRepo.photos = Result.success(listOf(beach))
+            fakeRepo.onListPhotos = { onProgress ->
+                reportProgress = onProgress
+                awaitCancellation()
+            }
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+            val staleProgress = reportProgress
+
+            credentials.clear()
+            advanceUntilIdle()
+            credentials.save("https://cloud.example.com/remote.php/dav/files/user/", "user", "pass")
+            advanceUntilIdle()
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.onListPhotos = { gate.await() }
+            viewModel.reload() // Retry after logging in again: a new load is running
+            advanceUntilIdle()
+            assertTrue(viewModel.detailState.value.isLoading)
+
+            staleProgress(500) // a late callback from the listing cancelled by the logout
+
+            assertEquals("only the generation guard rejects it", 0, viewModel.detailState.value.loadedCount)
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(viewModel.detailState.value.isLoaded)
+        }
+
+    @Test
+    fun `a failure of a listing cancelled by logout does not overwrite NotConfigured`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.photos = Result.success(listOf(beach))
+            // Like a blocked read whose Call.cancel() surfaces as a parser / IO failure, not as cancellation.
+            fakeRepo.onListPhotos = {
+                withContext(NonCancellable) { gate.await() }
+                throw IOException("Canceled")
+            }
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            credentials.clear()
+            advanceUntilIdle()
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            val detail = viewModel.detailState.value
+            assertEquals(AlbumsError.NotConfigured, detail.error)
+            assertFalse(detail.isLoading)
+        }
+
+    @Test
+    fun `a failure of a replaced load does not overwrite the next album`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.photos = Result.success(listOf(beach))
+            fakeRepo.onListPhotos = {
+                withContext(NonCancellable) { gate.await() }
+                throw IOException("Canceled")
+            }
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            val winterGate = CompletableDeferred<Unit>()
+            fakeRepo.onListPhotos = { winterGate.await() }
+            viewModel.loadAlbum("/Winter/")
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            val detail = viewModel.detailState.value
+            assertEquals("Winter", detail.albumName)
+            assertNull(detail.error)
+            assertTrue(detail.isLoading)
+            winterGate.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(viewModel.detailState.value.isLoaded)
+        }
+
+    @Test
+    fun `progress of a replaced load does not leak into the next album`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            var firstProgress: (Int) -> Unit = {}
+            fakeRepo.photos = Result.success(listOf(beach))
+            fakeRepo.onListPhotos = { onProgress ->
+                firstProgress = onProgress
+                gate.await()
+            }
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            fakeRepo.onListPhotos = { gate.await() }
+            viewModel.loadAlbum("/Winter/")
+            firstProgress(300)
+
+            assertEquals("Winter", viewModel.detailState.value.albumName)
+            assertEquals(0, viewModel.detailState.value.loadedCount)
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(viewModel.detailState.value.isLoaded)
         }
 }

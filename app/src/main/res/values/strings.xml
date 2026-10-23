@@ -158,10 +158,21 @@
     <string name="albums_error_auth">Access denied. Check your username and app password, then log in again.</string>
     <string name="albums_error_not_found">The album was not found on the server. It may have been moved or deleted.</string>
     <string name="albums_error_http">The server responded with an error (HTTP %1$d). Please try again later.</string>
+    <string name="albums_error_listing_too_large">This folder contains too many items to load. Split it into smaller folders on the server.</string>
     <string name="albums_error_unknown">Something went wrong while talking to the server. Please try again.</string>
 
     <!-- Album detail -->
     <string name="empty_album_photos">No photos in this album.</string>
+    <plurals name="album_loading_photos">
+        <item quantity="one">Loading photos… %d found</item>
+        <item quantity="other">Loading photos… %d found</item>
+    </plurals>
+    <plurals name="album_truncated_notice">
+        <item quantity="one">This album is too large to show completely. Only the first %d photo is shown.</item>
+        <item quantity="other">This album is too large to show completely. Only the first %d photos are shown.</item>
+    </plurals>
+    <string name="album_truncated_empty_notice">This album is too large to load completely, and no photos were found in the part that could be loaded.</string>
+    <string name="review_truncated_notice">This album is too large to load completely, so the results may be incomplete.</string>
     <string name="status_deleting_photos">Deleting photos…</string>
     <string name="dialog_delete_photos_title">Delete photos?</string>
     <plurals name="dialog_delete_photos_message">

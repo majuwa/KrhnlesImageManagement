@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 import android.content.res.Resources
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.PropfindResponseTooLargeException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UnsafeHrefException
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.ConnectionTestResult
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.toConnectionTestResult
@@ -40,6 +41,9 @@ sealed interface AlbumsError {
         val code: Int,
     ) : AlbumsError
 
+    /** The folder listing exceeds the response size limit (album list; never silently truncated). */
+    data object ListingTooLarge : AlbumsError
+
     data object Unknown : AlbumsError
 }
 
@@ -56,6 +60,10 @@ fun Throwable.toAlbumsError(): AlbumsError =
 
         is UnsafeHrefException -> {
             AlbumsError.Unknown
+        }
+
+        is PropfindResponseTooLargeException -> {
+            AlbumsError.ListingTooLarge
         }
 
         else -> {
@@ -94,5 +102,6 @@ fun albumsErrorMessage(
         AlbumsError.AuthFailed -> resources.getString(R.string.albums_error_auth)
         AlbumsError.NotFound -> resources.getString(R.string.albums_error_not_found)
         is AlbumsError.HttpError -> resources.getString(R.string.albums_error_http, error.code)
+        AlbumsError.ListingTooLarge -> resources.getString(R.string.albums_error_listing_too_large)
         AlbumsError.Unknown -> resources.getString(R.string.albums_error_unknown)
     }

@@ -72,7 +72,12 @@ class AlbumPhotoDeletionTest(
         )
 
     private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract): AlbumDetailViewModel =
-        AlbumDetailViewModel(application = app, credentialRepo = credentials, repoFactory = repoFactory)
+        AlbumDetailViewModel(
+            application = app,
+            credentialRepo = credentials,
+            repoFactory = repoFactory,
+            backgroundDispatcher = testDispatcher,
+        )
 
     @Before
     fun setUp() {

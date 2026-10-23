@@ -46,7 +46,15 @@ class CredentialSaveException(
 interface AlbumsRepositoryContract {
     suspend fun listAlbums(): Result<List<RemoteAlbum>>
 
-    suspend fun listPhotos(albumHref: String): Result<List<RemotePhoto>>
+    /**
+     * Lists the photos of [albumHref] with one streamed PROPFIND (bounded memory, see
+     * [PhotoListing]). [onProgress] receives the number of photos found so far, throttled; it may
+     * be called on a background thread, so it must only write thread-safe state.
+     */
+    suspend fun listPhotos(
+        albumHref: String,
+        onProgress: (photosFound: Int) -> Unit = {},
+    ): Result<PhotoListing>
 
     suspend fun renameAlbum(
         album: RemoteAlbum,
@@ -63,6 +71,15 @@ interface AlbumsRepositoryContract {
 
     suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit>
 }
+
+/**
+ * Photos of one album listing. [isTruncated] is `true` when the listing stopped at a size limit
+ * (response bytes or photo count), so [photos] is only the first part of the album.
+ */
+data class PhotoListing(
+    val photos: List<RemotePhoto>,
+    val isTruncated: Boolean = false,
+)
 
 interface MediaRepositoryContract {
     suspend fun loadPhotos(): List<Photo>

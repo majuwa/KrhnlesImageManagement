@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import android.graphics.Bitmap
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoListing
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 
@@ -28,7 +29,24 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
 
     override suspend fun listAlbums(): Result<List<RemoteAlbum>> = albums
 
-    override suspend fun listPhotos(albumHref: String): Result<List<RemotePhoto>> = photos
+    /** Marks a successful [listPhotos] result as truncated. */
+    var photosTruncated: Boolean = false
+
+    /** Invoked (and may suspend, report progress or throw) on every [listPhotos] call before the result. */
+    var onListPhotos: suspend (onProgress: (Int) -> Unit) -> Unit = {}
+
+    /** Number of [listPhotos] calls. */
+    var listPhotosCalls = 0
+        private set
+
+    override suspend fun listPhotos(
+        albumHref: String,
+        onProgress: (photosFound: Int) -> Unit,
+    ): Result<PhotoListing> {
+        listPhotosCalls++
+        onListPhotos(onProgress)
+        return photos.map { PhotoListing(it, isTruncated = photosTruncated) }
+    }
 
     override suspend fun renameAlbum(
         album: RemoteAlbum,

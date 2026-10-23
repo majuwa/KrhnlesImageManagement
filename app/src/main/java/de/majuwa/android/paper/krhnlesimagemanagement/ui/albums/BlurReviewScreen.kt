@@ -135,6 +135,7 @@ fun BlurReviewScreen(
         ReviewAlbumGate(
             albumError = detailState.error,
             isDeleting = isDeleting,
+            isTruncated = detailState.isTruncated,
             showLoading = !albumReady && blurState == BlurState.Idle,
             modifier = Modifier.fillMaxSize().padding(padding),
             onRetryAlbum = detailViewModel::reload,
@@ -142,7 +143,7 @@ fun BlurReviewScreen(
             AnimatedContent(
                 targetState = blurState,
                 contentKey = { it::class },
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 label = "blur-content",
             ) { state ->
                 when (state) {

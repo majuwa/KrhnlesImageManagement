@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -112,12 +113,14 @@ internal fun ScanErrorContent(
 /**
  * Frame of a review's content: the album error (logout / server change / load failure) takes
  * precedence unless a deletion runs, [showLoading] shows a progress indicator while the album is
- * not loaded yet, otherwise [content] (the scan states) is shown.
+ * not loaded yet, otherwise [content] (the scan states) is shown — below a notice that the
+ * results may be incomplete when the album listing [isTruncated].
  */
 @Composable
 internal fun ReviewAlbumGate(
     albumError: AlbumsError?,
     isDeleting: Boolean,
+    isTruncated: Boolean,
     showLoading: Boolean,
     modifier: Modifier,
     onRetryAlbum: () -> Unit,
@@ -133,7 +136,10 @@ internal fun ReviewAlbumGate(
         }
 
         else -> {
-            content()
+            Column(modifier) {
+                if (isTruncated) TruncationNotice(text = stringResource(R.string.review_truncated_notice))
+                Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+            }
         }
     }
 }

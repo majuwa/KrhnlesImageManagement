@@ -14,6 +14,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoDeletionResult
 import de.majuwa.android.paper.krhnlesimagemanagement.data.deletePhotosIndividually
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -35,6 +38,10 @@ data class AlbumDetailState(
     val error: AlbumsError? = null,
     /** `true` once the photos and thumbnail URLs of the current album have been loaded successfully. */
     val isLoaded: Boolean = false,
+    /** Photos found so far while [isLoading] (progress of the streamed listing); the final count afterwards. */
+    val loadedCount: Int = 0,
+    /** The listing stopped at a size limit: [photos] is only the first part of the album. */
+    val isTruncated: Boolean = false,
 ) {
     internal fun withPhotosDeleted(hrefs: Set<String>): AlbumDetailState =
         copy(
@@ -92,6 +99,8 @@ class AlbumDetailViewModel
             CredentialStore(application),
         repoFactory: (WebDavConfig) -> AlbumsRepositoryContract =
             { config -> AlbumsRepository(config) },
+        /** Resolves the thumbnail URLs of a loaded listing (up to 20,000 photos) off the main thread. */
+        private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
     ) : AndroidViewModel(application),
         PhotoDeletionLauncher {
         private val repos = AlbumsRepositoryProvider(credentialRepo, repoFactory = repoFactory)
@@ -124,6 +133,12 @@ class AlbumDetailViewModel
         /** Href of the album this ViewModel loads / has loaded; target of [reload]. */
         private var currentHref: String? = null
 
+        /**
+         * Incremented for every load and configuration change; progress callbacks (called on a
+         * background thread), results and errors of an older load are ignored.
+         */
+        @Volatile private var loadGeneration = 0
+
         init {
             // Logout / server or account change while this album is open: stop using the old
             // server and credentials and drop the photos that belong to it.
@@ -146,8 +161,13 @@ class AlbumDetailViewModel
             startLoad(albumHref)
         }
 
-        /** Reloads the current album (Retry); ignored before any album has been requested. */
+        /**
+         * Reloads the current album (Retry); ignored before any album has been requested and while
+         * a load is still running (e.g. Retry from a review while the album is loading), so a
+         * listing is never started twice.
+         */
         fun reload() {
+            if (loadJob?.isActive == true) return
             currentHref?.let { startLoad(it) }
         }
 
@@ -158,19 +178,43 @@ class AlbumDetailViewModel
                     albumHref.trimEnd('/').substringAfterLast('/'),
                     "UTF-8",
                 )
+            // Before the state reset, so a late progress callback of the previous load is ignored.
+            val generation = ++loadGeneration
             _detailState.update { AlbumDetailState(albumName = albumName, isLoading = true) }
             loadJob?.cancel()
             loadJob =
                 viewModelScope.launch {
                     try {
                         val repository = repos.get().getOrThrow()
-                        val photos = repository.listPhotos(albumHref).getOrThrow()
-                        _detailState.update { it.copy(photos = photos, isLoading = false) }
-                        val urls = photos.associate { photo -> photo.href to repository.thumbnailUrl(photo) }
-                        _detailState.update { it.copy(thumbnailUrls = urls, isLoaded = true) }
+                        val listing =
+                            repository
+                                .listPhotos(albumHref) { found -> publishProgress(generation, found) }
+                                .getOrThrow()
+                        val urls =
+                            withContext(backgroundDispatcher) {
+                                listing.photos.associate { photo -> photo.href to repository.thumbnailUrl(photo) }
+                            }
+                        // A cancelled or replaced load (new load, configuration change) never publishes stale photos.
+                        currentCoroutineContext().ensureActive()
+                        if (generation != loadGeneration) return@launch
+                        // Published once, complete (issues #27 / #46): deletion and reviews only see full listings.
+                        _detailState.update {
+                            it.copy(
+                                photos = listing.photos,
+                                thumbnailUrls = urls,
+                                isLoading = false,
+                                isLoaded = true,
+                                loadedCount = listing.photos.size,
+                                isTruncated = listing.isTruncated,
+                            )
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
+                        // A failure of a cancelled / replaced load (e.g. the cancelled read surfacing as a
+                        // parser error) must not overwrite NotConfigured / ConfigurationChanged or a newer load.
+                        currentCoroutineContext().ensureActive()
+                        if (generation != loadGeneration) return@launch
                         // Type only: exception messages may contain server details.
                         Log.w(TAG, "Failed to load album photos: ${e.javaClass.simpleName}")
                         _detailState.update { it.copy(isLoading = false, error = e.toAlbumsError()) }
@@ -178,7 +222,18 @@ class AlbumDetailViewModel
                 }
         }
 
+        /** Running count of the listing; ignored unless [generation] is still the loading one. */
+        private fun publishProgress(
+            generation: Int,
+            found: Int,
+        ) {
+            _detailState.update { state ->
+                if (generation == loadGeneration && state.isLoading) state.copy(loadedCount = found) else state
+            }
+        }
+
         private fun onConfigurationChanged(config: WebDavConfig) {
+            loadGeneration++
             loadJob?.cancel()
             photoDeletionJob?.cancel()
             repos.invalidate()

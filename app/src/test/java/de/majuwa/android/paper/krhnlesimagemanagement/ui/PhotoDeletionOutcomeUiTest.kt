@@ -75,6 +75,8 @@ class PhotoDeletionOutcomeUiTest {
             application = RuntimeEnvironment.getApplication() as Application,
             credentialRepo = credentials(),
             repoFactory = { fakeRepo },
+            // Thumbnail URLs resolved inline: several tests wait for the load before any content is set.
+            backgroundDispatcher = Dispatchers.Unconfined,
         )
 
     /**
@@ -331,6 +333,7 @@ class PhotoDeletionOutcomeUiTest {
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialRepo = credentials,
                 repoFactory = { fakeRepo },
+                backgroundDispatcher = Dispatchers.Unconfined,
             )
         val duplicatesViewModel = createDuplicatesViewModel()
         composeTestRule.runOnIdle { viewModel.loadAlbum("/Album/") }

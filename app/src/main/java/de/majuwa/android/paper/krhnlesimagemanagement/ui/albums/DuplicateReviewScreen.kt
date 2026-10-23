@@ -157,6 +157,7 @@ fun DuplicateReviewScreen(
         ReviewAlbumGate(
             albumError = detailState.error,
             isDeleting = isDeleting,
+            isTruncated = detailState.isTruncated,
             showLoading = !albumReady && duplicatesState == DuplicatesState.Idle,
             modifier = Modifier.fillMaxSize().padding(padding),
             onRetryAlbum = detailViewModel::reload,
@@ -164,7 +165,7 @@ fun DuplicateReviewScreen(
             AnimatedContent(
                 targetState = duplicatesState,
                 contentKey = { it::class }, // only animate on state-type change, not on Loading progress ticks
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 label = "duplicates-content",
             ) { state ->
                 when (state) {

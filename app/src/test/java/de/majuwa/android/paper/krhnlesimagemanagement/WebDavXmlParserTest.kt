@@ -1,14 +1,20 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import de.majuwa.android.paper.krhnlesimagemanagement.data.MalformedMultistatusException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.buildNextcloudBase
 import de.majuwa.android.paper.krhnlesimagemanagement.data.buildOrigin
 import de.majuwa.android.paper.krhnlesimagemanagement.data.parsePropfindXml
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+/** Runs under Robolectric so the production `android.util.Xml` pull parser is exercised (no kxml2 test dependency). */
+@RunWith(RobolectricTestRunner::class)
 class WebDavXmlParserTest {
     // ── parsePropfindXml ────────────────────────────────────────────────────
 
@@ -374,9 +380,8 @@ class WebDavXmlParserTest {
     }
 
     @Test
-    fun `parses response with benign DOCTYPE declaration`() {
-        // Some WebDAV servers include a DOCTYPE in their response.
-        // The parser must accept it as long as no external entities are referenced.
+    fun `rejects a response with a benign DOCTYPE declaration`() {
+        // A stream cannot be pre-sanitized, so every DOCTYPE is rejected (issues #27 / #46).
         val xml =
             """
             <?xml version="1.0" encoding="utf-8"?>
@@ -384,18 +389,10 @@ class WebDavXmlParserTest {
             <d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
               <d:response>
                 <d:href>/remote.php/dav/files/user/Photos/</d:href>
-                <d:propstat>
-                  <d:prop>
-                    <d:displayname>Photos</d:displayname>
-                    <d:resourcetype><d:collection/></d:resourcetype>
-                  </d:prop>
-                </d:propstat>
               </d:response>
             </d:multistatus>
             """.trimIndent()
 
-        val entries = parsePropfindXml(xml)
-        assertEquals(1, entries.size)
-        assertEquals("Photos", entries[0].displayName)
+        assertThrows(MalformedMultistatusException::class.java) { parsePropfindXml(xml) }
     }
 }
