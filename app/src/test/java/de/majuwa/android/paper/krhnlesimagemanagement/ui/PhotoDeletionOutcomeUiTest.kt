@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performTouchInput
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
@@ -35,6 +36,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewer
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurScorer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -296,6 +298,7 @@ class PhotoDeletionOutcomeUiTest {
                     viewModel = blurViewModel,
                     detailViewModel = viewModel,
                     albumHref = "/Album/",
+                    sensitivity = flowOf(BlurSensitivity.MEDIUM),
                     onNavigateBack = { navigatedBack++ },
                 )
             }

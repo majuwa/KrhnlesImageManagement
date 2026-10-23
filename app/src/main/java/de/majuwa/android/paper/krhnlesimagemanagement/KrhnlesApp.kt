@@ -18,9 +18,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -32,6 +34,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
@@ -264,10 +267,13 @@ private fun KrhnlesNavigation(
             ) { backStack ->
                 // Scan state is scoped to this review entry and discarded when it is left.
                 val vm: BlurViewModel = viewModel()
+                val appContext = LocalContext.current.applicationContext
+                val blurSensitivity = remember(appContext) { CredentialStore(appContext).blurSensitivity }
                 BlurReviewScreen(
                     viewModel = vm,
                     detailViewModel = sharedAlbumDetailViewModel(navController, backStack),
                     albumHref = backStack.arguments?.getString("href") ?: "",
+                    sensitivity = blurSensitivity,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }

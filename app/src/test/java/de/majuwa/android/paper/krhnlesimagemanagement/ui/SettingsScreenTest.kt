@@ -1,22 +1,28 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui
 
 import android.app.Application
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -89,6 +95,80 @@ class SettingsScreenTest {
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
         composeTestRule.onNodeWithText("Test Connection").performScrollTo().performClick()
+    }
+
+    // ── Blur sensitivity (issue #20 / #39) ───────────────────────────────────
+
+    private fun setSettingsContent(viewModel: SettingsViewModel) {
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme {
+                SettingsScreen(viewModel = viewModel, onNavigateBack = {})
+            }
+        }
+        composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
+    }
+
+    private fun stateDescription() =
+        composeTestRule
+            .onNodeWithTag("blurSensitivitySlider")
+            .fetchSemanticsNode()
+            .config[SemanticsProperties.StateDescription]
+
+    @Test
+    fun `blur sensitivity is one accessibility node announcing title and level once`() {
+        setSettingsContent(createLoggedInViewModel())
+
+        composeTestRule.onNodeWithTag("blurSensitivitySlider").performScrollTo().assertIsDisplayed()
+        val config = composeTestRule.onNodeWithTag("blurSensitivitySlider").fetchSemanticsNode().config
+        assertEquals("Medium", config[SemanticsProperties.StateDescription])
+        assertEquals(listOf("Blur sensitivity"), config[SemanticsProperties.ContentDescription])
+        // The visible title / level texts are not separate nodes: nothing else announces them.
+        composeTestRule.onAllNodesWithText("Blur sensitivity").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Medium").assertCountEquals(0)
+    }
+
+    @Test
+    fun `setting the blur slider persists each new level once and announces it`() {
+        val store = FakeCredentialRepository(WebDavConfig("https://cloud.example.com/dav/", "u", "p", "Photos"))
+        setSettingsContent(
+            SettingsViewModel(
+                application = RuntimeEnvironment.getApplication() as Application,
+                credentialStore = store,
+            ),
+        )
+        val slider = composeTestRule.onNodeWithTag("blurSensitivitySlider").performScrollTo()
+
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(2f) }
+        composeTestRule.waitUntil { store.blurSensitivityValue() == BlurSensitivity.HIGH }
+        composeTestRule.waitForIdle()
+        assertEquals("High", stateDescription())
+
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(0f) }
+        composeTestRule.waitUntil { store.blurSensitivityValue() == BlurSensitivity.LOW }
+        composeTestRule.waitForIdle()
+        assertEquals("Low", stateDescription())
+        assertEquals("exactly one save per new level", 2, store.blurSaveCount)
+
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(0f) }
+        composeTestRule.waitForIdle()
+        assertEquals("re-setting the current level does not save", 2, store.blurSaveCount)
+    }
+
+    @Test
+    fun `blur slider shows the persisted level`() {
+        val store =
+            FakeCredentialRepository(
+                WebDavConfig("https://cloud.example.com/dav/", "u", "p", "Photos"),
+                initialBlurSensitivity = BlurSensitivity.LOW,
+            )
+        setSettingsContent(
+            SettingsViewModel(
+                application = RuntimeEnvironment.getApplication() as Application,
+                credentialStore = store,
+            ),
+        )
+        composeTestRule.onNodeWithTag("blurSensitivitySlider").performScrollTo()
+        assertEquals("Low", stateDescription())
     }
 
     // ── Connection test result (issue #22 / #41) ─────────────────────────────

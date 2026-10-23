@@ -4,20 +4,24 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySource
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurAnalyzer
-import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurDetector
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurScorer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface BlurState {
     data object Idle : BlurState
@@ -45,8 +49,9 @@ sealed interface BlurState {
  * Blur review: scans the photos of an album for blurry images. Scoped to the blur review
  * back-stack entry, so the scan stops and its state is discarded when the review is left.
  * The album's photos, thumbnail URLs and repository come from [AlbumDetailViewModel] (passed per
- * call); deletions run through its [PhotoDeletionLauncher]. [blurScorerFactory] creates one
- * scorer per scan (closed afterwards); scoring runs on [analysisDispatcher].
+ * call), as is the [BlurSensitivity] source (read once per scan); deletions run through its
+ * [PhotoDeletionLauncher]. [blurScorerFactory] creates one scorer per scan (closed afterwards);
+ * scoring runs on [analysisDispatcher].
  */
 class BlurViewModel
     @JvmOverloads
@@ -70,9 +75,10 @@ class BlurViewModel
             photos: List<RemotePhoto>,
             thumbnailUrls: Map<String, String>,
             repositories: AlbumsRepositorySource,
+            sensitivity: Flow<BlurSensitivity>,
         ) {
             if (_blurState.value != BlurState.Idle) return
-            startScan(photos, thumbnailUrls, repositories)
+            startScan(photos, thumbnailUrls, repositories, sensitivity)
         }
 
         /**
@@ -84,15 +90,17 @@ class BlurViewModel
             photos: List<RemotePhoto>,
             thumbnailUrls: Map<String, String>,
             repositories: AlbumsRepositorySource,
+            sensitivity: Flow<BlurSensitivity>,
         ) {
             if (_blurState.value !is BlurState.Error || photos.isEmpty()) return
-            startScan(photos, thumbnailUrls, repositories)
+            startScan(photos, thumbnailUrls, repositories, sensitivity)
         }
 
         private fun startScan(
             photos: List<RemotePhoto>,
             thumbnailUrls: Map<String, String>,
             repositories: AlbumsRepositorySource,
+            sensitivitySource: Flow<BlurSensitivity>,
         ) {
             scanJob?.cancel()
             if (photos.isEmpty()) {
@@ -102,6 +110,8 @@ class BlurViewModel
             _blurState.value = BlurState.Scanning(0, photos.size)
             scanJob =
                 viewModelScope.launch {
+                    // Read after Scanning is published; a later change only affects the next scan.
+                    val sensitivity = readSensitivity(sensitivitySource)
                     val outcome =
                         scanAlbumPhotos(
                             photos = photos,
@@ -118,7 +128,7 @@ class BlurViewModel
                             }
 
                             is PhotoScanOutcome.Completed -> {
-                                val blurryScores = outcome.results.filterValues { it < BlurDetector.DEFAULT_THRESHOLD }
+                                val blurryScores = outcome.results.filterValues(sensitivity::isBlurry)
                                 val blurry = photos.filter { it.href in blurryScores }
                                 if (blurry.isEmpty()) BlurState.NoneFound else BlurState.Found(blurry, blurryScores)
                             }
@@ -156,6 +166,19 @@ class BlurViewModel
         fun resetBlurState() {
             scanJob?.cancel()
             _blurState.value = BlurState.Idle
+        }
+
+        /** The current level; [BlurSensitivity.DEFAULT] on timeout or failure (throws only on cancellation). */
+        private suspend fun readSensitivity(source: Flow<BlurSensitivity>): BlurSensitivity =
+            runCatching { withTimeoutOrNull(SENSITIVITY_TIMEOUT_MS) { source.first() } }
+                .onFailure {
+                    // Our own cancellation must propagate; a CancellationException thrown by the source
+                    // while this job is still active is just a failed read.
+                    currentCoroutineContext().ensureActive()
+                }.getOrNull() ?: BlurSensitivity.DEFAULT
+
+        private companion object {
+            const val SENSITIVITY_TIMEOUT_MS = 3_000L
         }
 
         private class ScorerAnalyzer(

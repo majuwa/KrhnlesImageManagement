@@ -6,6 +6,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveExcepti
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -507,6 +508,72 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `blur sensitivity defaults to Medium and exposes the persisted level`() =
+        runTest {
+            assertEquals(BlurSensitivity.MEDIUM, viewModel.uiState.value.blurSensitivity)
+
+            fakeCredentials.saveBlurSensitivity(BlurSensitivity.LOW)
+            advanceUntilIdle()
+
+            assertEquals(BlurSensitivity.LOW, viewModel.uiState.value.blurSensitivity)
+        }
+
+    @Test
+    fun `setBlurSensitivity shows the level at once and persists it`() =
+        runTest {
+            viewModel.setBlurSensitivity(BlurSensitivity.HIGH)
+            assertEquals(BlurSensitivity.HIGH, viewModel.uiState.value.blurSensitivity)
+            advanceUntilIdle()
+
+            assertEquals(BlurSensitivity.HIGH, fakeCredentials.blurSensitivityValue())
+        }
+
+    @Test
+    fun `a failed blur sensitivity save restores the persisted level and reports the failure`() =
+        runTest {
+            fakeCredentials.blurSaveFailure = IOException("disk full")
+
+            viewModel.setBlurSensitivity(BlurSensitivity.HIGH)
+            assertEquals(BlurSensitivity.HIGH, viewModel.uiState.value.blurSensitivity)
+            advanceUntilIdle()
+
+            assertEquals(BlurSensitivity.MEDIUM, viewModel.uiState.value.blurSensitivity)
+            assertTrue(viewModel.uiState.value.blurSensitivitySaveFailed)
+
+            fakeCredentials.blurSaveFailure = null
+            viewModel.setBlurSensitivity(BlurSensitivity.LOW)
+            advanceUntilIdle()
+            assertEquals(BlurSensitivity.LOW, viewModel.uiState.value.blurSensitivity)
+            assertFalse(viewModel.uiState.value.blurSensitivitySaveFailed)
+        }
+
+    @Test
+    fun `a stored blur level arriving while a save is pending does not revert the optimistic value`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            fakeCredentials.blurSaveGate = gate
+
+            viewModel.setBlurSensitivity(BlurSensitivity.HIGH)
+            advanceUntilIdle()
+            fakeCredentials.emitStoredBlurSensitivity(BlurSensitivity.LOW)
+            advanceUntilIdle()
+            assertEquals(BlurSensitivity.HIGH, viewModel.uiState.value.blurSensitivity)
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(BlurSensitivity.HIGH, viewModel.uiState.value.blurSensitivity)
+            assertFalse(viewModel.uiState.value.blurSensitivitySaveFailed)
+
+            fakeCredentials.emitStoredBlurSensitivity(BlurSensitivity.MEDIUM)
+            advanceUntilIdle()
+            assertEquals(
+                "collector is live again after the save",
+                BlurSensitivity.MEDIUM,
+                viewModel.uiState.value.blurSensitivity,
+            )
+        }
+
+    @Test
     fun `wifiOnly defaults to false`() =
         runTest {
             advanceUntilIdle()
@@ -685,6 +752,8 @@ class SettingsViewModelTest {
                 emit(false)
             }
 
+        override val blurSensitivity: Flow<BlurSensitivity> = flow { emit(BlurSensitivity.MEDIUM) }
+
         override val isConfigured: Flow<Boolean> =
             flow {
                 emit(false)
@@ -710,6 +779,8 @@ class SettingsViewModelTest {
         override suspend fun saveWifiOnly(wifiOnly: Boolean) = Unit
 
         override suspend fun saveAutoDateFolders(enabled: Boolean) = Unit
+
+        override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) = Unit
 
         override suspend fun clear() = Unit
     }

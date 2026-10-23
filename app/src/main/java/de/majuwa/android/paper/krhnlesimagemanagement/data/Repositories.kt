@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.graphics.Bitmap
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
@@ -18,6 +19,9 @@ interface CredentialRepository {
     val webDavConfig: Flow<WebDavConfig>
     val wifiOnly: Flow<Boolean>
 
+    /** Chosen blur sensitivity; Medium while unset or when the stored value is unreadable. */
+    val blurSensitivity: Flow<BlurSensitivity>
+
     fun password(): String?
 
     fun isLoggedIn(): Boolean
@@ -34,6 +38,8 @@ interface CredentialRepository {
     suspend fun saveWifiOnly(wifiOnly: Boolean)
 
     suspend fun saveAutoDateFolders(enabled: Boolean)
+
+    suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity)
 
     suspend fun clear()
 }

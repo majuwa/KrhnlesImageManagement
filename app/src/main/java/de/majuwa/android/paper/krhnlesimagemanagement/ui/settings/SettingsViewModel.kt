@@ -13,6 +13,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -24,10 +25,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.cancellation.CancellationException
 
 data class SettingsUiState(
     val autoDateFoldersEnabled: Boolean = false,
+    val blurSensitivity: BlurSensitivity = BlurSensitivity.DEFAULT,
+    val blurSensitivitySaveFailed: Boolean = false,
     val serverUrl: String = "",
     val username: String = "",
     val webDavUrl: String = "",
@@ -51,6 +55,7 @@ data class SettingsUiState(
 )
 
 private const val TAG = "SettingsViewModel"
+private const val BLUR_RESTORE_TIMEOUT_MS = 3_000L
 
 class SettingsViewModel
     @JvmOverloads
@@ -68,6 +73,8 @@ class SettingsViewModel
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+        private var pendingBlurSaves = 0
 
         private val _openBrowserEvent = MutableStateFlow<String?>(null)
         val openBrowserEvent: StateFlow<String?> = _openBrowserEvent.asStateFlow()
@@ -103,6 +110,12 @@ class SettingsViewModel
                 }
             }
             viewModelScope.launch {
+                credentialStore.blurSensitivity.collect { level ->
+                    // While saves are pending the optimistic value is newer than the stored one.
+                    if (pendingBlurSaves == 0) _uiState.update { it.copy(blurSensitivity = level) }
+                }
+            }
+            viewModelScope.launch {
                 credentialStore.autoDateFoldersEnabled.collect { enabled ->
                     _uiState.update { it.copy(autoDateFoldersEnabled = enabled) }
                 }
@@ -126,6 +139,41 @@ class SettingsViewModel
         fun setWifiOnly(enabled: Boolean) {
             viewModelScope.launch {
                 credentialStore.saveWifiOnly(enabled)
+            }
+        }
+
+        /**
+         * Applies to the next blur scan only; the level is shown immediately and persisted in the
+         * background. On failure the persisted level is restored and [SettingsUiState.blurSensitivitySaveFailed]
+         * is set. Main-thread only: [pendingBlurSaves] makes the collector ignore (older) stored values while
+         * a save is in flight, so a fast drag does not flicker back.
+         */
+        fun setBlurSensitivity(level: BlurSensitivity) {
+            _uiState.update { it.copy(blurSensitivity = level, blurSensitivitySaveFailed = false) }
+            pendingBlurSaves++
+            viewModelScope.launch {
+                var failed = false
+                try {
+                    runCatching { credentialStore.saveBlurSensitivity(level) }
+                        .onFailure {
+                            if (it is CancellationException) throw it
+                            Log.w(TAG, "Saving blur sensitivity failed: ${it.javaClass.simpleName}")
+                            failed = true
+                        }
+                } finally {
+                    pendingBlurSaves--
+                }
+                if (failed && pendingBlurSaves == 0) restorePersistedBlurSensitivity()
+            }
+        }
+
+        private suspend fun restorePersistedBlurSensitivity() {
+            val persisted =
+                runCatching { withTimeoutOrNull(BLUR_RESTORE_TIMEOUT_MS) { credentialStore.blurSensitivity.first() } }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .getOrNull()
+            _uiState.update {
+                it.copy(blurSensitivity = persisted ?: it.blurSensitivity, blurSensitivitySaveFailed = true)
             }
         }
 
@@ -287,11 +335,11 @@ class SettingsViewModel
                 }
                 false
             }
-
-        private fun normalizeUrl(url: String): String {
-            val trimmed = url.trim()
-            return if (trimmed.isNotBlank() && "://" !in trimmed) "https://$trimmed" else trimmed
-        }
-
-        private fun isExplicitHttp(url: String): Boolean = url.trim().lowercase().startsWith("http://")
     }
+
+private fun normalizeUrl(url: String): String {
+    val trimmed = url.trim()
+    return if (trimmed.isNotBlank() && "://" !in trimmed) "https://$trimmed" else trimmed
+}
+
+private fun isExplicitHttp(url: String): Boolean = url.trim().lowercase().startsWith("http://")

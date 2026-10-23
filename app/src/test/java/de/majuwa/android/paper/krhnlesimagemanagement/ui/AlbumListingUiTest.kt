@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithText
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
@@ -26,6 +27,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewMo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -149,6 +151,7 @@ class AlbumListingUiTest {
                     viewModel = blurViewModel,
                     detailViewModel = detailViewModel,
                     albumHref = "/Album/",
+                    sensitivity = flowOf(BlurSensitivity.MEDIUM),
                     onNavigateBack = {},
                 )
             }
@@ -169,6 +172,7 @@ class AlbumListingUiTest {
                     viewModel = blurViewModel,
                     detailViewModel = detailViewModel,
                     albumHref = "/Album/",
+                    sensitivity = flowOf(BlurSensitivity.MEDIUM),
                     onNavigateBack = {},
                 )
             }

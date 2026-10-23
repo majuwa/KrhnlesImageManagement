@@ -64,6 +64,7 @@ In Settings, "Test Connection" checks the stored server and credentials (it give
 ### Upload Options
 - **Base upload folder:** Choose the remote root folder that all uploads go into.
 - **Auto date folders:** Optional toggle in Settings that skips the occasion dialog and uploads into `YYYY/MM-Month` folders such as `Photos/2026/05-May/`. Selections that span multiple months are queued as separate background uploads automatically.
+- **Blur sensitivity:** Slider in Settings (Low / Medium / High, default Medium) that decides how aggressively the blur review flags photos: High flags more photos, Low only clearly blurry ones. A changed level applies to the next blur scan only; results already shown or being computed are not updated. The setting is stored with the other preferences and, like them, is not restored on a new device and is reset to Medium when you log out. The thresholds are heuristics and may need tuning for your camera.
 
 ### Usage
 1. Grant photo access when prompted

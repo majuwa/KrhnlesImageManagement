@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,12 +40,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,6 +174,14 @@ private fun LoggedInContent(
 
     Spacer(modifier = Modifier.height(16.dp))
 
+    BlurSensitivitySetting(
+        level = uiState.blurSensitivity,
+        saveFailed = uiState.blurSensitivitySaveFailed,
+        onLevelChange = viewModel::setBlurSensitivity,
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
     OutlinedButton(
         onClick = { viewModel.testConnection() },
         enabled = !uiState.isTesting,
@@ -235,6 +251,74 @@ private fun AutoDateFoldersSetting(
         }
     }
 }
+
+/**
+ * Three-level blur sensitivity slider. The thumb is derived from the hoisted [level]; every change of
+ * the rounded value is reported at once (also keyboard / TalkBack steps). The slider is the only
+ * accessibility node of the control: the visible title and level text are hidden from semantics and
+ * folded into its content description and state description, so TalkBack reads "Blur sensitivity,
+ * Medium" once instead of a percentage plus duplicate texts. The hint stays a separate text.
+ */
+@Composable
+private fun BlurSensitivitySetting(
+    level: BlurSensitivity,
+    saveFailed: Boolean,
+    onLevelChange: (BlurSensitivity) -> Unit,
+) {
+    val levels = BlurSensitivity.entries
+    val label = blurSensitivityLabel(level)
+    val title = stringResource(R.string.label_blur_sensitivity)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(text = title, style = MaterialTheme.typography.titleSmall)
+                Text(text = label, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.hint_blur_sensitivity),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = level.ordinal.toFloat(),
+                onValueChange = { value ->
+                    val selected = levels[value.roundToInt().coerceIn(0, levels.lastIndex)]
+                    if (selected != level) onLevelChange(selected)
+                },
+                valueRange = 0f..levels.lastIndex.toFloat(),
+                steps = levels.size - 2,
+                modifier =
+                    Modifier
+                        .testTag("blurSensitivitySlider")
+                        .semantics {
+                            contentDescription = title
+                            stateDescription = label
+                        },
+            )
+            if (saveFailed) {
+                Text(
+                    text = stringResource(R.string.error_blur_sensitivity_save_failed),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun blurSensitivityLabel(level: BlurSensitivity): String =
+    stringResource(
+        when (level) {
+            BlurSensitivity.LOW -> R.string.blur_sensitivity_low
+            BlurSensitivity.MEDIUM -> R.string.blur_sensitivity_medium
+            BlurSensitivity.HIGH -> R.string.blur_sensitivity_high
+        },
+    )
 
 @Composable
 private fun LoginContent(

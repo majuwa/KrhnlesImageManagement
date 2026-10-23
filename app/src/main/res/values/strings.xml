@@ -119,6 +119,12 @@
     <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
     <string name="label_auto_date_folders">Auto date folders</string>
     <string name="hint_auto_date_folders">Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo\'s capture date (for example 2026/05-May).</string>
+    <string name="label_blur_sensitivity">Blur sensitivity</string>
+    <string name="hint_blur_sensitivity">High flags more photos as blurry, Low only the clearly blurry ones. Applies to the next blur scan.</string>
+    <string name="error_blur_sensitivity_save_failed">Could not save the blur sensitivity. The previous level was restored.</string>
+    <string name="blur_sensitivity_low">Low</string>
+    <string name="blur_sensitivity_medium">Medium</string>
+    <string name="blur_sensitivity_high">High</string>
 
     <!-- Settings screen — login -->
     <string name="title_connect_nextcloud">Connect to Nextcloud</string>

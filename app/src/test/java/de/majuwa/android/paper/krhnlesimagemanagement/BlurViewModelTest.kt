@@ -13,6 +13,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnava
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.RecordingPhotoDeletionLauncher
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
@@ -23,6 +24,10 @@ import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurScorer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -83,11 +88,15 @@ class BlurViewModelTest {
             analysisDispatcher = testDispatcher,
         )
 
+    /** The persisted level as handed to the review (changed by tests like the Settings screen would). */
+    private val sensitivity = MutableStateFlow(BlurSensitivity.MEDIUM)
+
     private fun BlurViewModel.scan(
         input: List<RemotePhoto> = photos,
         thumbnailUrls: Map<String, String> = emptyMap(),
         source: AlbumsRepositorySource = repositories,
-    ) = findBlurryPhotos(input, thumbnailUrls, source)
+        level: Flow<BlurSensitivity> = sensitivity,
+    ) = findBlurryPhotos(input, thumbnailUrls, source, level)
 
     @Before
     fun setUp() {
@@ -103,6 +112,120 @@ class BlurViewModelTest {
     fun tearDown() {
         Dispatchers.resetMain()
     }
+
+    private val photoC = RemotePhoto("c.jpg", "/Album/c.jpg", "3", "image/jpeg")
+
+    private fun scanThreePhotos(level: BlurSensitivity): BlurState {
+        scores = listOf(1_000.0, 2_000.0, 4_000.0)
+        sensitivity.value = level
+        viewModel.scan(listOf(photoA, photoB, photoC))
+        testDispatcher.scheduler.advanceUntilIdle()
+        return viewModel.blurState.value
+    }
+
+    @Test
+    fun `the same scores give a different blurry set per sensitivity level`() {
+        assertEquals(listOf(photoA), (scanThreePhotos(BlurSensitivity.LOW) as BlurState.Found).blurryPhotos)
+        viewModel.resetBlurState()
+        assertEquals(
+            listOf(photoA, photoB),
+            (scanThreePhotos(BlurSensitivity.MEDIUM) as BlurState.Found).blurryPhotos,
+        )
+        viewModel.resetBlurState()
+        assertEquals(
+            listOf(photoA, photoB, photoC),
+            (scanThreePhotos(BlurSensitivity.HIGH) as BlurState.Found).blurryPhotos,
+        )
+    }
+
+    @Test
+    fun `a level change during a scan does not affect it, the next scan uses the new level`() =
+        runTest(testDispatcher) {
+            scores = listOf(2_000.0, 4_000.0)
+            val gate = CompletableDeferred<Unit>()
+            fakeRepo.onDownloadBitmap = { gate.await() }
+            viewModel.scan()
+            runCurrent()
+
+            sensitivity.value = BlurSensitivity.HIGH
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(
+                "the running scan keeps MEDIUM",
+                BlurState.Found(listOf(photoA), mapOf(photoA.href to 2_000.0)),
+                viewModel.blurState.value,
+            )
+
+            viewModel.scan()
+            assertTrue("shown results are not rescanned", viewModel.blurState.value is BlurState.Found)
+            viewModel.resetBlurState()
+            viewModel.scan()
+            advanceUntilIdle()
+            assertEquals(listOf(photoA, photoB), (viewModel.blurState.value as BlurState.Found).blurryPhotos)
+        }
+
+    @Test
+    fun `Retry reads the level at its start`() =
+        runTest(testDispatcher) {
+            scores = listOf(2_000.0, 4_000.0)
+            val loggedOut = AlbumsRepositoryProvider(FakeCredentialRepository(WebDavConfig())) { fakeRepo }
+            viewModel.scan(source = loggedOut)
+            advanceUntilIdle()
+            assertTrue(viewModel.blurState.value is BlurState.Error)
+
+            sensitivity.value = BlurSensitivity.LOW
+            viewModel.retryFindBlurryPhotos(photos, emptyMap(), repositories, sensitivity)
+            advanceUntilIdle()
+
+            assertEquals(BlurState.NoneFound, viewModel.blurState.value)
+        }
+
+    @Test
+    fun `a level source that never answers falls back to Medium after the timeout`() =
+        runTest(testDispatcher) {
+            scores = listOf(2_000.0, 4_000.0)
+            viewModel.scan(level = flow { awaitCancellation() })
+            runCurrent()
+            assertEquals(BlurState.Scanning(0, 2), viewModel.blurState.value)
+
+            advanceUntilIdle()
+
+            assertEquals(listOf(photoA), (viewModel.blurState.value as BlurState.Found).blurryPhotos)
+        }
+
+    @Test
+    fun `a level source throwing CancellationException while the scan is active falls back to Medium`() =
+        runTest(testDispatcher) {
+            scores = listOf(2_000.0, 4_000.0)
+            viewModel.scan(level = flow { throw kotlinx.coroutines.CancellationException("source gave up") })
+            advanceUntilIdle()
+
+            assertEquals(listOf(photoA), (viewModel.blurState.value as BlurState.Found).blurryPhotos)
+        }
+
+    @Test
+    fun `a failing level source falls back to Medium`() =
+        runTest(testDispatcher) {
+            scores = listOf(2_000.0, 4_000.0)
+            viewModel.scan(level = flow { throw java.io.IOException("disk") })
+            advanceUntilIdle()
+
+            assertEquals(listOf(photoA), (viewModel.blurState.value as BlurState.Found).blurryPhotos)
+        }
+
+    @Test
+    fun `a scan request is ignored while not Idle regardless of the level`() =
+        runTest(testDispatcher) {
+            viewModel.scan()
+            advanceUntilIdle()
+            val before = viewModel.blurState.value
+            sensitivity.value = BlurSensitivity.HIGH
+
+            viewModel.scan()
+            advanceUntilIdle()
+
+            assertEquals(before, viewModel.blurState.value)
+        }
 
     @Test
     fun `photos scoring below the threshold are reported as blurry with their scores`() =
@@ -255,7 +378,7 @@ class BlurViewModelTest {
             viewModel.scan()
             assertEquals(BlurState.Error(AlbumsError.NotConfigured), viewModel.blurState.value)
 
-            viewModel.retryFindBlurryPhotos(photos, emptyMap(), repositories)
+            viewModel.retryFindBlurryPhotos(photos, emptyMap(), repositories, sensitivity)
             advanceUntilIdle()
             assertTrue(viewModel.blurState.value is BlurState.Found)
         }
@@ -263,7 +386,7 @@ class BlurViewModelTest {
     @Test
     fun `Retry is ignored unless the scan failed`() =
         runTest(testDispatcher) {
-            viewModel.retryFindBlurryPhotos(photos, emptyMap(), repositories)
+            viewModel.retryFindBlurryPhotos(photos, emptyMap(), repositories, sensitivity)
             advanceUntilIdle()
 
             assertEquals(BlurState.Idle, viewModel.blurState.value)
@@ -434,7 +557,7 @@ class BlurViewModelTest {
             viewModel.scan(source = AlbumsRepositorySource { Result.failure(IllegalStateException("x")) })
             advanceUntilIdle()
 
-            viewModel.retryFindBlurryPhotos(emptyList(), emptyMap(), repositories)
+            viewModel.retryFindBlurryPhotos(emptyList(), emptyMap(), repositories, sensitivity)
             advanceUntilIdle()
 
             assertEquals(BlurState.Error(AlbumsError.Unknown), viewModel.blurState.value)

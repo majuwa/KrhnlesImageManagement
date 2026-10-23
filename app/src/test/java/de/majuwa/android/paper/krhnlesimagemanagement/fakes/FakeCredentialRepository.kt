@@ -2,8 +2,10 @@ package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -13,11 +15,15 @@ class FakeCredentialRepository(
     initialConfig: WebDavConfig = WebDavConfig(),
     initialWifiOnly: Boolean = false,
     initialAutoDateFoldersEnabled: Boolean = false,
+    initialBlurSensitivity: BlurSensitivity = BlurSensitivity.MEDIUM,
 ) : CredentialRepository {
     private val configState = MutableStateFlow(initialConfig)
     private val wifiOnlyState = MutableStateFlow(initialWifiOnly)
     private val autoDateFoldersState = MutableStateFlow(initialAutoDateFoldersEnabled)
 
+    private val blurSensitivityState = MutableStateFlow(initialBlurSensitivity)
+
+    override val blurSensitivity: Flow<BlurSensitivity> = blurSensitivityState
     override val autoDateFoldersEnabled: Flow<Boolean> = autoDateFoldersState
     override val webDavConfig: Flow<WebDavConfig> = configState
 
@@ -71,10 +77,36 @@ class FakeCredentialRepository(
         autoDateFoldersState.value = enabled
     }
 
+    /** Number of [saveBlurSensitivity] calls (also failed ones). */
+    var blurSaveCount: Int = 0
+        private set
+
+    /** When non-null, [saveBlurSensitivity] throws this instead of storing anything. */
+    var blurSaveFailure: Throwable? = null
+
+    /** When non-null, [saveBlurSensitivity] suspends until it completes (simulates a slow disk write). */
+    var blurSaveGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) {
+        blurSaveCount++
+        blurSaveGate?.await()
+        blurSaveFailure?.let { throw it }
+        blurSensitivityState.value = sensitivity
+    }
+
+    /** Test helper: emits a stored level without counting as a save (e.g. an older persisted value). */
+    fun emitStoredBlurSensitivity(sensitivity: BlurSensitivity) {
+        blurSensitivityState.value = sensitivity
+    }
+
+    /** Test helper to read the current blur sensitivity synchronously. */
+    fun blurSensitivityValue(): BlurSensitivity = blurSensitivityState.value
+
     override suspend fun clear() {
         configState.value = WebDavConfig()
         credentialStateOverride.value = null
         wifiOnlyState.value = false
         autoDateFoldersState.value = false
+        blurSensitivityState.value = BlurSensitivity.MEDIUM
     }
 }

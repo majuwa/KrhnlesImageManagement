@@ -58,8 +58,10 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
+import kotlinx.coroutines.flow.Flow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +69,7 @@ fun BlurReviewScreen(
     viewModel: BlurViewModel,
     detailViewModel: AlbumDetailViewModel,
     albumHref: String,
+    sensitivity: Flow<BlurSensitivity>,
     onNavigateBack: () -> Unit,
 ) {
     val blurState by viewModel.blurState.collectAsStateWithLifecycle()
@@ -95,7 +98,7 @@ fun BlurReviewScreen(
             isDeleting = isDeleting,
             onAlbumUnavailable = viewModel::cancelScan,
             onAlbumReady = { album ->
-                viewModel.findBlurryPhotos(album.photos, album.thumbnailUrls, detailViewModel.repositories)
+                viewModel.findBlurryPhotos(album.photos, album.thumbnailUrls, detailViewModel.repositories, sensitivity)
             },
         )
 
@@ -191,6 +194,7 @@ fun BlurReviewScreen(
                                     detailState.photos,
                                     detailState.thumbnailUrls,
                                     detailViewModel.repositories,
+                                    sensitivity,
                                 )
                             } else {
                                 detailViewModel.reload()

@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -11,12 +12,14 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -27,7 +30,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal const val CREDENTIALS_DATASTORE_NAME = "credentials"
 
-private val Context.credentialDataStore: DataStore<Preferences> by preferencesDataStore(
+@VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+internal val Context.credentialDataStore: DataStore<Preferences> by preferencesDataStore(
     name = CREDENTIALS_DATASTORE_NAME,
 )
 
@@ -62,6 +66,7 @@ class CredentialStore internal constructor(
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
         val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only")
+        val KEY_BLUR_SENSITIVITY = stringPreferencesKey("blur_sensitivity")
 
         /**
          * Bumped in every DataStore edit that accompanies a change of the encrypted prefs, so that the
@@ -77,12 +82,30 @@ class CredentialStore internal constructor(
     /** Last failure logged per field; a failure is logged once until the field's outcome changes. */
     private val lastLoggedFailure = ConcurrentHashMap<String, DecryptResult.Failure>()
 
+    /**
+     * Only the DataStore values a [CredentialSnapshot] depends on. Mapping to this and de-duplicating
+     * *before* decrypting keeps unrelated preference writes (blur sensitivity, wifi only, auto date
+     * folders) from re-emitting the snapshot and re-running Keystore decrypts.
+     */
+    private data class SnapshotInputs(
+        val serverUrl: String?,
+        val baseFolder: String,
+        val credentialsVersion: Long,
+    )
+
     private val snapshot: Flow<CredentialSnapshot> =
         context.credentialDataStore.data
             .map { prefs ->
-                CredentialSnapshot(
+                SnapshotInputs(
                     serverUrl = prefs[KEY_SERVER_URL],
                     baseFolder = prefs[KEY_BASE_FOLDER] ?: "",
+                    credentialsVersion = prefs[KEY_CREDENTIALS_VERSION] ?: 0L,
+                )
+            }.distinctUntilChanged()
+            .map { inputs ->
+                CredentialSnapshot(
+                    serverUrl = inputs.serverUrl,
+                    baseFolder = inputs.baseFolder,
                     username = decryptField(FIELD_USERNAME),
                     password = decryptField(FIELD_PASSWORD),
                 )
@@ -96,6 +119,15 @@ class CredentialStore internal constructor(
     val baseFolder: Flow<String> = context.credentialDataStore.data.map { it[KEY_BASE_FOLDER] ?: "" }
 
     override val wifiOnly: Flow<Boolean> = context.credentialDataStore.data.map { it[KEY_WIFI_ONLY] ?: false }
+
+    /**
+     * Read through `asMap()` so a persisted value of another type (restored/edited file) yields the default
+     * instead of a `ClassCastException` from `prefs[KEY]`.
+     */
+    override val blurSensitivity: Flow<BlurSensitivity> =
+        context.credentialDataStore.data.map {
+            BlurSensitivity.fromStored(it.asMap()[KEY_BLUR_SENSITIVITY] as? String)
+        }
 
     override val isConfigured: Flow<Boolean> =
         snapshot.map {
@@ -162,6 +194,10 @@ class CredentialStore internal constructor(
 
     override suspend fun saveWifiOnly(wifiOnly: Boolean) {
         context.credentialDataStore.edit { it[KEY_WIFI_ONLY] = wifiOnly }
+    }
+
+    override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) {
+        context.credentialDataStore.edit { it[KEY_BLUR_SENSITIVITY] = sensitivity.name }
     }
 
     override suspend fun saveAutoDateFolders(enabled: Boolean) {
