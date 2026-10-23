@@ -174,9 +174,21 @@ class UploadWorkerIntegrationTest {
     @Test
     fun completionNotification_usesDedicatedNotificationIcon() {
         val worker = buildWorker()
-        assertDedicatedIcon(worker.buildCompletionNotification(uploaded = 3, failed = 0))
         assertDedicatedIcon(
-            worker.buildCompletionNotification(uploaded = 2, failed = 1, retryQueueFilePath = "retry.json"),
+            worker.buildCompletionNotification(
+                uploaded = 3,
+                failed = 0,
+                retryQueueFilePath = null,
+                notificationTag = "tag-1",
+            ),
+        )
+        assertDedicatedIcon(
+            worker.buildCompletionNotification(
+                uploaded = 2,
+                failed = 1,
+                retryQueueFilePath = "retry.json",
+                notificationTag = "tag-2",
+            ),
         )
     }
 

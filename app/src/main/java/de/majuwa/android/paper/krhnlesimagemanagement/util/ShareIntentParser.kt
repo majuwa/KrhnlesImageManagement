@@ -11,11 +11,16 @@ import java.time.LocalDate
  * Extracts shared image [Uri]s from an [Intent] with [Intent.ACTION_SEND] or
  * [Intent.ACTION_SEND_MULTIPLE] and converts them into [Photo] instances.
  *
- * Returns an empty list when the intent is not a share intent or carries no image URIs.
+ * Only `content://` URIs of other apps are accepted ([isAllowedPhotoUri]); `file://` URIs and URIs
+ * of this app's own authorities ([ownPackage]) are dropped so a share cannot make the app read its
+ * private files.
+ *
+ * Returns an empty list when the intent is not a share intent or carries no usable image URIs.
  */
 fun parseSharedPhotos(
     intent: Intent,
     contentResolver: ContentResolver,
+    ownPackage: String,
 ): List<Photo> {
     val uris: List<Uri> =
         when (intent.action) {
@@ -34,7 +39,7 @@ fun parseSharedPhotos(
         }
 
     val today = LocalDate.now()
-    return uris.mapIndexed { index, uri ->
+    return uris.filter { isAllowedPhotoUri(it, ownPackage) }.mapIndexed { index, uri ->
         val meta = queryUriMetadata(contentResolver, uri)
         Photo(
             id = index.toLong(),

@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Uri
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -18,22 +20,52 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isAllowedPhotoUri
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidFolderPath
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.io.InputStream
 import java.util.UUID
 
-class UploadWorker(
+class UploadWorker internal constructor(
     context: Context,
     params: WorkerParameters,
+    private val credentialRepository: CredentialRepository,
+    private val clientFactory: (WebDavConfig) -> WebDavClient,
+    private val uploadedPhotos: UploadedPhotosRepositoryContract = UploadedPhotosStore(context.applicationContext),
+    private val uploadHistory: UploadHistoryRepository = UploadHistoryStore(context.applicationContext),
+    private val isActiveNetworkMetered: () -> Boolean = { isActiveNetworkMetered(context.applicationContext) },
 ) : CoroutineWorker(context, params) {
+    /** Used by WorkManager's default factory. */
+    constructor(context: Context, params: WorkerParameters) : this(
+        context,
+        params,
+        CredentialStore(context.applicationContext),
+        ::WebDavClient,
+    )
+
+    private data class QueueContent(
+        val folderName: String,
+        val photoIds: LongArray,
+        val uriStrings: Array<String>,
+        val mimeTypes: Array<String>,
+        val fileNames: Array<String>,
+    )
+
     private data class UploadFilesResult(
         val uploaded: Int,
         val failedIndices: List<Int>,
@@ -46,7 +78,19 @@ class UploadWorker(
         const val KEY_TOTAL = "total"
         const val KEY_UPLOADED_COUNT = "uploaded_count"
         const val KEY_FAILED_COUNT = "failed_count"
+
+        private fun isActiveNetworkMetered(context: Context): Boolean =
+            context.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
+
+        /** Foreground / progress notification only; result notifications use [RESULT_NOTIFICATION_ID]. */
         const val NOTIFICATION_ID = 1001
+
+        /**
+         * Id of every result notification (success, partial, failure). Batches are told apart by the
+         * notification *tag* (the input queue file name), so ids never collide and never equal
+         * [NOTIFICATION_ID].
+         */
+        const val RESULT_NOTIFICATION_ID = 1002
         val NOTIFICATION_ICON = R.drawable.ic_notification_upload
         private const val CHANNEL_ID = "upload_channel"
         private const val REQUEST_CODE_RETRY = 2001
@@ -54,44 +98,67 @@ class UploadWorker(
     }
 
     override suspend fun doWork(): Result {
-        val queueFilePath = inputData.getString(KEY_QUEUE_FILE) ?: return Result.failure()
-        val queueFile = File(queueFilePath)
-        val queue = JSONObject(queueFile.readText())
-        val folderName = queue.getString("folderName")
-        val photosArray = queue.getJSONArray("photos")
-        val photoIds =
-            LongArray(photosArray.length()) {
-                // -1L is used as a sentinel for entries that pre-date this feature (no "id" field).
-                // Such entries still upload normally but are skipped when success IDs are recorded.
-                photosArray.getJSONObject(it).optLong("id", -1L)
+        val queueFile =
+            validQueueFile(applicationContext.filesDir, inputData.getString(KEY_QUEUE_FILE))
+                ?: return Result.failure()
+        val queue =
+            parseQueue(queueFile) ?: run {
+                queueFile.delete()
+                return Result.failure()
             }
-        val uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") }
-        val mimeTypes = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("mimeType") }
-        val fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") }
 
-        val credentialStore = CredentialStore(applicationContext)
-        val uploadHistoryStore = UploadHistoryStore(applicationContext)
-        val config = credentialStore.webDavConfig.first()
+        // The Wi-Fi-only setting may have been switched on after this work was enqueued (its
+        // constraint is fixed at enqueue time). Back off via WorkManager until an unmetered network
+        // is active; the queue file stays untouched meanwhile.
+        if (readWifiOnly(credentialRepository.wifiOnly) && isActiveNetworkMetered()) {
+            return Result.retry()
+        }
+
+        val config = credentialRepository.webDavConfig.first()
 
         if (!config.isValid) {
             queueFile.delete()
-            return Result.failure(
-                workDataOf("error" to "WebDAV not configured. Please check settings."),
+            createNotificationChannel()
+            showFailureNotification(
+                applicationContext.getString(
+                    R.string.notification_create_folder_failed,
+                    folderCreationErrorMessage(applicationContext.resources, FolderCreationError.NotConfigured),
+                ),
+                queueFile.name,
             )
+            return Result.failure()
         }
 
-        val remoteFolderPath = "${config.uploadPathPrefix}$folderName"
+        val remoteFolderPath = "${config.uploadPathPrefix}${queue.folderName}"
         return executeUpload(
             config = config,
             remoteFolderPath = remoteFolderPath,
-            occasionName = folderName,
-            photoIds = photoIds,
-            uriStrings = uriStrings,
-            mimeTypes = mimeTypes,
-            fileNames = fileNames,
-            uploadHistoryStore = uploadHistoryStore,
+            occasionName = queue.folderName,
+            queue = queue,
+            notificationTag = queueFile.name,
         ).also { queueFile.delete() }
     }
+
+    private fun parseQueue(queueFile: File): QueueContent? =
+        try {
+            val queue = JSONObject(queueFile.readText())
+            val photosArray = queue.getJSONArray("photos")
+            QueueContent(
+                folderName = queue.getString("folderName"),
+                // -1L is used as a sentinel for entries that pre-date this feature (no "id" field).
+                // Such entries still upload normally but are skipped when success IDs are recorded.
+                photoIds = LongArray(photosArray.length()) { photosArray.getJSONObject(it).optLong("id", -1L) },
+                uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") },
+                mimeTypes = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("mimeType") },
+                fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") },
+            )
+        } catch (e: JSONException) {
+            Log.w(TAG, "Malformed queue file: ${e.javaClass.simpleName}")
+            null
+        } catch (e: IOException) {
+            Log.w(TAG, "Unreadable queue file: ${e.javaClass.simpleName}")
+            null
+        }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
         createNotificationChannel()
@@ -102,21 +169,21 @@ class UploadWorker(
         config: WebDavConfig,
         remoteFolderPath: String,
         occasionName: String,
-        photoIds: LongArray,
-        uriStrings: Array<String>,
-        mimeTypes: Array<String>,
-        fileNames: Array<String>,
-        uploadHistoryStore: UploadHistoryStore,
+        queue: QueueContent,
+        notificationTag: String,
     ): Result {
-        val client = WebDavClient(config)
+        val photoIds = queue.photoIds
+        val uriStrings = queue.uriStrings
+        val mimeTypes = queue.mimeTypes
+        val fileNames = queue.fileNames
+        val client = clientFactory(config)
 
         createNotificationChannel()
         setForeground(buildForegroundInfo(0, uriStrings.size))
 
-        val createResult = client.createDirectory(remoteFolderPath)
-        if (createResult.isFailure) {
+        val folderError = createRemoteFolder(client, queue.folderName, remoteFolderPath)
+        if (folderError != null) {
             recordHistory(
-                uploadHistoryStore = uploadHistoryStore,
                 occasionName = occasionName,
                 photoCount = uriStrings.size,
                 failedCount = uriStrings.size,
@@ -124,18 +191,16 @@ class UploadWorker(
             showFailureNotification(
                 applicationContext.getString(
                     R.string.notification_create_folder_failed,
-                    createResult.exceptionOrNull()?.message ?: "",
+                    folderCreationErrorMessage(applicationContext.resources, folderError),
                 ),
+                notificationTag,
             )
-            return Result.failure(
-                workDataOf("error" to createResult.exceptionOrNull()?.message),
-            )
+            return Result.failure()
         }
 
         val result = uploadFiles(client, remoteFolderPath, photoIds, uriStrings, mimeTypes, fileNames)
         val failed = result.failedIndices.size
         recordHistory(
-            uploadHistoryStore = uploadHistoryStore,
             occasionName = occasionName,
             photoCount = uriStrings.size,
             failedCount = failed,
@@ -155,10 +220,10 @@ class UploadWorker(
                 null
             }
 
-        showCompletionNotification(result.uploaded, failed, retryQueueFilePath)
+        showCompletionNotification(result.uploaded, failed, retryQueueFilePath, notificationTag)
 
         if (result.uploadedIds.isNotEmpty()) {
-            UploadedPhotosStore(applicationContext).markAsUploaded(result.uploadedIds)
+            uploadedPhotos.markAsUploaded(result.uploadedIds)
         }
 
         return Result.success(
@@ -170,14 +235,13 @@ class UploadWorker(
     }
 
     private suspend fun recordHistory(
-        uploadHistoryStore: UploadHistoryStore,
         occasionName: String,
         photoCount: Int,
         failedCount: Int,
     ) {
         val now = System.currentTimeMillis()
         runCatching {
-            uploadHistoryStore.addEntry(
+            uploadHistory.addEntry(
                 UploadHistoryEntry(
                     id = now,
                     occasionName = occasionName,
@@ -187,7 +251,7 @@ class UploadWorker(
                 ),
             )
         }.onFailure { throwable ->
-            Log.w(TAG, "Failed to persist upload history entry", throwable)
+            Log.w(TAG, "Failed to persist upload history entry: ${throwable.javaClass.simpleName}")
         }
     }
 
@@ -204,19 +268,8 @@ class UploadWorker(
         val uploadedIds = mutableSetOf<Long>()
 
         for (i in uriStrings.indices) {
-            val uri = uriStrings[i].toUri()
-            val inputStream = applicationContext.contentResolver.openInputStream(uri)
-            if (inputStream == null) {
-                failedIndices.add(i)
-                continue
-            }
-
-            val uploadResult =
-                inputStream.use {
-                    client.uploadFile(remoteFolderPath, fileNames[i], mimeTypes[i], it)
-                }
-
-            if (uploadResult.isSuccess) {
+            val succeeded = uploadPhoto(client, remoteFolderPath, uriStrings[i], mimeTypes[i], fileNames[i])
+            if (succeeded) {
                 uploaded++
                 val photoId = photoIds.getOrElse(i) { -1L }
                 if (photoId >= 0L) {
@@ -237,6 +290,40 @@ class UploadWorker(
         }
 
         return UploadFilesResult(uploaded, failedIndices, uploadedIds)
+    }
+
+    private suspend fun uploadPhoto(
+        client: WebDavClient,
+        remoteFolderPath: String,
+        uriString: String,
+        mimeType: String,
+        fileName: String,
+    ): Boolean {
+        val inputStream = openPhoto(uriString.toUri()) ?: return false
+        return inputStream.use { client.uploadFile(remoteFolderPath, fileName, mimeType, it) }.isSuccess
+    }
+
+    /** Opens a photo; an unreadable one (revoked grant, deleted file) is a failed photo, not a crash. */
+    private fun openPhoto(uri: Uri): InputStream? {
+        if (!isAllowedPhotoUri(uri, applicationContext.packageName)) {
+            // Defence in depth: only foreign content:// URIs, never file:// or this app's own providers.
+            Log.w(TAG, "Photo URI rejected: unsupported scheme or own authority")
+            return null
+        }
+        return try {
+            applicationContext.contentResolver.openInputStream(uri)
+        } catch (e: SecurityException) {
+            logUnreadable(e)
+        } catch (e: FileNotFoundException) {
+            logUnreadable(e)
+        } catch (e: IllegalArgumentException) {
+            logUnreadable(e)
+        }
+    }
+
+    private fun logUnreadable(e: Exception): InputStream? {
+        Log.w(TAG, "Photo could not be opened: ${e.javaClass.simpleName}")
+        return null
     }
 
     private fun writeRetryQueueFile(
@@ -275,7 +362,7 @@ class UploadWorker(
             retryFile.writeText(queue.toString())
             retryFile
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to write retry queue file", e)
+            Log.w(TAG, "Failed to write retry queue file: ${e.javaClass.simpleName}")
             null
         }
 
@@ -316,15 +403,20 @@ class UploadWorker(
     private fun showCompletionNotification(
         uploaded: Int,
         failed: Int,
-        retryQueueFilePath: String? = null,
+        retryQueueFilePath: String?,
+        notificationTag: String,
     ) {
-        notifyIfPermitted(buildCompletionNotification(uploaded, failed, retryQueueFilePath))
+        notifyIfPermitted(
+            buildCompletionNotification(uploaded, failed, retryQueueFilePath, notificationTag),
+            notificationTag,
+        )
     }
 
     internal fun buildCompletionNotification(
         uploaded: Int,
         failed: Int,
-        retryQueueFilePath: String? = null,
+        retryQueueFilePath: String?,
+        notificationTag: String,
     ): Notification {
         val text =
             if (failed == 0) {
@@ -351,7 +443,10 @@ class UploadWorker(
             val retryIntent =
                 Intent(applicationContext, RetryUploadReceiver::class.java).apply {
                     putExtra(RetryUploadReceiver.EXTRA_QUEUE_FILE, retryQueueFilePath)
-                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_ID, NOTIFICATION_ID)
+                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_ID, RESULT_NOTIFICATION_ID)
+                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_TAG, notificationTag)
+                    // Unique data URI: PendingIntent identity ignores extras, so each retry file needs its own.
+                    data = "retry://${File(retryQueueFilePath).name}".toUri()
                 }
             val retryPendingIntent =
                 PendingIntent.getBroadcast(
@@ -368,8 +463,11 @@ class UploadWorker(
         return builder.build()
     }
 
-    private fun showFailureNotification(message: String) {
-        notifyIfPermitted(buildFailureNotification(message))
+    private fun showFailureNotification(
+        message: String,
+        notificationTag: String,
+    ) {
+        notifyIfPermitted(buildFailureNotification(message), notificationTag)
     }
 
     internal fun buildFailureNotification(message: String): Notification =
@@ -392,7 +490,10 @@ class UploadWorker(
         manager.createNotificationChannel(channel)
     }
 
-    private fun notifyIfPermitted(notification: Notification) {
+    private fun notifyIfPermitted(
+        notification: Notification,
+        notificationTag: String,
+    ) {
         if (ActivityCompat.checkSelfPermission(
                 applicationContext,
                 android.Manifest.permission.POST_NOTIFICATIONS,
@@ -400,7 +501,45 @@ class UploadWorker(
         ) {
             NotificationManagerCompat
                 .from(applicationContext)
-                .notify(NOTIFICATION_ID, notification)
+                .notify(notificationTag, RESULT_NOTIFICATION_ID, notification)
         }
     }
 }
+
+/** The queue file named by [path] if it is an existing, validated worker queue file, else null. */
+private fun validQueueFile(
+    filesDir: File,
+    path: String?,
+): File? {
+    val file = path?.let(::File)
+    return when {
+        file == null -> {
+            null
+        }
+
+        !isWorkerQueueFile(filesDir, file) -> {
+            Log.w("UploadWorker", "Queue file has an unexpected name or location — ignoring.")
+            null
+        }
+
+        !file.exists() -> {
+            null
+        }
+
+        else -> {
+            file
+        }
+    }
+}
+
+/** Creates the remote folder; returns why it failed (never raw exception text), or null on success. */
+private suspend fun createRemoteFolder(
+    client: WebDavClient,
+    folderName: String,
+    remoteFolderPath: String,
+): FolderCreationError? =
+    if (folderName.isNotBlank() && !isValidFolderPath(folderName)) {
+        FolderCreationError.InvalidFolderName
+    } else {
+        client.createDirectory(remoteFolderPath).exceptionOrNull()?.toFolderCreationError()
+    }

@@ -82,6 +82,7 @@ import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.isKnownDate
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionDialog
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.previewUploadPath
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatches
@@ -253,6 +254,7 @@ fun PhotoGridScreen(
     if (uiState.showOccasionDialog) {
         val selectedPhotos = viewModel.getSelectedPhotos()
         OccasionDialog(
+            message = stringResource(R.string.dialog_upload_message),
             onDismiss = { viewModel.dismissOccasionDialog() },
             onConfirm = { occasionName ->
                 viewModel.dismissOccasionDialog()
@@ -728,47 +730,6 @@ private fun NotConfiguredDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_setup_later))
-            }
-        },
-    )
-}
-
-@Composable
-private fun OccasionDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var occasionName by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_upload_title)) },
-        text = {
-            Column {
-                Text(stringResource(R.string.dialog_upload_message))
-                OutlinedTextField(
-                    value = occasionName,
-                    onValueChange = { occasionName = it },
-                    label = { Text(stringResource(R.string.label_occasion_name)) },
-                    singleLine = true,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(occasionName.trim()) },
-                enabled = occasionName.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.action_upload))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
             }
         },
     )

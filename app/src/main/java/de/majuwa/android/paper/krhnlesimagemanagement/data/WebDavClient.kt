@@ -96,10 +96,11 @@ class WebDavClient(
                             .build()
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful && response.code != 405) {
-                            error(
+                            throw WebDavHttpException(
+                                response.code,
                                 "Failed to create directory '${cumulativeSegments.joinToString(
                                     "/",
-                                )}': HTTP ${response.code} ${response.message}",
+                                )}': HTTP ${response.code}",
                             )
                         }
                     }

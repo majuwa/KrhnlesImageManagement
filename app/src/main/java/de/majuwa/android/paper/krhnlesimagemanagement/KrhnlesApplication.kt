@@ -8,6 +8,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.hasSameOriginAs
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,7 +21,11 @@ import java.util.concurrent.TimeUnit
 class KrhnlesApplication :
     Application(),
     SingletonImageLoader.Factory {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Process-scoped coroutine scope for work that must outlive any activity. */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Enqueues uploads in [appScope] so they survive the calling activity being destroyed. */
+    val uploadEnqueuer: UploadEnqueuer by lazy { UploadEnqueuer(this, CredentialStore(this), appScope) }
 
     override fun newImageLoader(context: Context): ImageLoader {
         val credentialStore = CredentialStore(context)
