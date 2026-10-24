@@ -55,7 +55,7 @@ After adding a feature or making any code change:
 4. **Run Spotless** -`./gradlew spotlessCheck` spotless muss pass before considering the change done
 5. **Run Detekt** - `./gradlew detekt` — no new detekt issues or ask the user whether they are ok
 6. **Run Android Lint** — `./gradlew lintDebug` must pass with zero issues (no baseline — all issues must be fixed)
-7. **Generate coverage** — `./gradlew jacocoTestReport` produces an HTML report at `app/build/reports/jacoco/jacocoTestReport/html/`
+7. **Generate coverage** — `./gradlew jacocoTestReport` produces an HTML report at `app/build/reports/jacoco/jacocoTestReport/html/` (class dirs: `intermediates/built_in_kotlinc/debug/...`; unit tests run with `isIncludeNoLocationClasses = true` so Robolectric-loaded classes are counted)
 
 ## 🌐 String Resources
 - All user-facing strings are in `app/src/main/res/values/strings.xml` — never hardcode strings in Kotlin/Compose.

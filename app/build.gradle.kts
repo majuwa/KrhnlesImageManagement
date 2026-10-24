@@ -47,6 +47,12 @@ android {
             all {
                 it.systemProperty("krhnles.moduleDir", moduleDir)
                 it.systemProperty("krhnles.projectDir", rootDir)
+                // Robolectric loads app classes through its own class loader (no code source);
+                // without this JaCoCo records no coverage for them.
+                it.extensions.configure(JacocoTaskExtension::class.java) {
+                    isIncludeNoLocationClasses = true
+                    excludes = listOf("jdk.internal.*")
+                }
             }
         }
     }
@@ -78,14 +84,14 @@ dependencies {
     // Coil (image loading)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // Video frame thumbnails; registered only through LocalVideoFrameDecoderFactory (service loader off).
+    implementation(libs.coil.video)
 
     // WorkManager
     implementation(libs.workmanager)
 
     // OkHttp
     implementation(libs.okhttp)
-    // Video frame thumbnails; registered only through LocalVideoFrameDecoderFactory (service loader off).
-    implementation(libs.coil.video)
 
     // Login Flow for Nextcloud (resolved locally via composite build submodule)
     implementation(libs.nextcloud.login.flow)
@@ -157,7 +163,11 @@ tasks.register<JacocoReport>("jacocoTestReport") {
     }
 
     val mainSrc = "$projectDir/src/main/java"
-    val debugTree = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+    // AGP's built-in Kotlin compiles to intermediates/built_in_kotlinc; tmp/kotlin-classes is the
+    // location of the standalone Kotlin plugin.
+    val debugTree = fileTree(layout.buildDirectory) {
+        include("intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/**")
+        include("tmp/kotlin-classes/debug/**")
         exclude(
             "**/R.class",
             "**/R\$*.class",
