@@ -10,7 +10,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -30,7 +30,8 @@ fun OccasionDialog(
     onConfirm: (String) -> Unit,
     confirmEnabled: Boolean = true,
 ) {
-    var occasionName by remember { mutableStateOf("") }
+    // Saveable: the typed name survives rotation and process recreation of the dialog's host.
+    var occasionName by rememberSaveable { mutableStateOf("") }
     val invalid = occasionName.isNotBlank() && !isValidOccasionName(occasionName)
 
     AlertDialog(

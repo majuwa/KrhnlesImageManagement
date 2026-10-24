@@ -55,6 +55,12 @@ class UploadWorker internal constructor(
         ::WebDavClient,
     )
 
+    /** [retainedStaged]: staged names referenced by the retry file written for this run. */
+    private data class UploadOutcome(
+        val result: Result,
+        val retainedStaged: Set<String> = emptySet(),
+    )
+
     private data class UploadFilesResult(
         val uploaded: Int,
         val failedIndices: List<Int>,
@@ -92,7 +98,7 @@ class UploadWorker internal constructor(
                 ?: return Result.failure()
         val queue =
             parseQueue(queueFile) ?: run {
-                queueFile.delete()
+                deleteQueueFile(applicationContext, queueFile)
                 return Result.failure()
             }
 
@@ -106,7 +112,7 @@ class UploadWorker internal constructor(
         val config = credentialRepository.webDavConfig.first()
 
         if (!config.isValid) {
-            queueFile.delete()
+            deleteQueueFile(applicationContext, queueFile)
             createNotificationChannel()
             showFailureNotification(
                 applicationContext.getString(
@@ -118,11 +124,16 @@ class UploadWorker internal constructor(
             return Result.failure()
         }
 
-        return executeUpload(
-            config = config,
-            queue = queue,
-            notificationTag = queueFile.name,
-        ).also { queueFile.delete() }
+        val outcome =
+            executeUpload(
+                config = config,
+                queue = queue,
+                notificationTag = queueFile.name,
+            )
+        // Staged copies stay until the queue is final (a re-run re-uploads every entry); those of a
+        // new retry file survive.
+        deleteQueueFile(applicationContext, queueFile, keep = outcome.retainedStaged)
+        return outcome.result
     }
 
     private fun parseQueue(queueFile: File): UploadQueue? =
@@ -147,7 +158,7 @@ class UploadWorker internal constructor(
         config: WebDavConfig,
         queue: UploadQueue,
         notificationTag: String,
-    ): Result {
+    ): UploadOutcome {
         val total = queue.entries.size
         val occasionName = queue.historyLabel
         val remoteFolderPaths = List(total) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
@@ -170,7 +181,7 @@ class UploadWorker internal constructor(
                 ),
                 notificationTag,
             )
-            return Result.failure()
+            return UploadOutcome(Result.failure())
         }
 
         val result = uploadFiles(client, queue.entries, remoteFolderPaths)
@@ -187,6 +198,12 @@ class UploadWorker internal constructor(
             } else {
                 null
             }
+        val retainedStaged =
+            if (retryQueueFilePath != null) {
+                result.failedIndices.mapNotNull { queue.entries[it].staged }.toSet()
+            } else {
+                emptySet()
+            }
 
         showCompletionNotification(result.uploaded, failed, retryQueueFilePath, notificationTag)
 
@@ -194,11 +211,14 @@ class UploadWorker internal constructor(
             uploadedPhotos.markAsUploaded(result.uploadedIds)
         }
 
-        return Result.success(
-            workDataOf(
-                KEY_UPLOADED_COUNT to result.uploaded,
-                KEY_FAILED_COUNT to failed,
+        return UploadOutcome(
+            Result.success(
+                workDataOf(
+                    KEY_UPLOADED_COUNT to result.uploaded,
+                    KEY_FAILED_COUNT to failed,
+                ),
             ),
+            retainedStaged,
         )
     }
 
@@ -235,7 +255,7 @@ class UploadWorker internal constructor(
 
         for (i in entries.indices) {
             val entry = entries[i]
-            val succeeded = uploadPhoto(client, remoteFolderPaths[i], entry.uri, entry.mimeType, entry.displayName)
+            val succeeded = uploadPhoto(client, remoteFolderPaths[i], entry)
             if (succeeded) {
                 uploaded++
                 // -1 marks entries that pre-date photo ids: uploaded, but never marked.
@@ -263,12 +283,16 @@ class UploadWorker internal constructor(
     private suspend fun uploadPhoto(
         client: WebDavClient,
         remoteFolderPath: String,
-        uriString: String,
-        mimeType: String,
-        fileName: String,
+        entry: UploadQueueEntry,
     ): Boolean {
-        val inputStream = openPhoto(uriString.toUri()) ?: return false
-        return inputStream.use { client.uploadFile(remoteFolderPath, fileName, mimeType, it) }.isSuccess
+        val staged = entry.staged
+        // A staged (shared) photo is read only from its copy: the share grant for its URI is gone.
+        val inputStream =
+            (if (staged != null) openStagedFile(applicationContext, staged) else openPhoto(entry.uri.toUri()))
+                ?: return false
+        return inputStream
+            .use { client.uploadFile(remoteFolderPath, entry.displayName, entry.mimeType, it) }
+            .isSuccess
     }
 
     /** Opens a photo; an unreadable one (revoked grant, deleted file) is a failed photo, not a crash. */

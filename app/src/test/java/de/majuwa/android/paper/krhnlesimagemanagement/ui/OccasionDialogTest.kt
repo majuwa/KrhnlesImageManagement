@@ -4,14 +4,15 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionDialog
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareReceiverScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -85,18 +86,19 @@ class OccasionDialogTest {
     fun backslashNameIsRejected() = assertRejected("a\\b")
 
     @Test
-    fun shareScreen_doubleConfirmInvokesCallbackOnce() {
-        rule.setContent {
+    fun typedName_survivesStateRestoration() {
+        val restoration = StateRestorationTester(rule)
+        restoration.setContent {
             KrhnlesImageManagementTheme {
-                ShareReceiverScreen(photoCount = 2, onConfirm = { confirmed += it }, onDismiss = {})
+                OccasionDialog(message = "Name it", onDismiss = {}, onConfirm = { confirmed += it })
             }
         }
-        type("Trip")
+        type("Wedding")
 
-        upload().performClick()
-        upload().performClick()
+        restoration.emulateSavedInstanceStateRestore()
 
-        assertEquals(listOf("Trip"), confirmed)
-        upload().assertIsNotEnabled()
+        rule.onNode(hasSetTextAction()).assertTextContains("Wedding")
+        upload().assertIsEnabled().performClick()
+        assertEquals(listOf("Wedding"), confirmed)
     }
 }

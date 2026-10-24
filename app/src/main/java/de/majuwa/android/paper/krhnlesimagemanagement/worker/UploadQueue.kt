@@ -23,6 +23,8 @@ internal data class UploadQueueEntry(
     val mimeType: String,
     val displayName: String,
     val folderName: String?,
+    /** Staged copy of a shared photo ([isValidStagedName], always with `id = -1`); read instead of [uri]. */
+    val staged: String? = null,
 )
 
 /**
@@ -66,6 +68,7 @@ internal data class UploadQueue(
                                 put(KEY_MIME_TYPE, entry.mimeType)
                                 put(KEY_DISPLAY_NAME, entry.displayName)
                                 entry.folderName?.let { put(KEY_FOLDER_NAME, it) }
+                                entry.staged?.let { put(KEY_STAGED, it) }
                             },
                         )
                     }
@@ -81,6 +84,9 @@ internal data class UploadQueue(
  * The file is per-photo if it has a `label` (of any type) or any entry has a `folderName` key;
  * then every entry needs a non-blank string `folderName` and a top-level `folderName` is not
  * allowed. Otherwise the top-level `folderName` must be a string. A non-string label is dropped.
+ *
+ * An optional entry `staged` must be a string staged name ([isValidStagedName]) on an entry
+ * without an id (`id = -1`); otherwise the whole file is malformed.
  *
  * @throws org.json.JSONException for unparseable JSON or missing / mistyped entry fields.
  */
@@ -98,13 +104,26 @@ internal fun parseUploadQueue(json: String): UploadQueue? {
                 mimeType = obj.getString(KEY_MIME_TYPE),
                 displayName = obj.getString(KEY_DISPLAY_NAME),
                 folderName = entryFolders[i] as? String,
+                staged = obj.opt(KEY_STAGED) as? String,
             )
         }
+    val stagedValid = objects.indices.all { hasValidStaged(objects[it], entries[it]) }
     val commonFolder = queue.opt(KEY_FOLDER_NAME)
     return when {
+        !stagedValid -> null
         perPhoto && (queue.has(KEY_FOLDER_NAME) || entryFolders.any { it !is String || it.isBlank() }) -> null
         perPhoto -> UploadQueue(folderName = null, label = queue.opt(KEY_LABEL) as? String, entries = entries)
         commonFolder is String -> UploadQueue(folderName = commonFolder, label = null, entries = entries)
         else -> null
     }
+}
+
+/** No `staged` key, or a valid staged name (a string) on an entry without a MediaStore id. */
+private fun hasValidStaged(
+    obj: JSONObject,
+    entry: UploadQueueEntry,
+): Boolean {
+    if (!obj.has(KEY_STAGED)) return true
+    val staged = entry.staged
+    return staged != null && isValidStagedName(staged) && entry.id == -1L
 }

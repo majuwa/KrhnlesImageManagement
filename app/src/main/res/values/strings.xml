@@ -228,6 +228,32 @@
         <item quantity="one">Upload %1$d photo to your server. Enter an occasion or folder name:</item>
         <item quantity="other">Upload %1$d photos to your server. Enter an occasion or folder name:</item>
     </plurals>
+    <plurals name="share_skipped_photos">
+        <item quantity="one">%1$d item was skipped because it is not a supported photo or could not be read.</item>
+        <item quantity="other">%1$d items were skipped because they are not supported photos or could not be read.</item>
+    </plurals>
+    <plurals name="share_too_many_photos">
+        <item quantity="one">At most %2$d photos can be shared at once; %1$d photo was not included.</item>
+        <item quantity="other">At most %2$d photos can be shared at once; %1$d photos were not included.</item>
+    </plurals>
+    <plurals name="share_copy_skipped">
+        <item quantity="one">%1$d photo was skipped because it could not be read or is larger than %2$d MB.</item>
+        <item quantity="other">%1$d photos were skipped because they could not be read or are larger than %2$d MB.</item>
+    </plurals>
+    <plurals name="share_over_share_limit">
+        <item quantity="one">%1$d photo was not uploaded because one share can hold at most %2$d MB.</item>
+        <item quantity="other">%1$d photos were not uploaded because one share can hold at most %2$d MB.</item>
+    </plurals>
+    <string name="share_reading_title">Reading shared photos…</string>
+    <string name="share_preparing_title">Preparing photos</string>
+    <string name="share_preparing">Preparing %1$d of %2$d…</string>
+    <string name="share_no_photos">No supported photo was received.</string>
+    <string name="share_nothing_copied">None of the shared photos could be read, so nothing was uploaded. Please share them again.</string>
+    <string name="share_copy_failed">The photos could not be prepared for upload. Free up some storage and share them again.</string>
+    <string name="share_enqueue_failed">The upload could not be started. Please share the photos again.</string>
+    <string name="share_not_configured_title">Server not set up</string>
+    <string name="share_not_configured_message">Set up your WebDAV or Nextcloud server in the app before sharing photos to it.</string>
+    <string name="share_not_configured_open_app">Open app</string>
 
     <!-- Notifications (UploadWorker) -->
     <string name="notification_preparing">Preparing…</string>

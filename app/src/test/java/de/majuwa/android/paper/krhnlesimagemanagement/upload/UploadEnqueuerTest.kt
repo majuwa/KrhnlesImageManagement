@@ -7,11 +7,15 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.NetworkType
 import androidx.work.WorkManager
+import androidx.work.WorkRequest
 import androidx.work.testing.WorkManagerTestInitHelper
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -216,5 +220,36 @@ class UploadEnqueuerTest {
                 """"mimeType":"image\/jpeg","displayName":"1.jpg"}]}""",
             file.readText(),
         )
+    }
+
+    @Test
+    fun unexpectedRuntimeFailure_runsOnFailure_doesNotCrash_andRemovesTheQueueFile() {
+        var failures = 0
+        val crashes = mutableListOf<Throwable>()
+        val scope =
+            CoroutineScope(
+                SupervisorJob() + Dispatchers.Default +
+                    CoroutineExceptionHandler { _, e -> crashes += e },
+            )
+        val enqueuer =
+            UploadEnqueuer(
+                context,
+                repo(),
+                scope,
+                workManager = {
+                    mockk {
+                        every { enqueue(any<WorkRequest>()) } throws UnsupportedOperationException("broken")
+                    }
+                },
+            )
+
+        val job = enqueuer.enqueue(listOf(UploadBatch.Occasion("Trip", listOf(photo(1))))) { failures++ }
+        await(job)
+        scope.cancel()
+
+        assertEquals(1, failures)
+        assertTrue(crashes.isEmpty())
+        assertTrue(queueFiles().isEmpty())
+        assertTrue(job!!.isCompleted && !job.isCancelled)
     }
 }

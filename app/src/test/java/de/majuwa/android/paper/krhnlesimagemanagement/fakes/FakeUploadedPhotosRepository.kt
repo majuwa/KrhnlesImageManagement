@@ -9,7 +9,12 @@ class FakeUploadedPhotosRepository : UploadedPhotosRepositoryContract {
 
     override val uploadedPhotoIds: Flow<Set<Long>> = mutableUploadedIds
 
+    /** Number of [markAsUploaded] calls. */
+    var markCalls: Int = 0
+        private set
+
     override suspend fun markAsUploaded(photoIds: Set<Long>) {
+        markCalls++
         mutableUploadedIds.value = mutableUploadedIds.value + photoIds
     }
 

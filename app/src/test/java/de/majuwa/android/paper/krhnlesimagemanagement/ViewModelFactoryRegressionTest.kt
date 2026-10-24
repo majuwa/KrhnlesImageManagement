@@ -10,6 +10,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingVi
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.StartupViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +37,7 @@ class ViewModelFactoryRegressionTest(
                 arrayOf(AlbumsViewModel::class.java),
                 arrayOf(AlbumDetailViewModel::class.java),
                 arrayOf(StartupViewModel::class.java),
+                arrayOf(ShareViewModel::class.java),
             )
     }
 

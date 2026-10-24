@@ -13,6 +13,8 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.RetryUploadReceiver
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.handleRetry
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.hasUnfinishedRetryWork
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.retryWorkName
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.delay
@@ -28,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class RetryUploadReceiverTest {
@@ -184,6 +187,19 @@ class RetryUploadReceiverTest {
                     .get()
                     .size,
             )
+        }
+
+    @Test
+    fun handleRetry_refreshesTheRetryFileTime_andItsPendingWorkCountsAsUnfinished() =
+        runBlocking {
+            val file = retryFile().apply { setLastModified(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(8)) }
+            assertEquals(false, hasUnfinishedRetryWork(context, retryWorkName(file)))
+
+            handleRetry(context, retryIntent(file.absolutePath), flowOf(true))
+
+            assertTrue(System.currentTimeMillis() - file.lastModified() < TimeUnit.MINUTES.toMillis(1))
+            // Wi-Fi only keeps the retry pending: the staging sweep must keep its staged copies.
+            assertEquals(true, hasUnfinishedRetryWork(context, retryWorkName(file)))
         }
 
     @Test

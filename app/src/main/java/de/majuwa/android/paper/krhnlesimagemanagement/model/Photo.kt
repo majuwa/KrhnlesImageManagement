@@ -10,6 +10,11 @@ data class Photo(
     val dateTaken: LocalDate,
     val size: Long,
     val mimeType: String,
+    /**
+     * Name of the app-private staged copy (shared photos only, see `ShareStaging`); the upload reads
+     * that copy instead of [uri]. Null for MediaStore photos.
+     */
+    val stagedName: String? = null,
 ) {
     /** True unless the media store had no capture date ([UNKNOWN_DATE]). */
     val hasKnownDate: Boolean get() = dateTaken.isKnownDate()

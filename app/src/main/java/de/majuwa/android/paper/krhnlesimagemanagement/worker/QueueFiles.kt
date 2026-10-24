@@ -8,6 +8,7 @@ import java.io.IOException
 private const val RETRY_FILE_REGEX = "retry_queue_[0-9a-f-]+\\.json"
 private const val UPLOAD_FILE_REGEX = "upload_queue_[0-9]+_[0-9a-f-]+\\.json"
 private val retryFileName = Regex(RETRY_FILE_REGEX)
+private val uploadFileName = Regex(UPLOAD_FILE_REGEX)
 private val workerQueueFileName = Regex("$RETRY_FILE_REGEX|$UPLOAD_FILE_REGEX")
 
 /**
@@ -27,6 +28,12 @@ internal fun isWorkerQueueFile(
     context: Context,
     file: File,
 ): Boolean = isQueueFileIn(queueParents(context), file, workerQueueFileName)
+
+/** True if [name] is the name of an upload queue file (not a retry file). */
+internal fun isUploadQueueFileName(name: String): Boolean = uploadFileName.matches(name)
+
+/** True if [name] is the name of a retry queue file. */
+internal fun isRetryQueueFileName(name: String): Boolean = retryFileName.matches(name)
 
 /** `noBackupFilesDir` for new files, plus the legacy `filesDir` for files written by older versions. */
 private fun queueParents(context: Context): List<File> = listOf(context.noBackupFilesDir, context.filesDir)

@@ -17,12 +17,12 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -42,8 +42,15 @@ class UploadEnqueuer(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
-    /** Starts enqueueing [batches] in the application scope; empty batches are ignored. */
-    fun enqueue(batches: List<UploadBatch>): Job? {
+    /**
+     * Starts enqueueing [batches] in the application scope; empty batches are ignored. [onFailure]
+     * runs in that scope if the upload could not be enqueued for any reason except cancellation
+     * (e.g. to delete staged copies and tell the user); no failure escapes the scope.
+     */
+    fun enqueue(
+        batches: List<UploadBatch>,
+        onFailure: (suspend () -> Unit)? = null,
+    ): Job? {
         val nonEmpty = batches.filter { it.photos.isNotEmpty() }
         if (nonEmpty.isEmpty()) return null
         return scope.launch {
@@ -53,14 +60,13 @@ class UploadEnqueuer(
                     true
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: IOException) {
-                    Log.w(TAG, "Upload could not be enqueued: ${e.javaClass.simpleName}")
-                    false
-                } catch (e: IllegalStateException) {
+                } catch (e: Exception) {
+                    // Any failure (I/O, WorkManager, JSON, an unexpected runtime error) must reach
+                    // onFailure: an uncaught exception would crash the app scope and keep staged copies.
                     Log.w(TAG, "Upload could not be enqueued: ${e.javaClass.simpleName}")
                     false
                 }
-            if (started) showStartedToast(nonEmpty)
+            if (started) showStartedToast(nonEmpty) else onFailure?.invoke()
         }
     }
 
@@ -76,7 +82,15 @@ class UploadEnqueuer(
                     .setConstraints(constraints)
                     .addTag(UPLOAD_TAG)
                     .build()
-            manager.enqueue(request).await()
+            try {
+                manager.enqueue(request).await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // No worker will ever read this queue file; it must not keep staged copies referenced.
+                withContext(NonCancellable + ioDispatcher) { queueFile.delete() }
+                throw e
+            }
         }
     }
 
@@ -105,6 +119,7 @@ class UploadEnqueuer(
                                         put("mimeType", photo.mimeType)
                                         put("displayName", photo.displayName)
                                         perPhotoFolders?.let { put("folderName", it[index]) }
+                                        photo.stagedName?.let { put("staged", it) }
                                     },
                                 )
                             }
