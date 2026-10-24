@@ -35,7 +35,17 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
     val deletedAlbums = mutableListOf<RemoteAlbum>()
     val renamedAlbums = mutableListOf<Pair<RemoteAlbum, String>>()
 
-    override suspend fun listAlbums(): Result<List<RemoteAlbum>> = albums
+    /** Number of [listAlbums] calls. */
+    var listAlbumsCalls = 0
+        private set
+
+    override suspend fun listAlbums(): Result<List<RemoteAlbum>> {
+        listAlbumsCalls++
+        return albums
+    }
+
+    /** Invoked (and may suspend or throw) on every [renameAlbum] call before the result is returned. */
+    var onRenameAlbum: suspend () -> Unit = {}
 
     /** Marks a successful [listPhotos] result as truncated. */
     var photosTruncated: Boolean = false
@@ -61,6 +71,7 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
         newName: String,
     ): Result<RemoteAlbum> {
         renamedAlbums += album to newName
+        onRenameAlbum()
         return renameAlbumResult
             ?: Result.success(
                 album.copy(

@@ -1,12 +1,15 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumNameTooLongException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException.Reason
+import de.majuwa.android.paper.krhnlesimagemanagement.data.InvalidAlbumNameException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UnsafeHrefException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.albumsErrorMessage
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.toAlbumsError
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.toRenameAlbumError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -76,5 +79,46 @@ class AlbumsErrorTest {
         assertTrue(messages.all { it.isNotBlank() })
         assertEquals("one distinct message per error", errors.size, messages.toSet().size)
         assertTrue(albumsErrorMessage(resources, AlbumsError.HttpError(503)).contains("503"))
+    }
+
+    @Test
+    fun `rename MOVE statuses map to rename specific errors`() {
+        val expected =
+            mapOf(
+                412 to AlbumsError.AlreadyExists,
+                404 to AlbumsError.AlbumGone,
+                409 to AlbumsError.AlbumGone,
+                400 to AlbumsError.RenameRejected,
+                403 to AlbumsError.RenameRejected,
+                401 to AlbumsError.AuthFailed,
+                207 to AlbumsError.RenamePartial,
+                202 to AlbumsError.RenamePartial,
+                423 to AlbumsError.HttpError(423),
+                500 to AlbumsError.HttpError(500),
+            )
+        expected.forEach { (code, error) ->
+            assertEquals("HTTP $code", error, WebDavHttpException(code, "MOVE").toRenameAlbumError())
+        }
+        assertEquals(AlbumsError.InvalidName, InvalidAlbumNameException().toRenameAlbumError())
+        assertEquals(AlbumsError.NameTooLong, AlbumNameTooLongException().toRenameAlbumError())
+        assertEquals(AlbumsError.Timeout, SocketTimeoutException("t").toRenameAlbumError())
+    }
+
+    @Test
+    fun `list and detail keep the generic not found mapping for 404`() {
+        assertMaps(AlbumsError.NotFound, WebDavHttpException(404, "PROPFIND"))
+    }
+
+    @Test
+    fun `rename errors resolve to non blank localized text`() {
+        listOf(
+            AlbumsError.AlreadyExists,
+            AlbumsError.InvalidName,
+            AlbumsError.NameTooLong,
+            AlbumsError.RenamePartial,
+            AlbumsError.AlbumGone,
+            AlbumsError.RenameRejected,
+            AlbumsError.RenameTimedOut,
+        ).forEach { assertTrue(albumsErrorMessage(resources, it).isNotBlank()) }
     }
 }

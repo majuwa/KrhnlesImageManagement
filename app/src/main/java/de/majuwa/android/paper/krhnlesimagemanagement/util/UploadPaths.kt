@@ -33,6 +33,12 @@ fun isValidOccasionName(name: String): Boolean {
         trimmed.none { it == '/' || it == '\\' || it == '\u0000' }
 }
 
+/** Longest album (folder) name in UTF-8 bytes; the usual file-system limit that servers enforce. */
+const val MAX_ALBUM_NAME_BYTES = 255
+
+/** True if the trimmed [name] is longer than [MAX_ALBUM_NAME_BYTES] UTF-8 bytes. */
+fun exceedsAlbumNameLimit(name: String): Boolean = name.trim().toByteArray(Charsets.UTF_8).size > MAX_ALBUM_NAME_BYTES
+
 /** True if every `/`-separated segment of [path] is a valid folder segment (no blank, `.`, `..`, `\`, NUL). */
 fun isValidFolderPath(path: String): Boolean {
     val segments = path.trim().split("/")

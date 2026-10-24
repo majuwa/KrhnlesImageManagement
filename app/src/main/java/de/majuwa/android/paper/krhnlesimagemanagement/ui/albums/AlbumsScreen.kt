@@ -1,5 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
+import de.majuwa.android.paper.krhnlesimagemanagement.util.exceedsAlbumNameLimit
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,6 +70,16 @@ fun AlbumsScreen(
     var albumToRename by remember { mutableStateOf<RemoteAlbum?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadAlbums() }
+
+    val renameOutcome by viewModel.renameOutcome.collectAsStateWithLifecycle()
+    LaunchedEffect(renameOutcome) {
+        val outcome = renameOutcome ?: return@LaunchedEffect
+        if (outcome is RenameOutcome.Failure) {
+            snackbarHostState.showSnackbar(albumsErrorMessage(resources, outcome.error))
+        }
+        // Only after the snackbar was shown: a cancelled effect (rotation) keeps the outcome.
+        viewModel.consumeRenameOutcome()
+    }
 
     albumToDelete?.let { album ->
         DeleteAlbumDialog(
@@ -92,22 +105,12 @@ fun AlbumsScreen(
 
     albumToRename?.let { album ->
         RenameAlbumDialog(
+            currentNames = album.currentNames(),
             initialName = album.displayName,
             onDismiss = { albumToRename = null },
             onConfirm = { newName ->
                 albumToRename = null
-                viewModel.renameAlbum(album, newName) { success ->
-                    if (!success) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                resources.getString(
-                                    R.string.snackbar_rename_album_failed,
-                                    album.displayName,
-                                ),
-                            )
-                        }
-                    }
-                }
+                viewModel.renameAlbum(album, newName)
             },
         )
     }
@@ -274,6 +277,7 @@ private fun DeleteAlbumDialog(
 
 @Composable
 private fun RenameAlbumDialog(
+    currentNames: Set<String>,
     initialName: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
@@ -307,7 +311,9 @@ private fun RenameAlbumDialog(
                     errorMessageResId =
                         when {
                             trimmedName.isBlank() -> R.string.error_album_name_blank
-                            trimmedName == initialName -> R.string.error_album_name_unchanged
+                            trimmedName in currentNames -> R.string.error_album_name_unchanged
+                            !isValidOccasionName(trimmedName) -> R.string.error_album_name_invalid
+                            exceedsAlbumNameLimit(trimmedName) -> R.string.error_album_name_too_long
                             else -> null
                         }
                     if (errorMessageResId == null) {
@@ -323,3 +329,7 @@ private fun RenameAlbumDialog(
         },
     )
 }
+
+/** The display name and the decoded last href segment (the display name may be percent-encoded). */
+private fun RemoteAlbum.currentNames(): Set<String> =
+    setOf(displayName, Uri.decode(href.trimEnd('/').substringAfterLast('/')))

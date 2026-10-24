@@ -8,10 +8,14 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -26,6 +30,9 @@ import java.util.concurrent.TimeUnit
 class WebDavClientTest {
     private lateinit var server: MockWebServer
     private lateinit var client: WebDavClient
+
+    private val oldPath = listOf("Photos", "Old")
+    private val newPath = listOf("Photos", "New")
 
     @Before
     fun setUp() {
@@ -178,17 +185,120 @@ class WebDavClientTest {
         runTest {
             server.enqueue(MockResponse().setResponseCode(201))
 
-            val result = client.renameDirectory("Photos/Old Album", "Photos/New Album")
+            val result = client.renameDirectory(listOf("Photos", "Old Album"), listOf("Photos", "New Album"))
             assertTrue(result.isSuccess)
 
             val request = server.takeRequest()
             assertEquals("MOVE", request.method)
-            assertTrue(request.path!!.endsWith("/Photos/Old%20Album"))
+            assertTrue(request.path!!.endsWith("/Photos/Old%20Album/"))
             assertEquals(
                 server.url("/remote.php/dav/files/user/Photos/New%20Album").toString(),
                 request.getHeader("Destination"),
             )
             assertEquals("F", request.getHeader("Overwrite"))
+        }
+
+    @Test
+    fun `renameDirectory accepts 204`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(204))
+            assertTrue(client.renameDirectory(oldPath, newPath).isSuccess)
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
+    fun `renameDirectory treats redirects and 200 as failure without following`() =
+        runTest {
+            var code = 0
+            // A followed redirect would reach /elsewhere/ and fail the request count at once.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        if (request.path!!.startsWith("/elsewhere/")) {
+                            MockResponse().setResponseCode(200)
+                        } else {
+                            MockResponse().setResponseCode(code).setHeader("Location", server.url("/elsewhere/"))
+                        }
+                }
+            listOf(301, 302, 307, 308, 200).forEach { status ->
+                code = status
+                val before = server.requestCount
+                val failure = client.renameDirectory(oldPath, newPath).exceptionOrNull()
+                assertEquals("HTTP $status", status, (failure as WebDavHttpException).code)
+                assertEquals("HTTP $status", before + 1, server.requestCount)
+            }
+        }
+
+    @Test
+    fun `renameDirectory reports an unexpected 2xx like 207 as WebDavHttpException`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(207))
+            val failure = client.renameDirectory(oldPath, newPath).exceptionOrNull()
+            assertEquals(207, (failure as WebDavHttpException).code)
+        }
+
+    @Test
+    fun `renameDirectory reports 412 and 404 as WebDavHttpException`() =
+        runTest {
+            listOf(412, 404).forEach { code ->
+                server.enqueue(MockResponse().setResponseCode(code))
+                val failure = client.renameDirectory(oldPath, newPath).exceptionOrNull()
+                assertEquals(code, (failure as WebDavHttpException).code)
+            }
+        }
+
+    @Test
+    fun `renameDirectory rejects invalid segments without a request`() =
+        runTest {
+            listOf(
+                listOf("Photos", "..") to newPath,
+                oldPath to listOf("Photos", ".."),
+                oldPath to emptyList(),
+                emptyList<String>() to newPath,
+                listOf("Photos", " ", "Old") to newPath,
+                listOf("Photos", "") to newPath,
+                oldPath to listOf("Photos", "  "),
+                oldPath to listOf("Photos", "a\\b"),
+                oldPath to listOf("Photos", "a/b"),
+                oldPath to listOf("Photos", "a\u0000b"),
+                oldPath to listOf("Photos", "a\nb"),
+                listOf("Photos", "a\u007fb") to newPath,
+                oldPath to listOf("Photos", "a\u001fb"),
+            ).forEach { (old, new) ->
+                assertTrue("$old -> $new", client.renameDirectory(old, new).isFailure)
+            }
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
+    fun `credentials are not sent to another origin after a redirect`() =
+        runTest {
+            val other = MockWebServer()
+            other.start()
+            try {
+                other.enqueue(MockResponse().setResponseCode(207))
+                server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", other.url("/target/")))
+
+                client.testConnection()
+
+                assertNotNull(server.takeRequest().getHeader("Authorization"))
+                val redirected = other.takeRequest()
+                assertNull(redirected.getHeader("Authorization"))
+                assertTrue(redirected.getHeader("User-Agent")!!.startsWith("Kroehnles"))
+            } finally {
+                other.shutdown()
+            }
+        }
+
+    @Test
+    fun `renameDirectory is cancelled with its coroutine when the server never answers`() =
+        runBlocking {
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val job = launch(Dispatchers.IO) { client.renameDirectory(oldPath, newPath) }
+            server.takeRequest(5, TimeUnit.SECONDS)
+            val start = System.nanoTime()
+            job.cancelAndJoin()
+            assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) < 5)
         }
 
     // ── uploadFile ──────────────────────────────────────────────────────────

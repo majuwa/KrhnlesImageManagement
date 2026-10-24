@@ -37,14 +37,22 @@ class WebDavClient(
             .writeTimeout(120, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val original = chain.request()
-                val authenticated =
-                    original
-                        .newBuilder()
-                        .header("Authorization", Credentials.basic(config.username, config.password))
-                        .header("User-Agent", userAgent)
-                        .build()
-                chain.proceed(authenticated)
+                val builder = original.newBuilder().header("User-Agent", userAgent)
+                // Credentials never leave the configured origin (e.g. after a redirect).
+                if (original.url.hasSameOriginAs(config.url)) {
+                    builder.header("Authorization", Credentials.basic(config.username, config.password))
+                }
+                chain.proceed(builder.build())
             }.build()
+
+    /** Shares pool and interceptors with [client]; used where a redirect must count as failure. */
+    private val noRedirectClient: OkHttpClient by lazy {
+        client
+            .newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
 
     private val baseUrl: String
         get() = config.url.trimEnd('/')
@@ -120,36 +128,42 @@ class WebDavClient(
         }
     }
 
+    /**
+     * Renames the collection at the path [oldSegments] to [newSegments] (each element one decoded
+     * path segment below the base URL, none blank) with one `MOVE` (`Overwrite: F`, so an existing
+     * target answers 412). Only 201 / 204 count as success; any other status, including a redirect
+     * (not followed: a followed 301 would turn the MOVE into a GET), fails with
+     * [WebDavHttpException] (a 2xx such as 207 means the outcome is unknown). The source URL carries a trailing slash
+     * (collection URL). The call is
+     * cancelled with the coroutine; there is deliberately no call timeout on the shared client, the
+     * caller bounds the rename.
+     */
     suspend fun renameDirectory(
-        oldPath: String,
-        newPath: String,
+        oldSegments: List<String>,
+        newSegments: List<String>,
     ): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val oldSegments = oldPath.split("/").filter { it.isNotBlank() }
-                val newSegments = newPath.split("/").filter { it.isNotBlank() }
-                require(oldSegments.isNotEmpty()) { "Invalid path segment: blank" }
-                require(newSegments.isNotEmpty()) { "Invalid path segment: blank" }
-                oldSegments.forEach(::validatePathSegment)
-                newSegments.forEach(::validatePathSegment)
+        runCatching {
+            require(oldSegments.isNotEmpty()) { "Invalid path: empty" }
+            require(newSegments.isNotEmpty()) { "Invalid path: empty" }
+            // Blank segments are rejected, never filtered: filtering would address another folder.
+            oldSegments.forEach(::validatePathSegment)
+            newSegments.forEach(::validatePathSegment)
 
-                val sourceUrl = buildPathUrl(oldSegments)
-                val destinationUrl = buildPathUrl(newSegments)
-                val request =
-                    Request
-                        .Builder()
-                        .url(sourceUrl)
-                        .method("MOVE", null)
-                        .header("Destination", destinationUrl.toString())
-                        .header("Overwrite", "F")
-                        .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        error("Rename failed: HTTP ${response.code} ${response.message}")
-                    }
-                }
+            val sourceUrl = buildPathUrl(oldSegments + "")
+            val destinationUrl = buildPathUrl(newSegments)
+            val request =
+                Request
+                    .Builder()
+                    .url(sourceUrl)
+                    .method("MOVE", null)
+                    .header("Destination", destinationUrl.toString())
+                    .header("Overwrite", "F")
+                    .build()
+            val (code, message) = noRedirectClient.newCall(request).awaitStatus()
+            if (code != HTTP_CREATED && code != HTTP_NO_CONTENT) {
+                throw WebDavHttpException(code, "Rename failed: HTTP $code $message")
             }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     suspend fun uploadFile(
         folderName: String,
@@ -214,7 +228,8 @@ class WebDavClient(
         require(segment.isNotBlank()) { "Invalid path segment: blank" }
         require('/' !in segment) { "Invalid path segment: '$segment'" }
         require(segment != "." && segment != "..") { "Invalid path segment: '$segment'" }
-        require('\u0000' !in segment) { "Invalid path segment contains NUL byte" }
+        require('\\' !in segment) { "Invalid path segment: backslash" }
+        require(segment.none { it.isISOControl() }) { "Invalid path segment contains a control character" }
     }
 
     private class InputStreamRequestBody(
@@ -243,6 +258,8 @@ class WebDavClient(
 
         /** 2xx, including 207 Multi-Status, which is the normal PROPFIND answer. */
         private val HTTP_SUCCESS_CODES = 200..299
+        private const val HTTP_CREATED = 201
+        private const val HTTP_NO_CONTENT = 204
     }
 }
 

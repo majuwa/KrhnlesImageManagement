@@ -153,7 +153,13 @@
     <string name="error_album_name_blank">Please enter an album name.</string>
     <string name="error_album_name_unchanged">Please choose a different album name.</string>
     <string name="snackbar_delete_album_failed">Failed to delete album \"%1$s\".</string>
-    <string name="snackbar_rename_album_failed">Failed to rename album \"%1$s\".</string>
+    <string name="error_album_name_invalid">The name must not contain / or \\ and cannot be \".\" or \"..\".</string>
+    <string name="error_album_name_too_long">The name is too long (at most 255 bytes).</string>
+    <string name="albums_error_rename_partial">The server answered unexpectedly; the rename may be incomplete. The list is being refreshed.</string>
+    <string name="albums_error_already_exists">An album with this name already exists. Please choose a different name.</string>
+    <string name="albums_error_album_gone">This album no longer exists on the server. Refresh the album list.</string>
+    <string name="albums_error_rename_rejected">The server rejected this name, or you do not have permission to rename albums.</string>
+    <string name="albums_error_rename_timeout">The server did not respond in time. The album may still have been renamed; the list is being refreshed.</string>
     <string name="albums_error_not_configured">You are not logged in. Log in under Settings to see your albums.</string>
     <string name="albums_error_invalid_url">The server address is not a valid URL. Check it in Settings and log in again.</string>
     <string name="albums_error_configuration_changed">Your server settings changed. Go back and open the album again.</string>

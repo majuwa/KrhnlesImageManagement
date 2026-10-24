@@ -6,6 +6,8 @@ import android.util.Log
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.util.exceedsAlbumNameLimit
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -155,17 +157,15 @@ class AlbumsRepository internal constructor(
         newName: String,
     ): Result<RemoteAlbum> =
         withContext(Dispatchers.IO) {
-            runCatching {
+            resultOf {
+                val trimmedName = newName.trim()
+                if (!isValidOccasionName(trimmedName)) throw InvalidAlbumNameException()
+                if (exceedsAlbumNameLimit(trimmedName)) throw AlbumNameTooLongException()
                 val oldSegments = albumRelativeSegments(album)
-                require(oldSegments.isNotEmpty()) { "Invalid album path" }
-                val newSegments = oldSegments.dropLast(1) + newName
-                webDavClient
-                    .renameDirectory(
-                        oldPath = oldSegments.joinToString("/"),
-                        newPath = newSegments.joinToString("/"),
-                    ).getOrThrow()
+                val newSegments = oldSegments.dropLast(1) + trimmedName
+                webDavClient.renameDirectory(oldSegments, newSegments).getOrThrow()
                 RemoteAlbum(
-                    displayName = newName,
+                    displayName = trimmedName,
                     href = buildAlbumHref(newSegments),
                 )
             }
@@ -348,11 +348,27 @@ class AlbumsRepository internal constructor(
         }
     }
 
-    /** Album path relative to the configured WebDAV URL (as expected by [WebDavClient]). */
-    private fun albumRelativeSegments(album: RemoteAlbum): List<String> =
-        requireSafeHref(album.href)
-            .nonEmptyPathSegments()
-            .drop(baseHttpUrl.nonEmptyPathSegments().size)
+    /**
+     * Segments of an album's collection relative to the configured WebDAV URL (as expected by
+     * [WebDavClient]). The album must be exactly one level below the base folder; empty or blank
+     * segments (`//`, `%20`) fail with [UnsafeHrefException] instead of being dropped, so the
+     * request can never address a different folder than the one listed.
+     */
+    private fun albumRelativeSegments(album: RemoteAlbum): List<String> {
+        val segments =
+            requireSafeHref(album.href).pathSegments.let {
+                if (it.lastOrNull() ==
+                    ""
+                ) {
+                    it.dropLast(1)
+                } else {
+                    it
+                }
+            }
+        val baseFolderDepth = baseFolderUrl.nonEmptyPathSegments().size
+        if (segments.size != baseFolderDepth + 1 || segments.any { it.isBlank() }) throw UnsafeHrefException()
+        return segments.drop(baseHttpUrl.nonEmptyPathSegments().size)
+    }
 
     private fun buildAlbumHref(relativeSegments: List<String>): String {
         val url =
@@ -607,6 +623,12 @@ class ThumbnailTooLargeException : IOException("Thumbnail exceeds the size limit
 
 /** A server-supplied href points outside the configured WebDAV folder / origin and was not requested. */
 class UnsafeHrefException : IllegalArgumentException("Refusing href outside the configured WebDAV folder")
+
+/** A new album name exceeds [MAX_ALBUM_NAME_BYTES] UTF-8 bytes; nothing was requested. */
+class AlbumNameTooLongException : IllegalArgumentException("Album name too long")
+
+/** A new album name is blank, `.` / `..` or contains `/`, `\` or NUL; nothing was requested. */
+class InvalidAlbumNameException : IllegalArgumentException("Invalid album name")
 
 /**
  * Largest power-of-two `inSampleSize` that keeps the longest side of a [width] x [height] image at
