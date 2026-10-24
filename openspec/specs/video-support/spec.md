@@ -110,8 +110,12 @@ Selected videos SHALL be uploaded with the same flow as photos (occasion or auto
 - **THEN** the batch completes normally
 
 #### Scenario: Repeatedly interrupted
-- **WHEN** an upload was interrupted on its fifth run
+- **WHEN** the system has refused to start or keep the upload foreground service five times for the same upload (counted in the queue file; absent = 0)
 - **THEN** it stops with a failure notification and offers to retry the items not uploaded yet
+
+#### Scenario: Wake-ups without interruption do not use the budget
+- **WHEN** an upload was started any number of times without a foreground refusal (Wi-Fi-only wake-ups on a metered network, constraint stops)
+- **THEN** none of these starts counts towards the limit and a later refusal still retries the upload
 
 ### Requirement: Albums and reviews ignore videos
 Album listings and the duplicate and blurry photo reviews SHALL NOT include video files. Uploaded videos therefore do not appear in the Albums screens.

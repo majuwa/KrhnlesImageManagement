@@ -105,11 +105,20 @@ class UploadWorker internal constructor(
         private const val TAG = "UploadWorker"
 
         /**
-         * Runs of one queue (WorkManager's `runAttemptCount + 1`, which also counts Wi-Fi-only
-         * back-offs) after which a refused foreground service no longer retries: the run stops with
-         * the failure notification and a retry file for the entries not uploaded yet.
+         * Foreground-service refusals of one queue (persisted as `interruptions` in the queue file;
+         * Wi-Fi-only wake-ups and constraint stops do not count) after which a refused foreground
+         * service no longer retries: the run stops with the failure notification and a retry file
+         * for the entries not uploaded yet.
          */
         const val MAX_UPLOAD_RUN_ATTEMPTS = 5
+
+        /**
+         * Hard backstop for a counter that cannot be persisted: a refused foreground service gives
+         * up once WorkManager's `runAttemptCount` reaches this many starts (metered Wi-Fi-only
+         * wake-ups also count there, hence the generous factor), so a failing queue file write can
+         * never retry forever.
+         */
+        const val MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP = 10 * MAX_UPLOAD_RUN_ATTEMPTS
     }
 
     override suspend fun doWork(): Result {
@@ -192,7 +201,7 @@ class UploadWorker internal constructor(
         // A refused foreground service (time budget used up, background start) retries the run
         // later; the queue stays.
         if (!setForegroundOrFalse(buildForegroundInfo(total - pending.size, total))) {
-            return interrupted(UploadRun(queue, emptySet(), interrupted = true), notificationTag)
+            return interrupted(UploadRun(queue, emptySet(), interrupted = true), queueFile, notificationTag)
         }
 
         // Nothing left (an earlier run finished every entry): no folder request, only the result.
@@ -212,19 +221,38 @@ class UploadWorker internal constructor(
         }
 
         val run = uploadFiles(client, queue, remoteFolderPaths, queueFile)
-        return if (run.interrupted) interrupted(run, notificationTag) else finish(run, notificationTag)
+        return if (run.interrupted) interrupted(run, queueFile, notificationTag) else finish(run, notificationTag)
     }
 
     /**
      * An interrupted run is retried (queue and its progress kept) until [MAX_UPLOAD_RUN_ATTEMPTS]
-     * runs are used up; then it stops like a finished run with the remaining entries failed.
+     * refusals are used up; then it stops like a finished run with the remaining entries failed.
+     * The refusal is counted in the queue file; if that write fails the run is retried only while
+     * `runAttemptCount` is below [MAX_UPLOAD_RUN_ATTEMPTS], and never from [MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP].
      */
     private suspend fun interrupted(
         run: UploadRun,
+        queueFile: File,
         notificationTag: String,
     ): UploadOutcome {
-        if (runAttemptCount + 1 < MAX_UPLOAD_RUN_ATTEMPTS) return UploadOutcome(Result.retry(), keepQueue = true)
-        Log.w(TAG, "Upload interrupted too often; giving up after $MAX_UPLOAD_RUN_ATTEMPTS runs")
+        if (run.queue.interruptions + 1 < MAX_UPLOAD_RUN_ATTEMPTS &&
+            runAttemptCount < MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP
+        ) {
+            val saved =
+                rewriteQueueFile(
+                    queueFile,
+                    run.queue
+                        .withInterruption()
+                        .toProgressJson()
+                        .toString(),
+                )
+            // An unsaved counter never grows: once WorkManager itself has started the work
+            // MAX_UPLOAD_RUN_ATTEMPTS times, stop instead of retrying with a stuck counter.
+            if (saved || runAttemptCount < MAX_UPLOAD_RUN_ATTEMPTS) {
+                return UploadOutcome(Result.retry(), keepQueue = true)
+            }
+        }
+        Log.w(TAG, "Upload interrupted too often; giving up after $MAX_UPLOAD_RUN_ATTEMPTS interruptions")
         return finish(run, notificationTag, gaveUp = true)
     }
 

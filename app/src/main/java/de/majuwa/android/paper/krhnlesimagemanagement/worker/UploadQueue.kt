@@ -15,6 +15,7 @@ private const val KEY_URI = "uri"
 private const val KEY_MIME_TYPE = "mimeType"
 private const val KEY_DISPLAY_NAME = "displayName"
 private const val KEY_UPLOADED = "uploaded"
+private const val KEY_INTERRUPTIONS = "interruptions"
 
 /** One photo of a queue file; [folderName] is set only in the per-photo format. */
 internal data class UploadQueueEntry(
@@ -42,6 +43,11 @@ internal data class UploadQueue(
     val folderName: String?,
     val label: String?,
     val entries: List<UploadQueueEntry>,
+    /**
+     * Foreground-service refusals of earlier runs (optional top-level `interruptions`; absent = 0).
+     * Only these count towards the give-up limit, never Wi-Fi-only wake-ups or constraint stops.
+     */
+    val interruptions: Int = 0,
 ) {
     /** Upload-history label: the label, else the common folder (uncapped), else empty; only the label is capped. */
     val historyLabel: String
@@ -67,13 +73,20 @@ internal data class UploadQueue(
 
     /** Retry queue JSON with only the entries at [failedIndices], each keeping its own folder. */
     fun toRetryJson(failedIndices: List<Int>): JSONObject =
-        toJson(failedIndices.map { entries[it].copy(uploaded = false) })
+        toJson(failedIndices.map { entries[it].copy(uploaded = false) }, interruptions = 0)
 
     /** The whole queue in its own format, with an `uploaded` marker on every uploaded entry. */
-    fun toProgressJson(): JSONObject = toJson(entries)
+    fun toProgressJson(): JSONObject = toJson(entries, interruptions)
 
-    private fun toJson(selected: List<UploadQueueEntry>): JSONObject =
+    /** This queue with one more counted interruption. */
+    fun withInterruption(): UploadQueue = copy(interruptions = interruptions + 1)
+
+    private fun toJson(
+        selected: List<UploadQueueEntry>,
+        interruptions: Int,
+    ): JSONObject =
         JSONObject().apply {
+            if (interruptions > 0) put(KEY_INTERRUPTIONS, interruptions)
             folderName?.let { put(KEY_FOLDER_NAME, it) }
             label?.let { put(KEY_LABEL, it) }
             put(
@@ -132,12 +145,41 @@ internal fun parseUploadQueue(json: String): UploadQueue? {
         }
     val stagedValid = objects.indices.all { hasValidStaged(objects[it], entries[it]) }
     val commonFolder = queue.opt(KEY_FOLDER_NAME)
+    val interruptions =
+        (queue.opt(KEY_INTERRUPTIONS) as? Number)
+            ?.toLong()
+            ?.coerceIn(0L, UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS.toLong())
+            ?.toInt() ?: 0
     return when {
-        !stagedValid -> null
-        perPhoto && (queue.has(KEY_FOLDER_NAME) || entryFolders.any { it !is String || it.isBlank() }) -> null
-        perPhoto -> UploadQueue(folderName = null, label = queue.opt(KEY_LABEL) as? String, entries = entries)
-        commonFolder is String -> UploadQueue(folderName = commonFolder, label = null, entries = entries)
-        else -> null
+        !stagedValid -> {
+            null
+        }
+
+        perPhoto && (queue.has(KEY_FOLDER_NAME) || entryFolders.any { it !is String || it.isBlank() }) -> {
+            null
+        }
+
+        perPhoto -> {
+            UploadQueue(
+                folderName = null,
+                label = queue.opt(KEY_LABEL) as? String,
+                entries = entries,
+                interruptions = interruptions,
+            )
+        }
+
+        commonFolder is String -> {
+            UploadQueue(
+                folderName = commonFolder,
+                label = null,
+                entries = entries,
+                interruptions = interruptions,
+            )
+        }
+
+        else -> {
+            null
+        }
     }
 }
 

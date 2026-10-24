@@ -1,13 +1,19 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui
 
 import android.app.Application
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -25,6 +31,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -97,6 +104,35 @@ class SettingsScreenTest {
         }
         composeTestRule.waitUntilAtLeastOneExists(hasText("Connected"), timeoutMillis = 5_000)
         composeTestRule.onNodeWithText("Test Connection").performScrollTo().performClick()
+    }
+
+    // ── Wi-Fi only (issues #14 / #33) ────────────────────────────────────────
+
+    @Test
+    fun `wifi only row is one switch node that persists the click`() {
+        val store = FakeCredentialRepository(WebDavConfig("https://cloud.example.com/dav/", "u", "p", "Photos"))
+        setSettingsContent(
+            SettingsViewModel(
+                application = RuntimeEnvironment.getApplication() as Application,
+                credentialStore = store,
+            ),
+        )
+
+        composeTestRule.onNodeWithTag("wifiOnlyRow").performScrollTo().assertIsOff()
+        composeTestRule.onNodeWithTag("wifiOnlyRow").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("wifiOnlyRow").assertIsOn()
+        assertTrue(store.wifiOnlyValue())
+        composeTestRule
+            .onAllNodes(isToggleable() and hasText("Upload on Wi-Fi only"))
+            .assertCountEquals(1)
+        composeTestRule
+            .onAllNodes(isToggleable() and hasAnyAncestor(hasTestTag("wifiOnlyRow")), useUnmergedTree = true)
+            .assertCountEquals(0)
+        composeTestRule
+            .onNodeWithTag("wifiOnlyRow")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
     }
 
     // ── Blur sensitivity (issue #20 / #39) ───────────────────────────────────

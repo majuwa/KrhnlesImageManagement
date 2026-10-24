@@ -20,6 +20,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRe
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.parseUploadQueue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -74,6 +75,8 @@ class UploadWorkerForegroundTest {
     /** Index of the first refused `setForeground` call; null = never refused. */
     private var foregroundFailsFrom: Int? = null
     private var foregroundCalls = 0
+    private var wifiOnly = false
+    private var networkMetered = false
 
     @Before
     fun setUp() {
@@ -143,11 +146,12 @@ class UploadWorkerForegroundTest {
                             workerParameters,
                             FakeCredentialRepository(
                                 initialConfig = WebDavConfig(server.url("/").toString(), "u", "p", ""),
+                                initialWifiOnly = wifiOnly,
                             ),
                             ::WebDavClient,
                             uploaded,
                             history,
-                            { false },
+                            { networkMetered },
                         )
                     },
                 ).build()
@@ -183,6 +187,13 @@ class UploadWorkerForegroundTest {
         assertTrue(history.state.value.isEmpty())
         assertTrue(resultNotifications().isEmpty())
     }
+
+    private fun setInterruptions(
+        queue: File,
+        count: Int,
+    ) = queue.writeText(JSONObject(queue.readText()).put("interruptions", count).toString())
+
+    private fun interruptions(queue: File) = JSONObject(queue.readText()).optInt("interruptions", 0)
 
     private fun uploadedMarkers(queue: File): List<Boolean> {
         val photos = JSONObject(queue.readText()).getJSONArray("photos")
@@ -225,7 +236,7 @@ class UploadWorkerForegroundTest {
         foregroundFailsFrom = null
         foregroundCalls = 0
         requests.clear()
-        val second = run(queue, runAttemptCount = 1)
+        val second = run(queue)
         assertTrue(second is ListenableWorker.Result.Success)
         assertEquals(listOf("MKCOL /Trip", "PUT /Trip/b.jpg"), requests.toList())
         assertEquals(2, second.outputData.getInt(UploadWorker.KEY_UPLOADED_COUNT, -1))
@@ -292,7 +303,9 @@ class UploadWorkerForegroundTest {
         foregroundFailsFrom = 1
         val queue = queueFile("a.jpg", "b.jpg", "c.jpg")
 
-        val result = run(queue, runAttemptCount = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS - 1)
+        setInterruptions(queue, UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS - 1)
+
+        val result = run(queue)
 
         assertTrue(result is ListenableWorker.Result.Failure)
         assertEquals(1, result.outputData.getInt(UploadWorker.KEY_UPLOADED_COUNT, -1))
@@ -325,11 +338,143 @@ class UploadWorkerForegroundTest {
         foregroundFailsFrom = 0
         val queue = queueFile("a.jpg", "b.jpg")
 
-        val result = run(queue, runAttemptCount = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS)
+        setInterruptions(queue, UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS - 1)
+
+        val result = run(queue)
 
         assertTrue(result is ListenableWorker.Result.Failure)
         assertTrue(requests.isEmpty())
         assertEquals(2, JSONObject(retryFiles().single().readText()).getJSONArray("photos").length())
         assertFalse(queue.exists())
+    }
+
+    @Test
+    fun refusalIsCountedInTheQueueFile_notInTheWorkManagerRunAttempts() {
+        foregroundFailsFrom = 0
+        val queue = queueFile("a.jpg")
+        assertEquals(0, interruptions(queue))
+
+        // A high WorkManager run attempt count (metered wake-ups, constraint stops) is irrelevant.
+        val result = run(queue, runAttemptCount = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS * 2)
+
+        assertTrue(result is ListenableWorker.Result.Retry)
+        assertEquals(1, interruptions(queue))
+        assertTrue(retryFiles().isEmpty())
+        assertTrue(resultNotifications().isEmpty())
+    }
+
+    @Test
+    fun meteredWakeUps_neverConsumeTheInterruptionBudget() {
+        wifiOnly = true
+        networkMetered = true
+        val queue = queueFile("a.jpg")
+        val wakeUps = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS + 2
+
+        repeat(wakeUps) { attempt ->
+            assertTrue(run(queue, runAttemptCount = attempt) is ListenableWorker.Result.Retry)
+        }
+        assertTrue(queue.exists())
+        assertEquals(0, interruptions(queue))
+        assertTrue(requests.isEmpty())
+        assertTrue(resultNotifications().isEmpty())
+
+        // Unmetered again, one foreground refusal: still retried, not given up.
+        networkMetered = false
+        foregroundFailsFrom = 0
+        val result = run(queue, runAttemptCount = wakeUps)
+        assertTrue(result is ListenableWorker.Result.Retry)
+        assertEquals(1, interruptions(queue))
+        assertTrue(retryFiles().isEmpty())
+        assertTrue(resultNotifications().isEmpty())
+    }
+
+    @Test
+    fun refusalsUpToTheLimit_giveUpWithFailureNotificationAndFreshRetryBudget() {
+        foregroundFailsFrom = 0
+        val queue = queueFile("a.jpg")
+
+        repeat(UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS - 1) {
+            assertTrue(run(queue) is ListenableWorker.Result.Retry)
+        }
+        assertEquals(UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS - 1, interruptions(queue))
+        assertTrue(resultNotifications().isEmpty())
+
+        assertTrue(run(queue) is ListenableWorker.Result.Failure)
+        assertEquals(context.getString(R.string.notification_upload_failed), notificationTitle())
+        val retry = retryFiles().single()
+        assertEquals(0, interruptions(retry))
+        assertFalse(queue.exists())
+    }
+
+    @Test
+    fun unsavableCounter_givesUpOnceWorkManagerAttemptsReachTheCap() {
+        foregroundFailsFrom = 0
+        val queue = queueFile("a.jpg")
+        // A non-empty directory in place of the temp file makes every rewriteQueueFile() fail
+        // (and survives its cleanup `delete()`).
+        val blocker = File(queue.parentFile, "${queue.name}.tmp")
+        assertTrue(blocker.mkdirs())
+        assertTrue(File(blocker, "keep").createNewFile())
+
+        repeat(UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS) { attempt ->
+            assertTrue(run(queue, runAttemptCount = attempt) is ListenableWorker.Result.Retry)
+        }
+        assertEquals(0, interruptions(queue))
+        assertTrue(resultNotifications().isEmpty())
+
+        val result = run(queue, runAttemptCount = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS)
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(context.getString(R.string.notification_upload_failed), notificationTitle())
+        assertEquals(1, retryFiles().size)
+        assertFalse(queue.exists())
+    }
+
+    @Test
+    fun runAttemptCountBackstop_givesUpEvenWhenTheCounterIsSaved() {
+        foregroundFailsFrom = 0
+        val queue = queueFile("a.jpg")
+
+        val result = run(queue, runAttemptCount = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP)
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(context.getString(R.string.notification_upload_failed), notificationTitle())
+        assertEquals(1, retryFiles().size)
+    }
+
+    @Test
+    fun interruptionsAreClampedWhenParsed() {
+        val json = JSONObject(queueFile("a.jpg").readText())
+        val max = UploadWorker.MAX_UPLOAD_RUN_ATTEMPTS
+
+        fun parsed(value: Any) = parseUploadQueue(JSONObject(json.toString()).put("interruptions", value).toString())
+
+        assertEquals(max, parsed(Int.MAX_VALUE)?.interruptions)
+        assertEquals(max, parsed(Int.MAX_VALUE.toLong() + 10L)?.interruptions)
+        assertEquals(max, parsed(Long.MAX_VALUE)?.interruptions)
+        assertEquals(2, parsed(2.0)?.interruptions)
+        assertEquals(0, parsed(-3)?.interruptions)
+        assertEquals(0, parsed(Long.MIN_VALUE)?.interruptions)
+    }
+
+    @Test
+    fun queueWithoutInterruptionsParsesAsZeroAndTheCounterRoundTrips() {
+        val queue = queueFile("a.jpg")
+        val parsed = parseUploadQueue(queue.readText())
+        assertEquals(0, parsed?.interruptions)
+
+        val counted = parsed!!.withInterruption().withInterruption()
+        assertEquals(2, parseUploadQueue(counted.toProgressJson().toString())?.interruptions)
+        // Retry files start with a fresh budget; a zero counter is not written.
+        assertFalse(counted.toRetryJson(listOf(0)).has("interruptions"))
+        assertFalse(parsed.toProgressJson().has("interruptions"))
+        assertEquals(
+            0,
+            parseUploadQueue(JSONObject(queue.readText()).put("interruptions", -3).toString())?.interruptions,
+        )
+        assertEquals(
+            0,
+            parseUploadQueue(JSONObject(queue.readText()).put("interruptions", "x").toString())?.interruptions,
+        )
     }
 }

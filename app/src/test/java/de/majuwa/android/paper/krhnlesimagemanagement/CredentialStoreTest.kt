@@ -335,6 +335,19 @@ class CredentialStoreTest {
         }
 
     @Test
+    fun `wifi only defaults to off, survives a new store instance and is reset by clear`() =
+        runTest {
+            assertFalse(store.wifiOnly.first())
+
+            store.saveWifiOnly(true)
+            assertTrue(store.wifiOnly.first())
+            assertTrue(CredentialStore(context, CredentialCipher(keys)).wifiOnly.first())
+
+            store.clear()
+            assertFalse(store.wifiOnly.first())
+        }
+
+    @Test
     fun `blur sensitivity writes do not re-emit the credential flows`() =
         runTest {
             store.save("https://cloud.example.com/dav/", "user", "secret")
