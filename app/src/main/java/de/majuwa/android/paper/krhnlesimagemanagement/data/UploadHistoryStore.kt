@@ -3,8 +3,10 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
@@ -13,21 +15,35 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal val Context.uploadHistoryDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "upload_history",
+internal const val UPLOAD_HISTORY_DATASTORE_NAME = "upload_history"
+
+// An unreadable file means an empty history: the log is a convenience, losing it is safe.
+internal val uploadHistoryCorruptionHandler = ReplaceFileCorruptionHandler<Preferences> { emptyPreferences() }
+
+private val Context.uploadHistoryDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = UPLOAD_HISTORY_DATASTORE_NAME,
+    corruptionHandler = uploadHistoryCorruptionHandler,
 )
 
-class UploadHistoryStore(
-    private val context: Context,
+/**
+ * Local log of finished upload runs. The file is excluded from backup and device transfer because
+ * folder names are user-written. At most [MAX_HISTORY_ENTRIES] newest entries are kept.
+ */
+class UploadHistoryStore internal constructor(
+    private val dataStore: DataStore<Preferences>,
 ) : UploadHistoryRepository {
+    /** Production constructor using the process-wide DataStore (the internal one is for tests). */
+    constructor(context: Context) : this(context.applicationContext.uploadHistoryDataStore)
+
     private val tag = "UploadHistoryStore"
 
     private companion object {
         val KEY_UPLOAD_HISTORY = stringPreferencesKey("upload_history_entries")
+        const val MAX_HISTORY_ENTRIES = 500
     }
 
     override val entries: Flow<List<UploadHistoryEntry>> =
-        context.uploadHistoryDataStore.data.map { prefs ->
+        dataStore.data.map { prefs ->
             decodeEntries(prefs[KEY_UPLOAD_HISTORY]).sortedByDescending { it.timestampMillis }
         }
 
@@ -35,21 +51,32 @@ class UploadHistoryStore(
         require(isValidEntry(entry)) {
             "failedCount must be between 0 and total photo count, and photo count must be non-negative"
         }
-        context.uploadHistoryDataStore.edit { prefs ->
-            val updated = decodeEntries(prefs[KEY_UPLOAD_HISTORY]).toMutableList().apply { add(entry) }
+        dataStore.edit { prefs ->
+            val existing = decodeEntries(prefs[KEY_UPLOAD_HISTORY])
+            val stored =
+                if (existing.any { it.id == entry.id }) {
+                    // maxOf(...) + 1 would only overflow at Long.MAX_VALUE, which ids (epoch millis) never reach.
+                    entry.copy(id = maxOf(entry.id, existing.maxOf { it.id } + 1))
+                } else {
+                    entry
+                }
+            val updated =
+                (existing + stored)
+                    .sortedByDescending { it.timestampMillis }
+                    .take(MAX_HISTORY_ENTRIES)
             prefs[KEY_UPLOAD_HISTORY] = encodeEntries(updated)
         }
     }
 
     override suspend fun removeEntry(entryId: Long) {
-        context.uploadHistoryDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             val updated = decodeEntries(prefs[KEY_UPLOAD_HISTORY]).filterNot { it.id == entryId }
             prefs[KEY_UPLOAD_HISTORY] = encodeEntries(updated)
         }
     }
 
     override suspend fun clearAll() {
-        context.uploadHistoryDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs.remove(KEY_UPLOAD_HISTORY)
         }
     }
@@ -76,6 +103,13 @@ class UploadHistoryStore(
                     }
                 }
             }
+        }.map { decoded ->
+            // Newest entry per id wins (stable sort); the dropped duplicate disappears on the next write.
+            val unique = decoded.sortedByDescending { it.timestampMillis }.distinctBy { it.id }
+            if (unique.size < decoded.size) {
+                Log.w(tag, "Dropped ${decoded.size - unique.size} upload history entries with duplicate ids")
+            }
+            unique
         }.getOrElse { throwable ->
             Log.e(tag, "Failed to parse upload history entries: ${throwable.javaClass.simpleName}")
             emptyList()

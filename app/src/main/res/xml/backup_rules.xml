@@ -7,4 +7,6 @@
     <exclude domain="file" path="datastore/app_preferences.preferences_pb"/>
     <!-- MediaStore ids are device-specific: a restored set would mark wrong photos -->
     <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
+    <!-- Folder names are user-written and may be sensitive -->
+    <exclude domain="file" path="datastore/upload_history.preferences_pb"/>
 </full-backup-content>

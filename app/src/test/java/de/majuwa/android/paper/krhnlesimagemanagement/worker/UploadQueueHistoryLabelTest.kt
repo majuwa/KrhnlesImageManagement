@@ -17,10 +17,17 @@ class UploadQueueHistoryLabelTest {
     }
 
     @Test
-    fun topLevelFolderName_isNeverCapped() {
+    fun folderName_longerThanLabelCapButWithinFolderCap_staysFull() {
         val long = "f".repeat(MAX_HISTORY_LABEL_LENGTH + 50)
 
         assertEquals(long, queue(long, null).historyLabel)
+    }
+
+    @Test
+    fun folderName_isCappedToFolderMaximumLength() {
+        val huge = "f".repeat(MAX_FOLDER_HISTORY_LABEL_LENGTH + 50)
+
+        assertEquals("f".repeat(MAX_FOLDER_HISTORY_LABEL_LENGTH), queue(huge, null).historyLabel)
     }
 
     @Test

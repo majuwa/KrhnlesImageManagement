@@ -4,6 +4,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.APP_PREFERENCES_NAME
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CREDENTIALS_DATASTORE_NAME
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PREFS_FILE_NAME
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UPLOADED_PHOTOS_DATASTORE_NAME
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UPLOAD_HISTORY_DATASTORE_NAME
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
@@ -12,7 +13,8 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Credentials and the onboarding flag must be excluded together, so a restore never splits them,
- * and the device-specific uploaded-photo markers are excluded from every backup path.
+ * the device-specific uploaded-photo markers and the upload history (user-written folder names)
+ * are excluded from every backup path.
  */
 class BackupRulesTest {
     private val xmlDir = File(System.getProperty("krhnles.moduleDir"), "src/main/res/xml")
@@ -23,6 +25,7 @@ class BackupRulesTest {
             "sharedpref" to "$PREFS_FILE_NAME.xml",
             "file" to "datastore/$APP_PREFERENCES_NAME.preferences_pb",
             "file" to "datastore/$UPLOADED_PHOTOS_DATASTORE_NAME.preferences_pb",
+            "file" to "datastore/$UPLOAD_HISTORY_DATASTORE_NAME.preferences_pb",
         )
 
     private fun excludes(
@@ -44,14 +47,14 @@ class BackupRulesTest {
     }
 
     @Test
-    fun `full backup rules exclude credentials, the onboarding flag and uploaded markers`() =
+    fun `full backup rules exclude credentials, the onboarding flag and uploaded markers and upload history`() =
         assertExcludesAll(excludes("backup_rules.xml", null))
 
     @Test
-    fun `cloud backup excludes credentials, the onboarding flag and uploaded markers`() =
+    fun `cloud backup excludes credentials, the onboarding flag and uploaded markers and upload history`() =
         assertExcludesAll(excludes("data_extraction_rules.xml", "cloud-backup"))
 
     @Test
-    fun `device transfer excludes credentials, the onboarding flag and uploaded markers`() =
+    fun `device transfer excludes credentials, the onboarding flag and uploaded markers and upload history`() =
         assertExcludesAll(excludes("data_extraction_rules.xml", "device-transfer"))
 }

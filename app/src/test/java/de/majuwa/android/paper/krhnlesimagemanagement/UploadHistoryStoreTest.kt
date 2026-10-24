@@ -1,121 +1,153 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.test.core.app.ApplicationProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryStore
-import de.majuwa.android.paper.krhnlesimagemanagement.data.uploadHistoryDataStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.uploadHistoryCorruptionHandler
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
-import junit.framework.TestCase.assertEquals
-import junit.framework.TestCase.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
-import org.junit.Before
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
+/**
+ * [UploadHistoryStore] against real test DataStores on temporary files (never the app's process-wide
+ * delegate). Robolectric supplies the real org.json and android.util.Log.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class UploadHistoryStoreTest {
-    private lateinit var context: Context
-    private lateinit var store: UploadHistoryStore
+    @get:Rule
+    val tmp = TemporaryFolder()
 
-    @Before
-    fun setup() {
-        context = ApplicationProvider.getApplicationContext()
-        store = UploadHistoryStore(context)
-        runBlocking { store.clearAll() }
-    }
+    private val key = stringPreferencesKey("upload_history_entries")
 
-    @Test
-    fun `entries persist across new store instances`() =
-        runTest {
-            store.addEntry(
-                UploadHistoryEntry(
-                    id = 1L,
-                    occasionName = "Trip",
-                    timestampMillis = 1000L,
-                    photoCount = 5,
-                    failedCount = 1,
-                ),
-            )
+    private fun file() = File(tmp.root, "upload_history.preferences_pb")
 
-            val reloadedStore = UploadHistoryStore(context)
-            val entries = reloadedStore.entries.first()
+    private fun dataStore(
+        scope: CoroutineScope,
+        withHandler: Boolean = false,
+    ): DataStore<Preferences> =
+        PreferenceDataStoreFactory.create(
+            corruptionHandler = if (withHandler) uploadHistoryCorruptionHandler else null,
+            scope = scope,
+            produceFile = { file() },
+        )
 
-            assertEquals(1, entries.size)
-            assertEquals("Trip", entries.first().occasionName)
-            assertEquals(5, entries.first().photoCount)
-            assertEquals(1, entries.first().failedCount)
-        }
+    private fun entry(
+        id: Long,
+        time: Long = id,
+        name: String = "Trip",
+        photos: Int = 2,
+        failed: Int = 0,
+    ) = UploadHistoryEntry(id, name, time, photos, failed)
 
     @Test
     fun `entries are newest first`() =
-        runTest {
-            store.addEntry(
-                UploadHistoryEntry(
-                    id = 1L,
-                    occasionName = "Older",
-                    timestampMillis = 1000L,
-                    photoCount = 2,
-                    failedCount = 0,
-                ),
-            )
-            store.addEntry(
-                UploadHistoryEntry(
-                    id = 2L,
-                    occasionName = "Newer",
-                    timestampMillis = 2000L,
-                    photoCount = 3,
-                    failedCount = 1,
-                ),
-            )
+        runTest(UnconfinedTestDispatcher()) {
+            val store = UploadHistoryStore(dataStore(backgroundScope))
+            store.addEntry(entry(1, 1000, "Older"))
+            store.addEntry(entry(2, 3000, "Newest"))
+            store.addEntry(entry(3, 2000, "Middle"))
 
-            val entries = store.entries.first()
-
-            assertEquals(2, entries.size)
-            assertEquals("Newer", entries[0].occasionName)
-            assertEquals("Older", entries[1].occasionName)
+            assertEquals(listOf("Newest", "Middle", "Older"), store.entries.first().map { it.occasionName })
         }
 
     @Test
-    fun `removeEntry and clearAll update history`() =
-        runTest {
-            store.addEntry(
-                UploadHistoryEntry(
-                    id = 1L,
-                    occasionName = "A",
-                    timestampMillis = 1000L,
-                    photoCount = 1,
-                    failedCount = 0,
-                ),
-            )
-            store.addEntry(
-                UploadHistoryEntry(
-                    id = 2L,
-                    occasionName = "B",
-                    timestampMillis = 2000L,
-                    photoCount = 2,
-                    failedCount = 1,
-                ),
-            )
+    fun `same timestamp ids stay distinct and delete removes only one`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val store = UploadHistoryStore(dataStore(backgroundScope))
+            store.addEntry(entry(5, 5, "A"))
+            store.addEntry(entry(5, 5, "B"))
+            store.addEntry(entry(5, 5, "C"))
 
-            store.removeEntry(1L)
-            val afterSingleDelete = store.entries.first()
-            assertEquals(1, afterSingleDelete.size)
-            assertEquals(2L, afterSingleDelete.first().id)
+            val ids = store.entries.first().map { it.id }
+            assertEquals(3, ids.size)
+            assertEquals(3, ids.toSet().size)
 
+            store.removeEntry(ids.first())
+            assertEquals(2, store.entries.first().size)
+            assertTrue(ids.first() !in store.entries.first().map { it.id })
+        }
+
+    @Test
+    fun `clearAll empties the history`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val store = UploadHistoryStore(dataStore(backgroundScope))
+            store.addEntry(entry(1))
             store.clearAll()
             assertTrue(store.entries.first().isEmpty())
         }
 
     @Test
+    fun `501st entry drops the oldest`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val store = UploadHistoryStore(dataStore(backgroundScope))
+            for (i in 1..501) store.addEntry(entry(i.toLong(), time = i * 10L))
+
+            val entries = store.entries.first()
+            assertEquals(500, entries.size)
+            assertEquals(5010L, entries.first().timestampMillis)
+            assertEquals(20L, entries.last().timestampMillis)
+        }
+
+    @Test
+    fun `existing oversized history is trimmed on the next add`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            val json =
+                (1..600).joinToString(prefix = "[", postfix = "]") {
+                    """{"id":$it,"occasionName":"x","timestampMillis":$it,"photoCount":1,"failedCount":0}"""
+                }
+            ds.edit { it[key] = json }
+            val store = UploadHistoryStore(ds)
+            assertEquals(600, store.entries.first().size)
+
+            store.addEntry(entry(1000, time = 1000))
+
+            val entries = store.entries.first()
+            assertEquals(500, entries.size)
+            assertEquals(1000L, entries.first().timestampMillis)
+        }
+
+    @Test
+    fun `corrupt file with the handler gives an empty list and stays writable`() =
+        runTest(UnconfinedTestDispatcher()) {
+            file().writeBytes(byteArrayOf(0x7f, 0x00, 0x13, 0x37, -1, -2, -3))
+            val store = UploadHistoryStore(dataStore(backgroundScope, withHandler = true))
+
+            assertTrue(store.entries.first().isEmpty())
+            store.addEntry(entry(1))
+            assertEquals(1, store.entries.first().size)
+        }
+
+    @Test
+    fun `corrupt json gives an empty list`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            ds.edit { it[key] = "{not json" }
+            assertTrue(UploadHistoryStore(ds).entries.first().isEmpty())
+        }
+
+    @Test
     fun `invalid persisted entries are filtered out`() =
-        runTest {
-            context.uploadHistoryDataStore.edit { prefs ->
-                prefs[stringPreferencesKey("upload_history_entries")] =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            ds.edit {
+                it[key] =
                     """
                     [
                       {"id":1,"occasionName":"valid","timestampMillis":1000,"photoCount":4,"failedCount":1},
@@ -125,9 +157,45 @@ class UploadHistoryStoreTest {
                     """.trimIndent()
             }
 
-            val entries = store.entries.first()
+            assertEquals(listOf(1L), UploadHistoryStore(ds).entries.first().map { it.id })
+        }
 
-            assertEquals(1, entries.size)
-            assertEquals(1L, entries.first().id)
+    @Test
+    fun `persisted duplicate ids keep the newest entry and removeEntry removes only one`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            ds.edit {
+                it[key] =
+                    """
+                    [
+                      {"id":1,"occasionName":"first","timestampMillis":1000,"photoCount":1,"failedCount":0},
+                      {"id":1,"occasionName":"dup","timestampMillis":2000,"photoCount":1,"failedCount":0},
+                      {"id":2,"occasionName":"other","timestampMillis":3000,"photoCount":1,"failedCount":0}
+                    ]
+                    """.trimIndent()
+            }
+            val store = UploadHistoryStore(ds)
+
+            assertEquals(listOf("other", "dup"), store.entries.first().map { it.occasionName })
+            store.removeEntry(1L)
+            assertEquals(listOf("other"), store.entries.first().map { it.occasionName })
+        }
+
+    @Test
+    fun `entries persist across instances`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val job = Job()
+            val first =
+                UploadHistoryStore(dataStore(CoroutineScope(job + UnconfinedTestDispatcher(testScheduler))))
+            first.addEntry(entry(1, name = "Trip", photos = 5, failed = 1))
+            job.cancel()
+            job.join()
+
+            val reloaded = UploadHistoryStore(dataStore(backgroundScope)).entries.first()
+
+            assertEquals(1, reloaded.size)
+            assertEquals("Trip", reloaded.single().occasionName)
+            assertEquals(5, reloaded.single().photoCount)
+            assertEquals(1, reloaded.single().failedCount)
         }
 }

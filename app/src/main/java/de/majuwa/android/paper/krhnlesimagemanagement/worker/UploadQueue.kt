@@ -4,8 +4,11 @@ import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidFolderPath
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Upload-history labels are capped before they are recorded. */
+/** Per-photo upload-history labels are capped before they are recorded. */
 internal const val MAX_HISTORY_LABEL_LENGTH = 200
+
+/** Generous cap for the single-folder fallback label: huge names cannot bloat the history, normal ones stay intact. */
+internal const val MAX_FOLDER_HISTORY_LABEL_LENGTH = 1000
 
 private const val KEY_FOLDER_NAME = "folderName"
 private const val KEY_LABEL = "label"
@@ -49,9 +52,12 @@ internal data class UploadQueue(
      */
     val interruptions: Int = 0,
 ) {
-    /** Upload-history label: the label, else the common folder (uncapped), else empty; only the label is capped. */
+    /**
+     * Upload-history label: the label (capped to [MAX_HISTORY_LABEL_LENGTH]), else the common folder
+     * (capped to [MAX_FOLDER_HISTORY_LABEL_LENGTH]), else empty.
+     */
     val historyLabel: String
-        get() = label?.take(MAX_HISTORY_LABEL_LENGTH) ?: folderName.orEmpty()
+        get() = label?.take(MAX_HISTORY_LABEL_LENGTH) ?: folderName.orEmpty().take(MAX_FOLDER_HISTORY_LABEL_LENGTH)
 
     /** The folder (relative to the base folder) photo [index] is uploaded into. */
     fun folderOf(index: Int): String = entries[index].folderName ?: folderName.orEmpty()
