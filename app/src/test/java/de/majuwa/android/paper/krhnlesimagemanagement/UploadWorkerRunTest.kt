@@ -26,6 +26,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialReposi
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.RetryUploadReceiver
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import junit.framework.TestCase.assertEquals
@@ -33,6 +35,10 @@ import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertNull
 import junit.framework.TestCase.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -52,6 +58,7 @@ import org.robolectric.Shadows.shadowOf
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileNotFoundException
+import java.time.LocalDate
 import java.util.UUID
 
 /** Test provider whose `denied` photo throws [SecurityException] and `gone` photo [FileNotFoundException]. */
@@ -125,6 +132,9 @@ class UploadWorkerRunTest {
     private val requests = java.util.Collections.synchronizedList(mutableListOf<String>())
     private val failingNames = mutableSetOf<String>()
     private var mkcolCode = 201
+
+    /** MKCOL answers per decoded request path (e.g. 405 for existing levels); others use [mkcolCode]. */
+    private val mkcolCodesByPath = mutableMapOf<String, Int>()
     private val uploadedPhotos = FakeUploadedPhotosRepository()
     private val history = RecordingHistory()
 
@@ -139,15 +149,21 @@ class UploadWorkerRunTest {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests += "${request.method} ${request.path}"
                     return when {
-                        request.method == "MKCOL" -> MockResponse().setResponseCode(mkcolCode)
+                        request.method == "MKCOL" -> {
+                            MockResponse().setResponseCode(mkcolCodesByPath[request.path] ?: mkcolCode)
+                        }
 
                         failingNames.any {
                             request.path.orEmpty().endsWith(
                                 "/$it",
                             )
-                        } -> MockResponse().setResponseCode(500)
+                        } -> {
+                            MockResponse().setResponseCode(500)
+                        }
 
-                        else -> MockResponse().setResponseCode(201)
+                        else -> {
+                            MockResponse().setResponseCode(201)
+                        }
                     }
                 }
             }
@@ -157,17 +173,28 @@ class UploadWorkerRunTest {
     @After
     fun tearDown() {
         server.shutdown()
-        context.filesDir
-            .listFiles()
-            ?.filter { it.name.endsWith(".json") }
-            ?.forEach { it.delete() }
+        listOf(context.filesDir, context.noBackupFilesDir).forEach { dir ->
+            dir
+                .listFiles()
+                ?.filter { it.name.endsWith(".json") }
+                ?.forEach { it.delete() }
+        }
     }
 
-    private fun configuredRepo(wifiOnly: Boolean = false) =
-        FakeCredentialRepository(
-            initialConfig = WebDavConfig(url = server.url("/").toString(), username = "u", password = "p"),
-            initialWifiOnly = wifiOnly,
-        )
+    private fun configuredRepo(
+        wifiOnly: Boolean = false,
+        baseFolder: String = "",
+        serverPath: String = "/",
+    ) = FakeCredentialRepository(
+        initialConfig =
+            WebDavConfig(
+                url = server.url(serverPath).toString(),
+                username = "u",
+                password = "p",
+                baseFolder = baseFolder,
+            ),
+        initialWifiOnly = wifiOnly,
+    )
 
     private val progressUpdates = mutableListOf<Int>()
 
@@ -242,13 +269,53 @@ class UploadWorkerRunTest {
         return file
     }
 
+    private fun registerPhoto(photo: Photo) {
+        if (photo.uri.toUri().authority != UNREADABLE_AUTHORITY) {
+            shadowOf(context.contentResolver)
+                .registerInputStream(photo.uri.toUri(), ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+        }
+    }
+
+    /**
+     * Writes a queue file with raw JSON values: an entry folder or [label] / [topFolder] of [ABSENT]
+     * is left out, `null` is written as `JSONObject.NULL`.
+     */
+    private fun rawQueueFile(
+        entries: List<Pair<Photo, Any?>>,
+        label: Any? = ABSENT,
+        topFolder: Any? = ABSENT,
+    ): File {
+        val name = "upload_queue_1_${UUID.randomUUID()}.json"
+        val arr = JSONArray()
+        entries.forEach { (photo, folder) ->
+            val obj =
+                JSONObject()
+                    .put("id", photo.id)
+                    .put("uri", photo.uri)
+                    .put("mimeType", "image/jpeg")
+                    .put("displayName", photo.name)
+            if (folder !== ABSENT) obj.put("folderName", folder ?: JSONObject.NULL)
+            arr.put(obj)
+            registerPhoto(photo)
+        }
+        val root = JSONObject()
+        if (topFolder !== ABSENT) root.put("folderName", topFolder ?: JSONObject.NULL)
+        if (label !== ABSENT) root.put("label", label ?: JSONObject.NULL)
+        root.put("photos", arr)
+        return File(context.filesDir, name).also { it.writeText(root.toString()) }
+    }
+
+    private fun decodedRequests() = requests.map { it.replace("%2F", "/") }
+
+    private fun historyEntries() = runBlocking { history.entries.first() }
+
     private fun run(
         queueFile: File,
         repo: FakeCredentialRepository = configuredRepo(),
     ): ListenableWorker.Result = runBlocking { worker(queueFile, repo).doWork() }
 
     private fun retryFiles() =
-        context.filesDir
+        context.noBackupFilesDir
             .listFiles()
             .orEmpty()
             .filter { it.name.startsWith("retry_queue_") }
@@ -331,6 +398,58 @@ class UploadWorkerRunTest {
         assertTrue(run(file) is ListenableWorker.Result.Failure)
         assertFalse(file.exists())
         assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun perPhotoQueue_oneFailedPhoto_postsOneResultNotificationWithRetryActionCount() {
+        failingNames += "a.jpg"
+        val entries = listOf(Photo(1, "a.jpg") to "2026/05/13", Photo(2, "b.jpg") to "2026/05/14")
+
+        run(rawQueueFile(entries, label = "2026/05/13 – 2026/05/14"))
+
+        val posted = postedNotifications().filter { it.id == UploadWorker.RESULT_NOTIFICATION_ID }
+        assertEquals(1, posted.size)
+        assertEquals(
+            context.getString(R.string.notification_retry_failed, 1),
+            posted
+                .single()
+                .notification.actions
+                .single()
+                .title
+                .toString(),
+        )
+    }
+
+    @Test
+    fun retryFile_isWrittenToNoBackupFilesDir() {
+        failingNames += "a.jpg"
+
+        run(queueFile("upload", "Trip", listOf(Photo(1, "a.jpg"), Photo(2, "b.jpg"))))
+
+        val retry = retryFiles().single()
+        assertEquals(context.noBackupFilesDir.canonicalFile, retry.canonicalFile.parentFile)
+        assertTrue(
+            context.filesDir
+                .listFiles()
+                .orEmpty()
+                .none { it.name.startsWith("retry_queue_") },
+        )
+    }
+
+    private fun movedQueueFile(dir: File): File {
+        val source = queueFile("upload", "Trip", listOf(Photo(1, "a.jpg")))
+        return File(dir, source.name).also { source.copyTo(it) }.also { source.delete() }
+    }
+
+    @Test
+    fun queueFileInNoBackupFilesDir_runs_butOtherParentIsRejectedAndKept() {
+        assertTrue(run(movedQueueFile(context.noBackupFilesDir)) is ListenableWorker.Result.Success)
+        requests.clear()
+        val other = movedQueueFile(context.cacheDir)
+
+        assertTrue(run(other) is ListenableWorker.Result.Failure)
+        assertTrue(other.exists() && requests.isEmpty())
+        other.delete()
     }
 
     @Test
@@ -533,7 +652,255 @@ class UploadWorkerRunTest {
         assertTrue(UploadWorker.RESULT_NOTIFICATION_ID != UploadWorker.NOTIFICATION_ID)
     }
 
+    // ── Per-photo (auto date day folder) queues, issues #18 / #37 ─────────
+
+    private val twoDays =
+        listOf(
+            Photo(1, "a.jpg") to "2026/04/30",
+            Photo(2, "b.jpg") to "2026/04/30",
+            Photo(3, "c.jpg") to "2026/05/01",
+        )
+
+    private fun expectedTwoDayRequests(root: String) =
+        listOf(
+            "MKCOL ${root}Photos",
+            "MKCOL ${root}Photos/Krohn",
+            "MKCOL ${root}Photos/Krohn/2026",
+            "MKCOL ${root}Photos/Krohn/2026/04",
+            "MKCOL ${root}Photos/Krohn/2026/04/30",
+            "MKCOL ${root}Photos/Krohn/2026/05",
+            "MKCOL ${root}Photos/Krohn/2026/05/01",
+            "PUT ${root}Photos/Krohn/2026/04/30/a.jpg",
+            "PUT ${root}Photos/Krohn/2026/04/30/b.jpg",
+            "PUT ${root}Photos/Krohn/2026/05/01/c.jpg",
+        )
+
+    @Test
+    fun perPhotoQueue_createsEveryFolderLevelOnceThenPutsEachPhotoIntoItsDayFolder() {
+        // Shared levels already exist: 405 must not fail the upload.
+        listOf("/Photos", "/Photos/Krohn", "/Photos/Krohn/2026").forEach { mkcolCodesByPath[it] = 405 }
+        val queue = rawQueueFile(twoDays, label = "2026/04/30 – 2026/05/01")
+
+        val result = run(queue, configuredRepo(baseFolder = "Photos/Krohn"))
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(expectedTwoDayRequests("/"), decodedRequests())
+        assertEquals(listOf(1, 2, 3), progressUpdates)
+        assertEquals(1, postedNotifications().size)
+        val entry = historyEntries().single()
+        assertEquals("2026/04/30 – 2026/05/01", entry.occasionName)
+        assertEquals(3, entry.photoCount)
+        assertEquals(0, entry.failedCount)
+        assertEquals(setOf(1L, 2L, 3L), uploadedIds())
+        assertFalse(queue.exists())
+    }
+
+    @Test
+    fun perPhotoQueue_withServerPath_createsAndPutsBelowThatPath() {
+        val queue = rawQueueFile(twoDays, label = "2026/04/30 – 2026/05/01")
+
+        val result = run(queue, configuredRepo(baseFolder = "Photos/Krohn", serverPath = "/remote.php/dav/files/u/"))
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(expectedTwoDayRequests("/remote.php/dav/files/u/"), decodedRequests())
+    }
+
+    @Test
+    fun perPhotoRetry_keepsEachPhotosFolderAndLabelAndMarksOnlyNewSuccesses() {
+        failingNames += setOf("a.jpg", "b.jpg")
+        val entries =
+            listOf(
+                Photo(1, "a.jpg") to "2026/05/13",
+                Photo(2, "b.jpg") to "2026/05/14",
+                Photo(3, "c.jpg") to "2026/05/14",
+            )
+        run(rawQueueFile(entries, label = "2026/05/13 – 2026/05/14"))
+
+        val retry = retryFiles().single()
+        val json = JSONObject(retry.readText())
+        assertFalse(json.has("folderName"))
+        assertEquals("2026/05/13 – 2026/05/14", json.getString("label"))
+        val photos = json.getJSONArray("photos")
+        assertEquals(
+            listOf("a.jpg" to "2026/05/13", "b.jpg" to "2026/05/14"),
+            (0 until photos.length()).map {
+                photos.getJSONObject(it).getString("displayName") to photos.getJSONObject(it).getString("folderName")
+            },
+        )
+        assertEquals(setOf(3L), uploadedIds())
+
+        failingNames.clear()
+        requests.clear()
+        entries.forEach { registerPhoto(it.first) }
+        val result = run(retry)
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(
+            listOf("PUT /2026/05/13/a.jpg", "PUT /2026/05/14/b.jpg"),
+            decodedRequests().filter { it.startsWith("PUT") },
+        )
+        assertEquals(setOf(1L, 2L, 3L), uploadedIds())
+        assertEquals("2026/05/13 – 2026/05/14", historyEntries().last().occasionName)
+        assertFalse(retry.exists())
+    }
+
+    @Test
+    fun perPhotoQueue_invalidLastFolder_failsWithoutAnyRequest() {
+        val entries =
+            listOf(
+                Photo(1, "a.jpg") to "2026/05/01",
+                Photo(2, "b.jpg") to "2026/05/02",
+                Photo(3, "c.jpg") to "2026/../x",
+            )
+        val queue = rawQueueFile(entries, label = "x")
+
+        assertTrue(run(queue) is ListenableWorker.Result.Failure)
+
+        assertTrue(requests.isEmpty())
+        assertFalse(queue.exists())
+        val entry = historyEntries().single()
+        assertEquals(3, entry.photoCount)
+        assertEquals(3, entry.failedCount)
+        assertEquals(
+            expectedFolderFailureText(R.string.upload_error_invalid_folder_name),
+            text(postedNotifications().single().notification),
+        )
+    }
+
+    private fun assertMalformed(queue: File) {
+        assertTrue(run(queue) is ListenableWorker.Result.Failure)
+        assertFalse(queue.exists())
+        assertTrue(requests.isEmpty())
+        assertTrue(historyEntries().isEmpty())
+    }
+
+    @Test
+    fun perPhotoQueue_nonStringEntryFolder_isMalformed() {
+        listOf<Any?>(null, 5, JSONArray(), JSONObject()).forEach { folder ->
+            assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to folder), label = "x"))
+            // Without a label the folder key alone selects the per-photo format.
+            assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to folder)))
+        }
+    }
+
+    @Test
+    fun perPhotoQueue_blankEntryFolder_isMalformed() {
+        assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to " "), label = "x"))
+    }
+
+    @Test
+    fun entryWithoutFolderAndNoCommonFolder_isMalformed() {
+        assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to ABSENT)))
+    }
+
+    @Test
+    fun mixedQueues_areMalformed() {
+        assertMalformed(
+            rawQueueFile(listOf(Photo(1, "a.jpg") to "2026/05/01", Photo(2, "b.jpg") to ABSENT)),
+        )
+        assertMalformed(
+            rawQueueFile(listOf(Photo(1, "a.jpg") to "2026/05/01"), topFolder = "Trip"),
+        )
+        assertMalformed(
+            rawQueueFile(listOf(Photo(1, "a.jpg") to ABSENT), label = "x", topFolder = "Trip"),
+        )
+        assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to ABSENT), label = "x"))
+    }
+
+    @Test
+    fun nonStringCommonFolder_isMalformed() {
+        assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to ABSENT), topFolder = 5))
+        assertMalformed(rawQueueFile(listOf(Photo(1, "a.jpg") to ABSENT), topFolder = null))
+    }
+
+    @Test
+    fun nonStringLabel_isDroppedNotCoerced() {
+        listOf<Any?>(5, null, JSONArray()).forEach { label ->
+            history.entries.value = emptyList()
+            val queue = rawQueueFile(listOf(Photo(1, "a.jpg") to "2026/05/01"), label = label)
+
+            assertTrue(run(queue) is ListenableWorker.Result.Success)
+
+            assertEquals("", historyEntries().single().occasionName)
+        }
+    }
+
+    @Test
+    fun longLabel_isRecordedTruncatedTo200Characters() {
+        val label = "L".repeat(250)
+        val queue = rawQueueFile(listOf(Photo(1, "a.jpg") to "2026/05/01"), label = label)
+
+        run(queue)
+
+        assertEquals("L".repeat(200), historyEntries().single().occasionName)
+    }
+
+    @Test
+    fun perPhotoQueue_mkcolForbiddenOnSecondDay_failsBeforeAnyPut() {
+        mkcolCodesByPath["/2026/05/01"] = 403
+        val entries = listOf(Photo(1, "a.jpg") to "2026/04/30", Photo(2, "b.jpg") to "2026/05/01")
+        val queue = rawQueueFile(entries, label = "2026/04/30 – 2026/05/01")
+
+        assertTrue(run(queue) is ListenableWorker.Result.Failure)
+
+        assertTrue(decodedRequests().none { it.startsWith("PUT") })
+        assertTrue(decodedRequests().contains("MKCOL /2026/05/01"))
+        assertEquals(
+            expectedFolderFailureText(R.string.upload_error_folder_unavailable),
+            text(postedNotifications().single().notification),
+        )
+        assertEquals(2, historyEntries().single().failedCount)
+        assertTrue(retryFiles().isEmpty())
+    }
+
+    @Test
+    fun queueWrittenByUploadEnqueuer_isUploadedIntoTheDayFolders() {
+        val photos =
+            listOf(
+                modelPhoto(2, LocalDate.of(2026, 5, 1)),
+                modelPhoto(1, de.majuwa.android.paper.krhnlesimagemanagement.model.Photo.UNKNOWN_DATE),
+            )
+        photos.forEach { registerPhoto(Photo(it.id, it.displayName, it.uri.toString())) }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val enqueuer = UploadEnqueuer(context, configuredRepo(), scope)
+        val written = runBlocking { enqueuer.writeQueueFile(resolveAutoDateUploadBatch(photos)) }
+        scope.cancel()
+
+        val result = run(written)
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(
+            listOf(
+                "MKCOL /1970",
+                "MKCOL /1970/01",
+                "MKCOL /1970/01/01",
+                "MKCOL /2026",
+                "MKCOL /2026/05",
+                "MKCOL /2026/05/01",
+                "PUT /1970/01/01/1.jpg",
+                "PUT /2026/05/01/2.jpg",
+            ),
+            decodedRequests(),
+        )
+        assertEquals("1970/01/01 – 2026/05/01", historyEntries().single().occasionName)
+    }
+
+    private fun modelPhoto(
+        id: Long,
+        date: LocalDate,
+    ) = de.majuwa.android.paper.krhnlesimagemanagement.model.Photo(
+        id = id,
+        uri = Uri.parse("content://media/external/images/media/$id"),
+        displayName = "$id.jpg",
+        dateTaken = date,
+        size = 1L,
+        mimeType = "image/jpeg",
+    )
+
     private companion object {
         const val UNREADABLE_AUTHORITY = "krhnles.test.unreadable"
+
+        /** Marker for "leave this JSON key out" in [rawQueueFile]. */
+        val ABSENT = Any()
     }
 }

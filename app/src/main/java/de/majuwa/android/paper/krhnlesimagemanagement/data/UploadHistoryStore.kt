@@ -77,7 +77,7 @@ class UploadHistoryStore(
                 }
             }
         }.getOrElse { throwable ->
-            Log.e(tag, "Failed to parse upload history entries", throwable)
+            Log.e(tag, "Failed to parse upload history entries: ${throwable.javaClass.simpleName}")
             emptyList()
         }
     }

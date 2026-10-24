@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
                     ShareReceiverScreen(
                         photoCount = sharedPhotos.size,
                         onConfirm = { occasionName ->
-                            uploadEnqueuer.enqueue(listOf(UploadBatch(occasionName, sharedPhotos)))
+                            uploadEnqueuer.enqueue(listOf(UploadBatch.Occasion(occasionName, sharedPhotos)))
                             finish()
                         },
                         onDismiss = { finish() },

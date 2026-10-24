@@ -30,11 +30,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isAllowedPhotoUri
-import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidFolderPath
 import kotlinx.coroutines.flow.first
-import org.json.JSONArray
 import org.json.JSONException
-import org.json.JSONObject
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -56,14 +53,6 @@ class UploadWorker internal constructor(
         params,
         CredentialStore(context.applicationContext),
         ::WebDavClient,
-    )
-
-    private data class QueueContent(
-        val folderName: String,
-        val photoIds: LongArray,
-        val uriStrings: Array<String>,
-        val mimeTypes: Array<String>,
-        val fileNames: Array<String>,
     )
 
     private data class UploadFilesResult(
@@ -99,7 +88,7 @@ class UploadWorker internal constructor(
 
     override suspend fun doWork(): Result {
         val queueFile =
-            validQueueFile(applicationContext.filesDir, inputData.getString(KEY_QUEUE_FILE))
+            validQueueFile(applicationContext, inputData.getString(KEY_QUEUE_FILE))
                 ?: return Result.failure()
         val queue =
             parseQueue(queueFile) ?: run {
@@ -129,29 +118,18 @@ class UploadWorker internal constructor(
             return Result.failure()
         }
 
-        val remoteFolderPath = "${config.uploadPathPrefix}${queue.folderName}"
         return executeUpload(
             config = config,
-            remoteFolderPath = remoteFolderPath,
-            occasionName = queue.folderName,
             queue = queue,
             notificationTag = queueFile.name,
         ).also { queueFile.delete() }
     }
 
-    private fun parseQueue(queueFile: File): QueueContent? =
+    private fun parseQueue(queueFile: File): UploadQueue? =
         try {
-            val queue = JSONObject(queueFile.readText())
-            val photosArray = queue.getJSONArray("photos")
-            QueueContent(
-                folderName = queue.getString("folderName"),
-                // -1L is used as a sentinel for entries that pre-date this feature (no "id" field).
-                // Such entries still upload normally but are skipped when success IDs are recorded.
-                photoIds = LongArray(photosArray.length()) { photosArray.getJSONObject(it).optLong("id", -1L) },
-                uriStrings = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("uri") },
-                mimeTypes = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("mimeType") },
-                fileNames = Array(photosArray.length()) { photosArray.getJSONObject(it).getString("displayName") },
-            )
+            parseUploadQueue(queueFile.readText()).also {
+                if (it == null) Log.w(TAG, "Malformed queue file: inconsistent folder format")
+            }
         } catch (e: JSONException) {
             Log.w(TAG, "Malformed queue file: ${e.javaClass.simpleName}")
             null
@@ -167,26 +145,23 @@ class UploadWorker internal constructor(
 
     private suspend fun executeUpload(
         config: WebDavConfig,
-        remoteFolderPath: String,
-        occasionName: String,
-        queue: QueueContent,
+        queue: UploadQueue,
         notificationTag: String,
     ): Result {
-        val photoIds = queue.photoIds
-        val uriStrings = queue.uriStrings
-        val mimeTypes = queue.mimeTypes
-        val fileNames = queue.fileNames
+        val total = queue.entries.size
+        val occasionName = queue.historyLabel
+        val remoteFolderPaths = List(total) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
         val client = clientFactory(config)
 
         createNotificationChannel()
-        setForeground(buildForegroundInfo(0, uriStrings.size))
+        setForeground(buildForegroundInfo(0, total))
 
-        val folderError = createRemoteFolder(client, queue.folderName, remoteFolderPath)
+        val folderError = createRemoteFolders(client, queue, config.uploadPathPrefix, remoteFolderPaths)
         if (folderError != null) {
             recordHistory(
                 occasionName = occasionName,
-                photoCount = uriStrings.size,
-                failedCount = uriStrings.size,
+                photoCount = total,
+                failedCount = total,
             )
             showFailureNotification(
                 applicationContext.getString(
@@ -198,24 +173,17 @@ class UploadWorker internal constructor(
             return Result.failure()
         }
 
-        val result = uploadFiles(client, remoteFolderPath, photoIds, uriStrings, mimeTypes, fileNames)
+        val result = uploadFiles(client, queue.entries, remoteFolderPaths)
         val failed = result.failedIndices.size
         recordHistory(
             occasionName = occasionName,
-            photoCount = uriStrings.size,
+            photoCount = total,
             failedCount = failed,
         )
 
         val retryQueueFilePath =
             if (result.failedIndices.isNotEmpty()) {
-                writeRetryQueueFile(
-                    occasionName,
-                    photoIds,
-                    result.failedIndices,
-                    uriStrings,
-                    mimeTypes,
-                    fileNames,
-                )?.absolutePath
+                writeRetryQueueFile(queue, result.failedIndices)?.absolutePath
             } else {
                 null
             }
@@ -255,23 +223,23 @@ class UploadWorker internal constructor(
         }
     }
 
+    /** Uploads `entries[i]` into `remoteFolderPaths[i]`; one progress over all photos. */
     private suspend fun uploadFiles(
         client: WebDavClient,
-        remoteFolderPath: String,
-        photoIds: LongArray,
-        uriStrings: Array<String>,
-        mimeTypes: Array<String>,
-        fileNames: Array<String>,
+        entries: List<UploadQueueEntry>,
+        remoteFolderPaths: List<String>,
     ): UploadFilesResult {
         var uploaded = 0
         val failedIndices = mutableListOf<Int>()
         val uploadedIds = mutableSetOf<Long>()
 
-        for (i in uriStrings.indices) {
-            val succeeded = uploadPhoto(client, remoteFolderPath, uriStrings[i], mimeTypes[i], fileNames[i])
+        for (i in entries.indices) {
+            val entry = entries[i]
+            val succeeded = uploadPhoto(client, remoteFolderPaths[i], entry.uri, entry.mimeType, entry.displayName)
             if (succeeded) {
                 uploaded++
-                val photoId = photoIds.getOrElse(i) { -1L }
+                // -1 marks entries that pre-date photo ids: uploaded, but never marked.
+                val photoId = entry.id
                 if (photoId >= 0L) {
                     uploadedIds.add(photoId)
                 }
@@ -283,10 +251,10 @@ class UploadWorker internal constructor(
             setProgress(
                 workDataOf(
                     KEY_PROGRESS to progress,
-                    KEY_TOTAL to uriStrings.size,
+                    KEY_TOTAL to entries.size,
                 ),
             )
-            setForeground(buildForegroundInfo(progress, uriStrings.size))
+            setForeground(buildForegroundInfo(progress, entries.size))
         }
 
         return UploadFilesResult(uploaded, failedIndices, uploadedIds)
@@ -326,40 +294,15 @@ class UploadWorker internal constructor(
         return null
     }
 
+    /** Writes the retry file: only failed entries, each keeping its folder; common folder and label copied. */
     private fun writeRetryQueueFile(
-        folderName: String,
-        photoIds: LongArray,
+        queue: UploadQueue,
         failedIndices: List<Int>,
-        uriStrings: Array<String>,
-        mimeTypes: Array<String>,
-        fileNames: Array<String>,
     ): File? =
         try {
-            val queue =
-                JSONObject().apply {
-                    put("folderName", folderName)
-                    put(
-                        "photos",
-                        JSONArray().also { arr ->
-                            failedIndices.forEach { i ->
-                                arr.put(
-                                    JSONObject().apply {
-                                        val photoId = photoIds.getOrElse(i) { -1L }
-                                        if (photoId >= 0L) {
-                                            put("id", photoId)
-                                        }
-                                        put("uri", uriStrings[i])
-                                        put("mimeType", mimeTypes[i])
-                                        put("displayName", fileNames[i])
-                                    },
-                                )
-                            }
-                        },
-                    )
-                }
             val retryFile =
-                File(applicationContext.filesDir, "retry_queue_${UUID.randomUUID()}.json")
-            retryFile.writeText(queue.toString())
+                File(queueFilesDir(applicationContext), "retry_queue_${UUID.randomUUID()}.json")
+            retryFile.writeText(queue.toRetryJson(failedIndices).toString())
             retryFile
         } catch (e: Exception) {
             Log.w(TAG, "Failed to write retry queue file: ${e.javaClass.simpleName}")
@@ -508,7 +451,7 @@ class UploadWorker internal constructor(
 
 /** The queue file named by [path] if it is an existing, validated worker queue file, else null. */
 private fun validQueueFile(
-    filesDir: File,
+    context: Context,
     path: String?,
 ): File? {
     val file = path?.let(::File)
@@ -517,7 +460,7 @@ private fun validQueueFile(
             null
         }
 
-        !isWorkerQueueFile(filesDir, file) -> {
+        !isWorkerQueueFile(context, file) -> {
             Log.w("UploadWorker", "Queue file has an unexpected name or location — ignoring.")
             null
         }
@@ -532,14 +475,21 @@ private fun validQueueFile(
     }
 }
 
-/** Creates the remote folder; returns why it failed (never raw exception text), or null on success. */
-private suspend fun createRemoteFolder(
+/**
+ * Validates every effective folder of [queue] before any request, then creates each distinct
+ * [remoteFolderPaths] entry level by level (each cumulative path at most once, 405 ok). Returns
+ * why it failed (never raw exception text), or null on success.
+ */
+private suspend fun createRemoteFolders(
     client: WebDavClient,
-    folderName: String,
-    remoteFolderPath: String,
+    queue: UploadQueue,
+    uploadPathPrefix: String,
+    remoteFolderPaths: List<String>,
 ): FolderCreationError? =
-    if (folderName.isNotBlank() && !isValidFolderPath(folderName)) {
+    if (!queue.hasValidFolders()) {
         FolderCreationError.InvalidFolderName
     } else {
-        client.createDirectory(remoteFolderPath).exceptionOrNull()?.toFolderCreationError()
+        // An empty queue still creates the common folder (or the base folder) as before.
+        val paths = remoteFolderPaths.distinct().ifEmpty { listOf("$uploadPathPrefix${queue.folderName.orEmpty()}") }
+        client.createDirectories(paths).exceptionOrNull()?.toFolderCreationError()
     }

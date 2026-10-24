@@ -73,7 +73,11 @@ class FakeCredentialRepository(
     /** Test helper to read the current wi-fi only value synchronously. */
     fun wifiOnlyValue(): Boolean = wifiOnlyState.value
 
+    /** Every value passed to [saveAutoDateFolders], in order. */
+    val savedAutoDateFolders = mutableListOf<Boolean>()
+
     override suspend fun saveAutoDateFolders(enabled: Boolean) {
+        savedAutoDateFolders += enabled
         autoDateFoldersState.value = enabled
     }
 

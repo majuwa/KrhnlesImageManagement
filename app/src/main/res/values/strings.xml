@@ -118,7 +118,7 @@
     <string name="label_wifi_only">Upload on Wi-Fi only</string>
     <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
     <string name="label_auto_date_folders">Auto date folders</string>
-    <string name="hint_auto_date_folders">Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo\'s capture date (for example 2026/05-May).</string>
+    <string name="hint_auto_date_folders">Skip the occasion dialog and upload each selection as one upload into YYYY/MM/DD folders based on each photo\'s capture day (for example 2026/05/14).</string>
     <string name="label_blur_sensitivity">Blur sensitivity</string>
     <string name="hint_blur_sensitivity">High flags more photos as blurry, Low only the clearly blurry ones. Applies to the next blur scan.</string>
     <string name="error_blur_sensitivity_save_failed">Could not save the blur sensitivity. The previous level was restored.</string>

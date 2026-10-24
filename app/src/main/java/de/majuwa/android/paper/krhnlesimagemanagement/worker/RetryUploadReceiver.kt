@@ -79,7 +79,7 @@ internal suspend fun handleRetry(
         return
     }
     val queueFile = File(queueFilePath)
-    if (!isRetryQueueFile(context.filesDir, queueFile) || !queueFile.exists()) {
+    if (!isRetryQueueFile(context, queueFile) || !queueFile.exists()) {
         Log.w(TAG, "Retry queue file is missing or invalid — ignoring.")
         return
     }

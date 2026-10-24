@@ -17,14 +17,17 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
@@ -85,10 +88,12 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.isKnownDate
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionDialog
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.previewUploadPath
-import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatches
+import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+
+private val PREVIEW_PATH_LIST_MAX_HEIGHT = 240.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -258,20 +263,23 @@ fun PhotoGridScreen(
             onDismiss = { viewModel.dismissOccasionDialog() },
             onConfirm = { occasionName ->
                 viewModel.dismissOccasionDialog()
-                onStartUpload(listOf(UploadBatch(occasionName, selectedPhotos)))
+                onStartUpload(listOf(UploadBatch.Occasion(occasionName, selectedPhotos)))
                 viewModel.clearSelection()
             },
         )
     }
 
     if (uiState.showAutoDateFolderPreviewDialog) {
-        val uploadBatches = resolveAutoDateUploadBatches(viewModel.getSelectedPhotos())
+        val uploadBatch =
+            remember(uiState.selectedPhotoIds, uiState.photosByDate) {
+                resolveAutoDateUploadBatch(viewModel.getSelectedPhotos())
+            }
         AutoDateFolderPreviewDialog(
-            previewPaths = uploadBatches.map { previewUploadPath(uploadBaseFolder, it.folderName) },
+            previewPaths = uploadBatch.folders.distinct().map { previewUploadPath(uploadBaseFolder, it) },
             onDismiss = { viewModel.dismissAutoDateFolderPreviewDialog() },
             onConfirm = {
                 viewModel.dismissAutoDateFolderPreviewDialog()
-                onStartUpload(uploadBatches)
+                onStartUpload(listOf(uploadBatch))
                 viewModel.clearSelection()
             },
         )
@@ -352,8 +360,18 @@ private fun AutoDateFolderPreviewDialog(
                         previewPaths.size,
                     ),
                 )
-                previewPaths.forEach { previewPath ->
-                    Text(stringResource(R.string.preview_upload_path, previewPath))
+                // The path list scrolls within a bounded height so every day folder is reachable
+                // while the message stays on top and the buttons stay visible.
+                Column(
+                    modifier =
+                        Modifier
+                            .heightIn(max = PREVIEW_PATH_LIST_MAX_HEIGHT)
+                            .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    previewPaths.forEach { previewPath ->
+                        Text(stringResource(R.string.preview_upload_path, previewPath))
+                    }
                 }
             }
         },

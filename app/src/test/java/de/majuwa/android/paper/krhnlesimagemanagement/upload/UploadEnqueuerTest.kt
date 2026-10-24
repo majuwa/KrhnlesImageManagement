@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -51,21 +52,23 @@ class UploadEnqueuerTest {
     @After
     fun tearDown() {
         appScope.cancel()
-        context.filesDir
+        context.noBackupFilesDir
             .listFiles()
             ?.filter { it.name.startsWith("upload_queue_") }
             ?.forEach { it.delete() }
     }
 
-    private fun photo(id: Long) =
-        Photo(
-            id = id,
-            uri = Uri.parse("content://media/external/images/media/$id"),
-            displayName = "$id.jpg",
-            dateTaken = LocalDate.of(2026, 5, 1),
-            size = 1,
-            mimeType = "image/jpeg",
-        )
+    private fun photo(
+        id: Long,
+        dateTaken: LocalDate = LocalDate.of(2026, 5, 1),
+    ) = Photo(
+        id = id,
+        uri = Uri.parse("content://media/external/images/media/$id"),
+        displayName = "$id.jpg",
+        dateTaken = dateTaken,
+        size = 1,
+        mimeType = "image/jpeg",
+    )
 
     /** Wi-Fi-only (unmetered) keeps the enqueued work pending, so no real worker runs. */
     private fun repo(readDelayMs: Long = 0): CredentialRepository {
@@ -96,7 +99,7 @@ class UploadEnqueuerTest {
 
     @Test
     fun enqueue_writesQueueFileEnqueuesWorkWithConstraintAndShowsToast() {
-        val job = enqueuer().enqueue(listOf(UploadBatch(" Trip ", listOf(photo(1), photo(2)))))
+        val job = enqueuer().enqueue(listOf(UploadBatch.Occasion(" Trip ", listOf(photo(1), photo(2)))))
 
         await(job)
 
@@ -104,7 +107,7 @@ class UploadEnqueuerTest {
         assertEquals(NetworkType.UNMETERED, work.constraints.requiredNetworkType)
         val queueFile =
             File(
-                context.filesDir
+                context.noBackupFilesDir
                     .listFiles()!!
                     .single { it.name.startsWith("upload_queue_") }
                     .path,
@@ -120,7 +123,7 @@ class UploadEnqueuerTest {
 
     @Test
     fun enqueue_ignoresEmptyBatches() {
-        assertNull(enqueuer().enqueue(listOf(UploadBatch("Trip", emptyList()))))
+        assertNull(enqueuer().enqueue(listOf(UploadBatch.Occasion("Trip", emptyList()))))
 
         assertTrue(works().isEmpty())
     }
@@ -131,8 +134,10 @@ class UploadEnqueuerTest {
         var job: Job? = null
         runBlocking {
             caller
-                .launch { job = enqueuer(readDelayMs = 300).enqueue(listOf(UploadBatch("Trip", listOf(photo(1))))) }
-                .join()
+                .launch {
+                    job =
+                        enqueuer(readDelayMs = 300).enqueue(listOf(UploadBatch.Occasion("Trip", listOf(photo(1)))))
+                }.join()
             // The setting read is still in flight; the "activity" (caller) is destroyed now.
             caller.cancel()
         }
@@ -140,18 +145,76 @@ class UploadEnqueuerTest {
         await(job)
 
         assertEquals(1, works().size)
-        assertEquals(1, context.filesDir.listFiles()!!.count { it.name.startsWith("upload_queue_") })
+        assertEquals(1, context.noBackupFilesDir.listFiles()!!.count { it.name.startsWith("upload_queue_") })
     }
 
     @Test
     fun oneWorkPerBatch() {
         val job =
             enqueuer().enqueue(
-                listOf(UploadBatch("2026/05-May", listOf(photo(1))), UploadBatch("2026/06-Jun", listOf(photo(2)))),
+                listOf(
+                    UploadBatch.Occasion("2026/05-May", listOf(photo(1))),
+                    UploadBatch.Occasion("2026/06-Jun", listOf(photo(2))),
+                ),
             )
 
         await(job)
 
         assertEquals(2, works().size)
+    }
+
+    private fun queueFiles() = context.noBackupFilesDir.listFiles()!!.filter { it.name.startsWith("upload_queue_") }
+
+    @Test
+    fun multiDayAutoBatch_isOneWorkWithPerEntryFoldersAndLabel() {
+        val batch =
+            resolveAutoDateUploadBatch(
+                listOf(photo(2, LocalDate.of(2026, 5, 1)), photo(1, LocalDate.of(2026, 4, 30))),
+            )
+
+        await(enqueuer().enqueue(listOf(batch)))
+
+        assertEquals(1, works().size)
+        val json = JSONObject(queueFiles().single().readText())
+        assertFalse(json.has("folderName"))
+        assertEquals("2026/04/30 – 2026/05/01", json.getString("label"))
+        val photos = json.getJSONArray("photos")
+        assertEquals(listOf(1L, 2L), (0 until photos.length()).map { photos.getJSONObject(it).getLong("id") })
+        assertEquals(
+            listOf("2026/04/30", "2026/05/01"),
+            (0 until photos.length()).map { photos.getJSONObject(it).getString("folderName") },
+        )
+        assertEquals(
+            context.resources.getQuantityString(R.plurals.toast_upload_started, 1, 1, 2),
+            ShadowToast.getTextOfLatestToast(),
+        )
+    }
+
+    @Test
+    fun singleDayAutoBatch_isOneWorkWithDayLabel() {
+        val batch =
+            resolveAutoDateUploadBatch(listOf(photo(1, LocalDate.of(2026, 5, 14)), photo(2, LocalDate.of(2026, 5, 14))))
+
+        await(enqueuer().enqueue(listOf(batch)))
+
+        assertEquals(1, works().size)
+        assertEquals("2026/05/14", JSONObject(queueFiles().single().readText()).getString("label"))
+        assertTrue(
+            context.filesDir
+                .listFiles()
+                .orEmpty()
+                .none { it.name.startsWith("upload_queue_") },
+        )
+    }
+
+    @Test
+    fun occasionBatch_writesTheSingleFolderFormatUnchanged() {
+        val file = runBlocking { enqueuer().writeQueueFile(UploadBatch.Occasion(" Trip ", listOf(photo(1)))) }
+
+        assertEquals(
+            """{"folderName":"Trip","photos":[{"id":1,"uri":"content:\/\/media\/external\/images\/media\/1",""" +
+                """"mimeType":"image\/jpeg","displayName":"1.jpg"}]}""",
+            file.readText(),
+        )
     }
 }

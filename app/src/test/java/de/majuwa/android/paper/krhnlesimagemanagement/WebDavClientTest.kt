@@ -323,6 +323,50 @@ class WebDavClientTest {
         }
 
     @Test
+    fun `createDirectories requests every shared level only once and in order`() =
+        runTest {
+            repeat(7) { server.enqueue(MockResponse().setResponseCode(201)) }
+
+            val result = client.createDirectories(listOf("Photos/2026/04/30", "Photos/2026/05/01", "Photos/2026/04/30"))
+            assertTrue(result.isSuccess)
+
+            val paths =
+                List(server.requestCount) { server.takeRequest().path!!.removePrefix("/remote.php/dav/files/user/") }
+            assertEquals(
+                listOf(
+                    "Photos",
+                    "Photos/2026",
+                    "Photos/2026/04",
+                    "Photos/2026/04/30",
+                    "Photos/2026/05",
+                    "Photos/2026/05/01",
+                ),
+                paths,
+            )
+        }
+
+    @Test
+    fun `createDirectories validates every path before the first request`() =
+        runTest {
+            val result = client.createDirectories(listOf("Photos/2026", "Photos/../Private"))
+
+            assertTrue(result.isFailure)
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
+    fun `createDirectories stops at the first failing level`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(405))
+            server.enqueue(MockResponse().setResponseCode(403))
+
+            val result = client.createDirectories(listOf("Photos/A", "Photos/B"))
+
+            assertEquals(403, (result.exceptionOrNull() as WebDavHttpException).code)
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
     fun `uploadFile rejects path traversal filename`() =
         runTest {
             val result =

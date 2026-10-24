@@ -8,7 +8,7 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Local Image Grid:** Browse photos stored on your device in a clean, high-performance grid.
 - **TalkBack Support:** Every photo in the grid is announced as one element ("Photo 2 of 5, taken on May 1, 2026", selected / not selected, already uploaded) with a "Select" / "Deselect" action, and each day header as one heading with its photo count and a select-all-of-the-day action. File names are never read aloud; photos without a capture date are announced as "date unknown" and grouped under "Unknown date". Album thumbnails and the fullscreen viewer announce "Photo N of M".
 - **Smart Selection:** Select images individually or batch-select them grouped by date.
-- **Custom or Automatic Foldering:** Either give each upload a custom occasion name (e.g., "Summer Vacation 2026") or enable automatic `YYYY/MM-Month` folders for quick archive uploads.
+- **Custom or Automatic Foldering:** Either give each upload a custom occasion name (e.g., "Summer Vacation 2026") or enable automatic `YYYY/MM/DD` day folders for quick archive uploads.
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.
 - **Upload History:** Review past upload batches (folder, timestamp, succeeded/failed counts) and clear entries individually or all at once.
 - **Duplicate-Upload Prevention:** Already-uploaded photos are marked with a cloud badge in the local grid. Use the filter toggle (funnel icon) to show only new (not yet uploaded) photos. The tracking is reset when you disconnect from the server.
@@ -63,7 +63,7 @@ In Settings, "Test Connection" checks the stored server and credentials (it give
 
 ### Upload Options
 - **Base upload folder:** Choose the remote root folder that all uploads go into.
-- **Auto date folders:** Optional toggle in Settings that skips the occasion dialog and uploads into `YYYY/MM-Month` folders such as `Photos/2026/05-May/`. Selections that span multiple months are queued as separate background uploads automatically.
+- **Auto date folders:** Optional toggle in Settings that skips the occasion dialog and uploads each photo into the folder of its capture day, `YYYY/MM/DD` such as `Photos/2026/05/14/` (digits only, independent of the device language). A selection that spans several days is still one background upload with one progress notification, one result notification and one upload-history entry (for example `2026/04/30 – 2026/05/01`). Existing `YYYY/MM-Month` folders from earlier versions are left untouched.
 - **Blur sensitivity:** Slider in Settings (Low / Medium / High, default Medium) that decides how aggressively the blur review flags photos: High flags more photos, Low only clearly blurry ones. A changed level applies to the next blur scan only; results already shown or being computed are not updated. The setting is stored with the other preferences and, like them, is not restored on a new device and is reset to Medium when you log out. The thresholds are heuristics and may need tuning for your camera.
 
 ### Usage

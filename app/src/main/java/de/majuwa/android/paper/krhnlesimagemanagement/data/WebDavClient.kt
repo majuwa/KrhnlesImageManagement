@@ -80,33 +80,45 @@ class WebDavClient(
      * E.g. "Photos/KrohnSync/Summer 2026" creates each segment in order,
      * ignoring 405 (already exists) at each step.
      */
-    suspend fun createDirectory(folderPath: String): Result<Unit> =
+    suspend fun createDirectory(folderPath: String): Result<Unit> = createDirectories(listOf(folderPath))
+
+    /**
+     * Creates all path segments leading to each of [folderPaths], in order. Every cumulative path
+     * is requested at most once per call, so levels shared by several paths (base folder, year,
+     * month) are not repeated; 405 (already exists) is not an error. All segments of all paths are
+     * validated before the first request; the first failing MKCOL stops the call.
+     */
+    suspend fun createDirectories(folderPaths: List<String>): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val segments = folderPath.split("/").filter { it.isNotBlank() }
-                segments.forEach(::validatePathSegment)
-                val cumulativeSegments = mutableListOf<String>()
-                for (segment in segments) {
-                    cumulativeSegments += segment
-                    val request =
-                        Request
-                            .Builder()
-                            .url(buildPathUrl(cumulativeSegments))
-                            .method("MKCOL", null)
-                            .build()
-                    client.newCall(request).execute().use { response ->
-                        if (!response.isSuccessful && response.code != 405) {
-                            throw WebDavHttpException(
-                                response.code,
-                                "Failed to create directory '${cumulativeSegments.joinToString(
-                                    "/",
-                                )}': HTTP ${response.code}",
-                            )
-                        }
+                val segmentLists = folderPaths.map { path -> path.split("/").filter { it.isNotBlank() } }
+                segmentLists.flatten().forEach(::validatePathSegment)
+                val created = mutableSetOf<List<String>>()
+                for (segments in segmentLists) {
+                    for (depth in 1..segments.size) {
+                        val cumulativeSegments = segments.subList(0, depth).toList()
+                        if (created.add(cumulativeSegments)) mkcol(cumulativeSegments)
                     }
                 }
             }
         }
+
+    private fun mkcol(cumulativeSegments: List<String>) {
+        val request =
+            Request
+                .Builder()
+                .url(buildPathUrl(cumulativeSegments))
+                .method("MKCOL", null)
+                .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful && response.code != 405) {
+                throw WebDavHttpException(
+                    response.code,
+                    "Failed to create directory '${cumulativeSegments.joinToString("/")}': HTTP ${response.code}",
+                )
+            }
+        }
+    }
 
     suspend fun renameDirectory(
         oldPath: String,

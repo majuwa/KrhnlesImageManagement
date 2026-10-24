@@ -244,6 +244,26 @@ class PhotoGridViewModelTest {
             assertFalse(vm.uiState.value.showOccasionDialog)
         }
 
+    @Test
+    fun `onUploadRequested shows only the not configured dialog when auto date folders are on`() =
+        runTest {
+            val app = RuntimeEnvironment.getApplication() as Application
+            val vm =
+                PhotoGridViewModel(
+                    application = app,
+                    mediaRepository = fakeMedia,
+                    credentialStore = FakeCredentialRepository(initialAutoDateFoldersEnabled = true),
+                    uploadedPhotosRepository = fakeUploadedPhotos,
+                )
+            advanceUntilIdle()
+
+            vm.onUploadRequested()
+
+            assertTrue(vm.uiState.value.showNotConfiguredDialog)
+            assertFalse(vm.uiState.value.showAutoDateFolderPreviewDialog)
+            assertFalse(vm.uiState.value.showOccasionDialog)
+        }
+
     // ── refreshPhotos ───────────────────────────────────────────────────────
 
     @Test

@@ -71,15 +71,20 @@ class MediaRepository(
     internal companion object {
         /**
          * A missing (null) or 0 `DATE_TAKEN` has no capture date and maps to [Photo.UNKNOWN_DATE] (no
-         * zone conversion). Negative values are real pre-1970 dates and keep their date.
+         * zone conversion). Negative values are real pre-1970 dates and keep their date. Other values
+         * are converted to a date in [zone] (the device default when the photo list loads); this is
+         * the capture day used for the grid's date header and the auto date folder.
          */
-        fun dateTakenOf(dateMillis: Long?): LocalDate =
+        fun dateTakenOf(
+            dateMillis: Long?,
+            zone: ZoneId = ZoneId.systemDefault(),
+        ): LocalDate =
             if (dateMillis == null || dateMillis == 0L) {
                 Photo.UNKNOWN_DATE
             } else {
                 Instant
                     .ofEpochMilli(dateMillis)
-                    .atZone(ZoneId.systemDefault())
+                    .atZone(zone)
                     .toLocalDate()
             }
     }

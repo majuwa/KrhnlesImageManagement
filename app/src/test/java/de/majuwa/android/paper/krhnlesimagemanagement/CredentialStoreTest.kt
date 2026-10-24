@@ -320,6 +320,21 @@ class CredentialStoreTest {
         }
 
     @Test
+    fun `auto date folders default to off, round trip and are reset by clear`() =
+        runTest {
+            assertFalse(store.autoDateFoldersEnabled.first())
+
+            store.saveAutoDateFolders(true)
+            assertTrue(store.autoDateFoldersEnabled.first())
+            store.saveAutoDateFolders(false)
+            assertFalse(store.autoDateFoldersEnabled.first())
+
+            store.saveAutoDateFolders(true)
+            store.clear()
+            assertFalse(store.autoDateFoldersEnabled.first())
+        }
+
+    @Test
     fun `blur sensitivity writes do not re-emit the credential flows`() =
         runTest {
             store.save("https://cloud.example.com/dav/", "user", "secret")

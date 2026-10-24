@@ -23,7 +23,7 @@ fun isAllowedPhotoUri(
 
 /**
  * True if [name] is usable as a single occasion folder name: not blank, not `.` / `..` and without
- * `/`, `\` or NUL (the auto-date folder `YYYY/MM-Month` is built internally, never typed).
+ * `/`, `\` or NUL (the auto date day folder `YYYY/MM/DD` is built internally, never typed).
  */
 fun isValidOccasionName(name: String): Boolean {
     val trimmed = name.trim()

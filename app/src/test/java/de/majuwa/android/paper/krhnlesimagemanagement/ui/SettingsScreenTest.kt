@@ -5,6 +5,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -33,8 +35,8 @@ import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 
 private const val HINT_AUTO_DATE_FOLDERS =
-    "Skip the occasion dialog and upload into YYYY/MM-Month folders based on each photo's " +
-        "capture date (for example 2026/05-May)."
+    "Skip the occasion dialog and upload each selection as one upload into YYYY/MM/DD folders " +
+        "based on each photo's capture day (for example 2026/05/14)."
 
 private const val MSG_KEY_INVALIDATED =
     "Your stored credentials could not be decrypted because the device security settings changed. " +
@@ -285,6 +287,37 @@ class SettingsScreenTest {
             .onNodeWithText(HINT_AUTO_DATE_FOLDERS)
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    private fun autoDateViewModel(fake: FakeCredentialRepository): SettingsViewModel =
+        SettingsViewModel(application = RuntimeEnvironment.getApplication() as Application, credentialStore = fake)
+
+    private fun loggedInFake(autoDate: Boolean = false) =
+        FakeCredentialRepository(
+            WebDavConfig("https://cloud.example.com/dav/", "testuser", "pass", "Photos"),
+            initialAutoDateFoldersEnabled = autoDate,
+        )
+
+    @Test
+    fun `auto date folders switch is off by default and toggling it stores the value`() {
+        val fake = loggedInFake()
+        setSettingsContent(autoDateViewModel(fake))
+
+        composeTestRule.onNodeWithTag("autoDateFoldersSwitch").performScrollTo().assertIsOff()
+        composeTestRule.onNodeWithTag("autoDateFoldersSwitch").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(listOf(true), fake.savedAutoDateFolders)
+        composeTestRule.onNodeWithTag("autoDateFoldersSwitch").assertIsOn()
+    }
+
+    @Test
+    fun `auto date folders switch shows a stored on value after recreation`() {
+        setSettingsContent(autoDateViewModel(loggedInFake(autoDate = true)))
+
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("autoDateFoldersSwitch").performScrollTo().assertIsOn()
     }
 
     // ── Logged-out state ────────────────────────────────────────────────────

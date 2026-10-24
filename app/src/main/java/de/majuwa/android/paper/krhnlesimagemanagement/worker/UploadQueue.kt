@@ -1,0 +1,110 @@
+package de.majuwa.android.paper.krhnlesimagemanagement.worker
+
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidFolderPath
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** Upload-history labels are capped before they are recorded. */
+internal const val MAX_HISTORY_LABEL_LENGTH = 200
+
+private const val KEY_FOLDER_NAME = "folderName"
+private const val KEY_LABEL = "label"
+private const val KEY_PHOTOS = "photos"
+private const val KEY_ID = "id"
+private const val KEY_URI = "uri"
+private const val KEY_MIME_TYPE = "mimeType"
+private const val KEY_DISPLAY_NAME = "displayName"
+
+/** One photo of a queue file; [folderName] is set only in the per-photo format. */
+internal data class UploadQueueEntry(
+    /** -1 for entries that pre-date photo ids; such entries upload but are never marked. */
+    val id: Long,
+    val uri: String,
+    val mimeType: String,
+    val displayName: String,
+    val folderName: String?,
+)
+
+/**
+ * A parsed queue (or retry) file. Exactly one of two formats, decided from the content:
+ * - single folder: top-level [folderName] (blank = base folder), entries without folders;
+ * - per photo: every entry has its own folder, no top-level [folderName], optional [label].
+ */
+internal data class UploadQueue(
+    val folderName: String?,
+    val label: String?,
+    val entries: List<UploadQueueEntry>,
+) {
+    /** Upload-history label: the label, else the common folder (uncapped), else empty; only the label is capped. */
+    val historyLabel: String
+        get() = label?.take(MAX_HISTORY_LABEL_LENGTH) ?: folderName.orEmpty()
+
+    /** The folder (relative to the base folder) photo [index] is uploaded into. */
+    fun folderOf(index: Int): String = entries[index].folderName ?: folderName.orEmpty()
+
+    /** True if every effective folder is usable: common folder blank or valid, entry folders valid. */
+    fun hasValidFolders(): Boolean {
+        val common = folderName
+        val commonValid = common == null || common.isBlank() || isValidFolderPath(common)
+        return commonValid && entries.all { entry -> entry.folderName?.let(::isValidFolderPath) ?: true }
+    }
+
+    /** Retry queue JSON with only the entries at [failedIndices], each keeping its own folder. */
+    fun toRetryJson(failedIndices: List<Int>): JSONObject =
+        JSONObject().apply {
+            folderName?.let { put(KEY_FOLDER_NAME, it) }
+            label?.let { put(KEY_LABEL, it) }
+            put(
+                KEY_PHOTOS,
+                JSONArray().also { arr ->
+                    failedIndices.forEach { i ->
+                        val entry = entries[i]
+                        arr.put(
+                            JSONObject().apply {
+                                if (entry.id >= 0L) put(KEY_ID, entry.id)
+                                put(KEY_URI, entry.uri)
+                                put(KEY_MIME_TYPE, entry.mimeType)
+                                put(KEY_DISPLAY_NAME, entry.displayName)
+                                entry.folderName?.let { put(KEY_FOLDER_NAME, it) }
+                            },
+                        )
+                    }
+                },
+            )
+        }
+}
+
+/**
+ * Parses a queue file's JSON; null if it is malformed. `folderName` and `label` are read strictly
+ * (`opt` + `is String`): `org.json` would coerce numbers and `null` to strings otherwise.
+ *
+ * The file is per-photo if it has a `label` (of any type) or any entry has a `folderName` key;
+ * then every entry needs a non-blank string `folderName` and a top-level `folderName` is not
+ * allowed. Otherwise the top-level `folderName` must be a string. A non-string label is dropped.
+ *
+ * @throws org.json.JSONException for unparseable JSON or missing / mistyped entry fields.
+ */
+internal fun parseUploadQueue(json: String): UploadQueue? {
+    val queue = JSONObject(json)
+    val photos = queue.getJSONArray(KEY_PHOTOS)
+    val objects = List(photos.length()) { photos.getJSONObject(it) }
+    val entryFolders = objects.map { it.opt(KEY_FOLDER_NAME) }
+    val perPhoto = queue.has(KEY_LABEL) || objects.any { it.has(KEY_FOLDER_NAME) }
+    val entries =
+        objects.mapIndexed { i, obj ->
+            UploadQueueEntry(
+                id = obj.optLong(KEY_ID, -1L),
+                uri = obj.getString(KEY_URI),
+                mimeType = obj.getString(KEY_MIME_TYPE),
+                displayName = obj.getString(KEY_DISPLAY_NAME),
+                folderName = entryFolders[i] as? String,
+            )
+        }
+    val commonFolder = queue.opt(KEY_FOLDER_NAME)
+    return when {
+        perPhoto && (queue.has(KEY_FOLDER_NAME) || entryFolders.any { it !is String || it.isBlank() }) -> null
+        perPhoto -> UploadQueue(folderName = null, label = queue.opt(KEY_LABEL) as? String, entries = entries)
+        commonFolder is String -> UploadQueue(folderName = commonFolder, label = null, entries = entries)
+        else -> null
+    }
+}

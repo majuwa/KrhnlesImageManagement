@@ -172,7 +172,16 @@ class SettingsViewModelTest {
             viewModel.setAutoDateFoldersEnabled(true)
             advanceUntilIdle()
 
+            // The stored value, not only the optimistic UI state.
+            assertEquals(listOf(true), fakeCredentials.savedAutoDateFolders)
+            assertTrue(fakeCredentials.autoDateFoldersEnabled.first())
             assertTrue(viewModel.uiState.value.autoDateFoldersEnabled)
+
+            viewModel.setAutoDateFoldersEnabled(false)
+            advanceUntilIdle()
+
+            assertEquals(listOf(true, false), fakeCredentials.savedAutoDateFolders)
+            assertFalse(fakeCredentials.autoDateFoldersEnabled.first())
         }
 
     // ── Connection test (issue #22 / #41) ───────────────────────────────────

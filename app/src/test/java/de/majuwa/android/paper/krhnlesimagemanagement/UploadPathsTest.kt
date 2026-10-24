@@ -26,7 +26,7 @@ class UploadPathsTest {
 
     @Test
     fun folderPath_acceptsAutoDateAndSingleNames() {
-        listOf("2026/05-May", "Trip", "a/b/c").forEach { assertTrue(it, isValidFolderPath(it)) }
+        listOf("2026/05-May", "2026/05/14", "Trip", "a/b/c").forEach { assertTrue(it, isValidFolderPath(it)) }
     }
 
     @Test

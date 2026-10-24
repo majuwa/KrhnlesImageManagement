@@ -10,6 +10,7 @@ import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.queueFilesDir
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.readWifiOnly
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.uploadConstraints
 import kotlinx.coroutines.CoroutineDispatcher
@@ -79,28 +80,38 @@ class UploadEnqueuer(
         }
     }
 
-    private suspend fun writeQueueFile(batch: UploadBatch): File =
+    /**
+     * Writes the queue file for [batch]. An [UploadBatch.Occasion] writes the single top-level
+     * `folderName` format; an [UploadBatch.PerPhoto] writes `label`, a `folderName` on every entry
+     * and no top-level `folderName` (see `UploadWorker` for the reader).
+     */
+    internal suspend fun writeQueueFile(batch: UploadBatch): File =
         withContext(ioDispatcher) {
+            val perPhotoFolders = (batch as? UploadBatch.PerPhoto)?.folders
             val queue =
                 JSONObject().apply {
-                    put("folderName", batch.folderName.trim())
+                    when (batch) {
+                        is UploadBatch.Occasion -> put("folderName", batch.folderName.trim())
+                        is UploadBatch.PerPhoto -> put("label", batch.label)
+                    }
                     put(
                         "photos",
                         JSONArray().also { arr ->
-                            batch.photos.forEach { photo ->
+                            batch.photos.forEachIndexed { index, photo ->
                                 arr.put(
                                     JSONObject().apply {
                                         put("id", photo.id)
                                         put("uri", photo.uri.toString())
                                         put("mimeType", photo.mimeType)
                                         put("displayName", photo.displayName)
+                                        perPhotoFolders?.let { put("folderName", it[index]) }
                                     },
                                 )
                             }
                         },
                     )
                 }
-            File(appContext.filesDir, "upload_queue_${System.currentTimeMillis()}_${UUID.randomUUID()}.json")
+            File(queueFilesDir(appContext), "upload_queue_${System.currentTimeMillis()}_${UUID.randomUUID()}.json")
                 .also { it.writeText(queue.toString()) }
         }
 
