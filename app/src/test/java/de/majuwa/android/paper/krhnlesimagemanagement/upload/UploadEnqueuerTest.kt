@@ -12,6 +12,7 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import io.mockk.every
 import io.mockk.mockk
@@ -120,9 +121,44 @@ class UploadEnqueuerTest {
         assertEquals("Trip", json.getString("folderName"))
         assertEquals(2, json.getJSONArray("photos").length())
         assertEquals(
-            context.resources.getQuantityString(R.plurals.toast_upload_started, 1, 1, 2),
+            "Queued 1 upload for 2 items.",
             ShadowToast.getTextOfLatestToast(),
         )
+    }
+
+    @Test
+    fun enqueue_mixedPhotosAndVideo_queuesOneUploadWithEveryItem() {
+        val video =
+            Photo(
+                id = 3L or Photo.VIDEO_ID_FLAG,
+                uri = Uri.parse("content://media/external/video/media/3"),
+                displayName = "3.mp4",
+                dateTaken = LocalDate.of(2026, 5, 1),
+                size = 1,
+                mimeType = "video/mp4",
+                mediaKind = MediaKind.Video,
+            )
+        val job = enqueuer().enqueue(listOf(UploadBatch.Occasion("Trip", listOf(photo(1), photo(2), video))))
+
+        await(job)
+
+        works().single()
+        val queueFile = context.noBackupFilesDir.listFiles()!!.single { it.name.startsWith("upload_queue_") }
+        val entries = JSONObject(queueFile.readText()).getJSONArray("photos")
+        assertEquals(3, entries.length())
+        assertEquals("video/mp4", entries.getJSONObject(2).getString("mimeType"))
+        assertEquals(3L or Photo.VIDEO_ID_FLAG, entries.getJSONObject(2).getLong("id"))
+        assertEquals(
+            "Queued 1 upload for 3 items.",
+            ShadowToast.getTextOfLatestToast(),
+        )
+    }
+
+    @Test
+    fun enqueue_singleItem_toastUsesTheSingularItemCount() {
+        await(enqueuer().enqueue(listOf(UploadBatch.Occasion("Trip", listOf(photo(1))))))
+
+        assertEquals("Queued 1 upload for 1 item.", ShadowToast.getTextOfLatestToast())
     }
 
     @Test
@@ -189,7 +225,7 @@ class UploadEnqueuerTest {
             (0 until photos.length()).map { photos.getJSONObject(it).getString("folderName") },
         )
         assertEquals(
-            context.resources.getQuantityString(R.plurals.toast_upload_started, 1, 1, 2),
+            "Queued 1 upload for 2 items.",
             ShadowToast.getTextOfLatestToast(),
         )
     }

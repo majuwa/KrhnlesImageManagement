@@ -6,10 +6,8 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.await
-import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -130,12 +128,7 @@ internal suspend fun handleRetry(
         Log.w(TAG, "Retry queue file time could not be refreshed")
     }
     val constraints = uploadConstraints(readWifiOnly(wifiOnly, wifiOnlyTimeoutMs))
-    val uploadRequest =
-        OneTimeWorkRequestBuilder<UploadWorker>()
-            .setInputData(workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath))
-            .setConstraints(constraints)
-            .addTag("photo_upload")
-            .build()
+    val uploadRequest = uploadWorkRequest(queueFile, constraints)
     WorkManager
         .getInstance(context)
         .enqueueUniqueWork(retryWorkName(queueFile), ExistingWorkPolicy.KEEP, uploadRequest)

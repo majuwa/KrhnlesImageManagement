@@ -3,16 +3,14 @@ package de.majuwa.android.paper.krhnlesimagemanagement.upload
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.await
-import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
-import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.queueFilesDir
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.readWifiOnly
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.uploadConstraints
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.uploadWorkRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +30,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * destroyed (rotation, dismissed share dialog) while the Wi-Fi-only setting is still being read.
  *
  * Per batch it writes the queue file (WorkManager `Data` is limited to 10 KB) and enqueues one
- * [UploadWorker]; the enqueue is awaited so the request is persisted, then a toast is shown.
+ * `UploadWorker`; the enqueue is awaited so the request is persisted, then a toast is shown.
  */
 class UploadEnqueuer(
     private val appContext: Context,
@@ -76,12 +74,7 @@ class UploadEnqueuer(
         val manager = workManager()
         batches.forEach { batch ->
             val queueFile = writeQueueFile(batch)
-            val request =
-                OneTimeWorkRequestBuilder<UploadWorker>()
-                    .setInputData(workDataOf(UploadWorker.KEY_QUEUE_FILE to queueFile.absolutePath))
-                    .setConstraints(constraints)
-                    .addTag(UPLOAD_TAG)
-                    .build()
+            val request = uploadWorkRequest(queueFile, constraints)
             try {
                 manager.enqueue(request).await()
             } catch (e: CancellationException) {
@@ -131,17 +124,14 @@ class UploadEnqueuer(
         }
 
     private suspend fun showStartedToast(batches: List<UploadBatch>) {
-        val photoCount = batches.sumOf { it.photos.size }
+        val itemCount = batches.sumOf { it.photos.size }
+        val resources = appContext.resources
+        val items = resources.getQuantityString(R.plurals.item_count, itemCount, itemCount)
         withContext(mainDispatcher) {
             Toast
                 .makeText(
                     appContext,
-                    appContext.resources.getQuantityString(
-                        R.plurals.toast_upload_started,
-                        batches.size,
-                        batches.size,
-                        photoCount,
-                    ),
+                    resources.getQuantityString(R.plurals.toast_upload_started, batches.size, batches.size, items),
                     Toast.LENGTH_SHORT,
                 ).show()
         }
@@ -149,6 +139,5 @@ class UploadEnqueuer(
 
     private companion object {
         const val TAG = "UploadEnqueuer"
-        const val UPLOAD_TAG = "photo_upload"
     }
 }

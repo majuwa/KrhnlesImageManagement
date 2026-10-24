@@ -10,7 +10,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | ID    | Requirement                                                                                     | Status      |
 |-------|-------------------------------------------------------------------------------------------------|-------------|
 | G-001 | The app must be privacy-first: no cloud analytics, no telemetry.                                | Implemented |
-| G-002 | The app must target Android 13+ and handle granular media permissions (`READ_MEDIA_IMAGES`).    | Implemented |
+| G-002 | The app must target Android 15+ (`minSdk` 35) and handle granular media permissions: `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO` and partial access (`READ_MEDIA_VISUAL_USER_SELECTED`) are requested together; photos stay usable without video access, upgrade users are asked for video access at most once and partial-access users never automatically (issues #15 / #34). | Implemented |
 | G-003 | All UI must be built with Jetpack Compose (no XML layouts).                                     | Implemented |
 | G-004 | All async and background work must use Kotlin Coroutines / Flow.                                | Implemented |
 
@@ -20,7 +20,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 
 | ID    | Requirement                                                                                     | Status      |
 |-------|-------------------------------------------------------------------------------------------------|-------------|
-| P-001 | Users can browse local device photos in a grid view.                                            | Implemented |
+| P-001 | Users can browse local device photos and videos in a grid view (videos with play icon and duration; uploaded like photos, issues #15 / #34). | Implemented |
 | P-002 | Users can select one or more photos for upload.                                                 | Implemented |
 | P-003 | Users must tag selected photos with an occasion name before uploading.                          | Implemented |
 | P-004 | The grid must use `LazyVerticalGrid` for high-performance scrolling.                            | Implemented |

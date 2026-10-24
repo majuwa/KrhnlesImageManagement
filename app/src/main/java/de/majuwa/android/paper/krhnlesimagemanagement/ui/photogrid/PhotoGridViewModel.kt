@@ -7,12 +7,15 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaPermissionRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaPermissionStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +60,8 @@ class PhotoGridViewModel
             UploadedPhotosStore(application),
         private val workManager: WorkManager =
             WorkManager.getInstance(application),
+        private val mediaPermissions: MediaPermissionRepository =
+            MediaPermissionStore(application),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(PhotoGridUiState())
         val uiState: StateFlow<PhotoGridUiState> = _uiState.asStateFlow()
@@ -106,6 +111,37 @@ class PhotoGridViewModel
             credentialStore.webDavConfig
                 .map { it.normalizedBaseFolder }
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), "")
+
+        /**
+         * Whether the one-time video access request for images-only users was made; null until the
+         * stored flag is read (the screen must not request before it is known).
+         */
+        val videoAccessRequested: StateFlow<Boolean?> =
+            mediaPermissions.videoAccessRequested
+                .catch { emit(false) }
+                .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+        /** Whether the system ever offered a video access rationale (see [MediaPermissionRepository]). */
+        val videoRationaleShown: StateFlow<Boolean> =
+            mediaPermissions.videoRationaleShown
+                .catch { emit(false) }
+                .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+        /** Persists that a video rationale was offered; a failed write only delays the settings action. */
+        fun markVideoRationaleShown() {
+            viewModelScope.launch {
+                runCatching { mediaPermissions.markVideoRationaleShown() }
+                    .onFailure { if (it is CancellationException) throw it }
+            }
+        }
+
+        /** Persists that the video access request was made; a failed write only costs a repeated request. */
+        fun markVideoAccessRequested() {
+            viewModelScope.launch {
+                runCatching { mediaPermissions.markVideoAccessRequested() }
+                    .onFailure { if (it is CancellationException) throw it }
+            }
+        }
 
         fun loadPhotos() {
             viewModelScope.launch {

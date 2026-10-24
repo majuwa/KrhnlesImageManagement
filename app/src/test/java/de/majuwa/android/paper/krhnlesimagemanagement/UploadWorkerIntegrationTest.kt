@@ -6,8 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.CompletionSummary
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import junit.framework.TestCase.assertEquals
+import junit.framework.TestCase.assertFalse
+import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -17,7 +20,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import java.io.File
+import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 class UploadWorkerIntegrationTest {
@@ -176,17 +181,13 @@ class UploadWorkerIntegrationTest {
         val worker = buildWorker()
         assertDedicatedIcon(
             worker.buildCompletionNotification(
-                uploaded = 3,
-                failed = 0,
-                retryQueueFilePath = null,
+                CompletionSummary(uploaded = 3, failed = 0, retryQueueFilePath = null),
                 notificationTag = "tag-1",
             ),
         )
         assertDedicatedIcon(
             worker.buildCompletionNotification(
-                uploaded = 2,
-                failed = 1,
-                retryQueueFilePath = "retry.json",
+                CompletionSummary(uploaded = 2, failed = 1, retryQueueFilePath = "retry.json"),
                 notificationTag = "tag-2",
             ),
         )
@@ -195,6 +196,24 @@ class UploadWorkerIntegrationTest {
     @Test
     fun failureNotification_usesDedicatedNotificationIcon() {
         assertDedicatedIcon(buildWorker().buildFailureNotification("boom"))
+    }
+
+    @Test
+    fun retryActionsOfTwoBatchesAreDistinct() {
+        val w = buildWorker()
+        val a = File(context.filesDir, "retry_queue_${UUID.randomUUID()}.json").absolutePath
+        val b = File(context.filesDir, "retry_queue_${UUID.randomUUID()}.json").absolutePath
+
+        val first = w.buildCompletionNotification(CompletionSummary(2, 1, a), "tag-a")
+        val second = w.buildCompletionNotification(CompletionSummary(2, 1, b), "tag-b")
+
+        val intentA = shadowOf(first.actions.single().actionIntent).savedIntent
+        val intentB = shadowOf(second.actions.single().actionIntent).savedIntent
+        assertNotNull(intentA.data)
+        assertTrue(intentA.data != intentB.data)
+        assertFalse(intentA.filterEquals(intentB))
+        // The PendingIntents themselves must differ, otherwise the later one overwrites the earlier.
+        assertFalse(first.actions.single().actionIntent == second.actions.single().actionIntent)
     }
 
     private fun buildWorker(): UploadWorker = TestListenableWorkerBuilder<UploadWorker>(context).build()

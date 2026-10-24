@@ -25,6 +25,7 @@ import coil3.ColorImage
 import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.PhotoGridItem
@@ -223,12 +224,12 @@ class PhotoGridAccessibilityTest {
 
         val node = composeTestRule.onNode(clickable)
         val config = node.config()
-        assertEquals(listOf("May 1, 2026", "3 photos"), node.texts())
+        assertEquals(listOf("May 1, 2026", "3 items"), node.texts())
         assertTrue(config.contains(SemanticsProperties.Heading))
         assertEquals(Role.Checkbox, config[SemanticsProperties.Role])
         assertEquals(ToggleableState.Off, config[SemanticsProperties.ToggleableState])
         assertEquals("Not selected", config[SemanticsProperties.StateDescription])
-        assertEquals("Select all photos of this day", node.clickLabel())
+        assertEquals("Select all items of this day", node.clickLabel())
         composeTestRule.onAllNodes(clickable).assertCountEquals(1)
         composeTestRule
             .onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))
@@ -236,14 +237,14 @@ class PhotoGridAccessibilityTest {
     }
 
     @Test
-    fun `header texts use singular for one photo`() {
+    fun `header texts use singular for one item`() {
         setUiContent { DateHeader("May 1, 2026", 1, allSelected = true, onClick = {}) }
 
         val node = composeTestRule.onNode(clickable)
-        assertEquals(listOf("May 1, 2026", "1 photo"), node.texts())
+        assertEquals(listOf("May 1, 2026", "1 item"), node.texts())
         assertEquals(ToggleableState.On, node.config()[SemanticsProperties.ToggleableState])
         assertEquals("Selected", node.config()[SemanticsProperties.StateDescription])
-        assertEquals("Deselect all photos of this day", node.clickLabel())
+        assertEquals("Deselect all items of this day", node.clickLabel())
     }
 
     @Test
@@ -287,7 +288,7 @@ class PhotoGridAccessibilityTest {
             .assertCountEquals(2)
 
         val firstHeader = composeTestRule.onAllNodes(clickable)[0]
-        assertEquals("Select all photos of this day", firstHeader.clickLabel())
+        assertEquals("Select all items of this day", firstHeader.clickLabel())
         firstHeader.performSemanticsAction(SemanticsActions.OnClick)
         composeTestRule.waitForIdle()
         assertEquals(setOf(1L, 2L, 3L), selected)
@@ -306,7 +307,7 @@ class PhotoGridAccessibilityTest {
         val photos = mapOf(Photo.UNKNOWN_DATE to listOf(photo(1, Photo.UNKNOWN_DATE), photo(2, Photo.UNKNOWN_DATE)))
         setGrid({ emptySet() }, {}, photos)
 
-        assertEquals(listOf("Unknown date", "2 photos"), composeTestRule.onAllNodes(clickable)[0].texts())
+        assertEquals(listOf("Unknown date", "2 items"), composeTestRule.onAllNodes(clickable)[0].texts())
         assertEquals(
             listOf("Photo 2 of 2, date unknown"),
             composeTestRule.onAllNodes(clickable)[2].config()[SemanticsProperties.ContentDescription],
@@ -318,7 +319,7 @@ class PhotoGridAccessibilityTest {
     fun `grid renders the date in the device locale`() {
         setGrid({ emptySet() }, {}, mapOf(may1 to listOf(photo(1))))
 
-        assertEquals(listOf("1. Mai 2026", "1 photo"), composeTestRule.onAllNodes(clickable)[0].texts())
+        assertEquals(listOf("1. Mai 2026", "1 item"), composeTestRule.onAllNodes(clickable)[0].texts())
         assertTrue(
             (composeTestRule.onAllNodes(clickable)[1].config()[SemanticsProperties.ContentDescription])
                 .single()
@@ -382,5 +383,116 @@ class PhotoGridAccessibilityTest {
         val descriptions = nodes.flatMap { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
         assertTrue(descriptions.contains("Photo 3 of 5"))
         assertFalse(descriptions.any { displayName in it })
+    }
+
+    private val videoName = "VID_20260501_123456.mp4"
+
+    private fun video(
+        id: Long,
+        date: LocalDate = may1,
+        durationMs: Long? = 65_000L,
+    ) = Photo(
+        id = id or Photo.VIDEO_ID_FLAG,
+        uri = Uri.parse("content://media/external/video/media/$id"),
+        displayName = videoName,
+        dateTaken = date,
+        size = 1L,
+        mimeType = "video/mp4",
+        mediaKind = MediaKind.Video,
+        durationMs = durationMs,
+    )
+
+    private fun videoItem(
+        video: Photo,
+        position: Int = 1,
+        total: Int = 2,
+    ) = setUiContent { PhotoItem(video, position, total, "May 1, 2026", false, false) {} }
+
+    @Test
+    fun `unselected video is one checkbox described as video with duration and date`() {
+        videoItem(video(1))
+
+        val node = composeTestRule.onNode(clickable)
+        val config = node.config()
+        assertEquals(
+            listOf("Video 1 of 2, 1 minute 5 seconds, taken on May 1, 2026"),
+            config[SemanticsProperties.ContentDescription],
+        )
+        assertEquals("Not selected", config[SemanticsProperties.StateDescription])
+        assertEquals(Role.Checkbox, config[SemanticsProperties.Role])
+        assertEquals("Select", node.clickLabel())
+        // The duration badge and play icon are decorative: no merged text, one click node.
+        assertTrue(node.texts().isEmpty())
+        composeTestRule.onAllNodes(clickable).assertCountEquals(1)
+    }
+
+    @Test
+    fun `video tile exposes neither the badge text nor the file name`() {
+        videoItem(video(1))
+
+        val unmerged = composeTestRule.onAllNodes(SemanticsMatcher("any") { true }, true).fetchSemanticsNodes()
+        val texts =
+            unmerged.flatMap { node ->
+                node.config
+                    .getOrNull(SemanticsProperties.Text)
+                    .orEmpty()
+                    .map { it.text }
+            }
+        val descriptions = unmerged.flatMap { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
+        assertFalse(texts.any { videoName in it })
+        assertFalse(descriptions.any { videoName in it })
+        // Only the tile describes itself; play icon and badge ("1:05") are decorative.
+        assertEquals(1, descriptions.size)
+        assertFalse(texts.any { it == "1:05" })
+    }
+
+    @Test
+    fun `video without capture date says date unknown`() {
+        videoItem(video(1, date = Photo.UNKNOWN_DATE))
+
+        assertEquals(
+            listOf("Video 1 of 2, 1 minute 5 seconds, date unknown"),
+            composeTestRule.onNode(clickable).config()[SemanticsProperties.ContentDescription],
+        )
+    }
+
+    @Test
+    fun `video without or with zero duration omits the duration`() {
+        var current by mutableStateOf(video(1, durationMs = null))
+        setUiContent { PhotoItem(current, 1, 2, "May 1, 2026", false, false) {} }
+        assertEquals(
+            listOf("Video 1 of 2, taken on May 1, 2026"),
+            composeTestRule.onNode(clickable).config()[SemanticsProperties.ContentDescription],
+        )
+
+        current = video(1, durationMs = 0L, date = Photo.UNKNOWN_DATE)
+        composeTestRule.waitForIdle()
+        assertEquals(
+            listOf("Video 1 of 2, date unknown"),
+            composeTestRule.onNode(clickable).config()[SemanticsProperties.ContentDescription],
+        )
+    }
+
+    @Test
+    fun `mixed day header counts photos and videos and is on only when all are selected`() {
+        val photos = mapOf(may1 to listOf(photo(1), video(1), photo(2)))
+        var selected by mutableStateOf(setOf(1L, 2L))
+        setGrid({ selected }, {}, photos)
+
+        val header = composeTestRule.onAllNodes(clickable)[0]
+        assertEquals(listOf("May 1, 2026", "3 items"), header.texts())
+        assertEquals(ToggleableState.Off, header.config()[SemanticsProperties.ToggleableState])
+        assertEquals(
+            listOf("Video 2 of 3, 1 minute 5 seconds, taken on May 1, 2026"),
+            composeTestRule.onAllNodes(clickable)[2].config()[SemanticsProperties.ContentDescription],
+        )
+
+        selected = setOf(1L, 2L, 1L or Photo.VIDEO_ID_FLAG)
+        composeTestRule.waitForIdle()
+        assertEquals(
+            ToggleableState.On,
+            composeTestRule.onAllNodes(clickable)[0].config()[SemanticsProperties.ToggleableState],
+        )
+        assertEquals("Deselect all items of this day", composeTestRule.onAllNodes(clickable)[0].clickLabel())
     }
 }

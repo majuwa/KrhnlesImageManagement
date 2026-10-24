@@ -278,6 +278,54 @@ class AlbumsRepositoryTest {
             assertEquals("shot.HEIC", photos[1].displayName)
         }
 
+    @Test
+    fun `listPhotos skips video files so reviews never scan them`() =
+        runTest {
+            repo = createRepo()
+            val xml =
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/Trip/</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>Trip</d:displayname>
+                      <d:resourcetype><d:collection/></d:resourcetype>
+                    </d:prop></d:propstat>
+                  </d:response>
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/Trip/clip.mp4</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>clip.mp4</d:displayname>
+                      <d:resourcetype/>
+                      <d:getcontenttype>video/mp4</d:getcontenttype>
+                      <oc:fileid>200</oc:fileid>
+                    </d:prop></d:propstat>
+                  </d:response>
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/Trip/untyped.mov</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>untyped.mov</d:displayname>
+                      <d:resourcetype/>
+                    </d:prop></d:propstat>
+                  </d:response>
+                  <d:response>
+                    <d:href>/remote.php/dav/files/user/Trip/beach.jpg</d:href>
+                    <d:propstat><d:prop>
+                      <d:displayname>beach.jpg</d:displayname>
+                      <d:resourcetype/>
+                      <d:getcontenttype>image/jpeg</d:getcontenttype>
+                    </d:prop></d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """.trimIndent()
+            servePhotos(propfindResponse(xml))
+
+            val photos = repo.listPhotos("/remote.php/dav/files/user/Trip/").getOrThrow().photos
+
+            assertEquals(listOf("beach.jpg"), photos.map { it.displayName })
+        }
+
     // ── deletePhoto ─────────────────────────────────────────────────────────
 
     @Test

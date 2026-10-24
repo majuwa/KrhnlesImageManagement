@@ -43,12 +43,28 @@
     <string name="cd_photo_position">Photo %1$d of %2$d</string>
     <string name="cd_photo_position_taken_on">Photo %1$d of %2$d, taken on %3$s</string>
     <string name="cd_photo_position_date_unknown">Photo %1$d of %2$d, date unknown</string>
+    <string name="cd_video_position_duration_taken_on">Video %1$d of %2$d, %3$s, taken on %4$s</string>
+    <string name="cd_video_position_duration_date_unknown">Video %1$d of %2$d, %3$s, date unknown</string>
+    <string name="cd_video_position_taken_on">Video %1$d of %2$d, taken on %3$s</string>
+    <string name="cd_video_position_date_unknown">Video %1$d of %2$d, date unknown</string>
+    <plurals name="duration_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="duration_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="duration_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
     <string name="cd_photo_state_uploaded">%1$s, already uploaded</string>
     <string name="date_unknown">Unknown date</string>
     <string name="action_select_photo">Select</string>
     <string name="action_deselect_photo">Deselect</string>
-    <string name="action_select_day">Select all photos of this day</string>
-    <string name="action_deselect_day">Deselect all photos of this day</string>
+    <string name="action_select_day">Select all items of this day</string>
+    <string name="action_deselect_day">Deselect all items of this day</string>
     <string name="cd_selected">Selected</string>
     <string name="cd_not_selected">Not selected</string>
     <string name="cd_cancel_selection">Cancel selection</string>
@@ -77,19 +93,25 @@
         <item quantity="one">%d selected</item>
         <item quantity="other">%d selected</item>
     </plurals>
-    <plurals name="photo_count">
-        <item quantity="one">%d photo</item>
-        <item quantity="other">%d photos</item>
+    <plurals name="item_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
     </plurals>
     <string name="upload_progress">Uploading %1$d / %2$d</string>
     <string name="upload_history_counts" tools:ignore="PluralsCandidate">%1$d succeeded · %2$d failed</string>
+    <!-- %2$s is the item_count plural ("1 item" / "3 items"). -->
     <plurals name="toast_upload_started">
-        <item quantity="one">Queued %1$d upload for %2$d photos.</item>
-        <item quantity="other">Queued %1$d uploads for %2$d photos.</item>
+        <item quantity="one">Queued %1$d upload for %2$s.</item>
+        <item quantity="other">Queued %1$d uploads for %2$s.</item>
     </plurals>
 
     <!-- Permission -->
-    <string name="permission_rationale">Photo access is required to browse your images.</string>
+    <string name="permission_rationale">Photo and video access is required to browse your photos and videos.</string>
+    <string name="banner_media_partial_access">Only the photos and videos you selected are shown.</string>
+    <string name="action_select_more_media">Select more photos and videos</string>
+    <string name="banner_video_access_missing">Videos are not shown because video access is not allowed.</string>
+    <string name="action_grant_video_access">Allow videos</string>
+    <string name="action_open_app_settings">Open settings</string>
 
     <!-- No-server dialog -->
     <string name="dialog_no_server_title">No server configured</string>
@@ -257,11 +279,11 @@
 
     <!-- Notifications (UploadWorker) -->
     <string name="notification_preparing">Preparing…</string>
-    <string name="notification_uploading_title">Uploading photos</string>
+    <string name="notification_uploading_title">Uploading photos and videos</string>
     <string name="notification_upload_complete">Upload complete</string>
     <plurals name="notification_upload_success">
-        <item quantity="one">%d photo uploaded successfully.</item>
-        <item quantity="other">%d photos uploaded successfully.</item>
+        <item quantity="one">%d item uploaded successfully.</item>
+        <item quantity="other">%d items uploaded successfully.</item>
     </plurals>
     <plurals name="notification_upload_partial">
         <item quantity="one">%1$d uploaded, %2$d failed.</item>
@@ -273,10 +295,15 @@
     <string name="upload_error_invalid_folder_name">the folder name is not valid. Use a name without slashes or backslashes that is not just dots.</string>
     <string name="upload_error_folder_unavailable">the folder was not found or you do not have permission to create it on the server.</string>
     <string name="upload_error_not_configured">no server is configured. Open Settings and connect your server first.</string>
+    <string name="upload_failure_too_large">A file is too large for the server.</string>
+    <string name="upload_failure_storage_full">The server storage is full.</string>
+    <string name="upload_failure_interrupted">The system stopped the upload repeatedly. Retry it later.</string>
+    <!-- Result notification text: %1$s = counts (or a first reason), %2$s = the (next) failure reason. -->
+    <string name="notification_text_with_reason">%1$s %2$s</string>
     <string name="upload_error_generic">something went wrong. Please try again later.</string>
     <string name="error_invalid_occasion_name">Use a name without slashes or backslashes that is not just dots.</string>
-    <string name="channel_name_uploads">Photo Uploads</string>
-    <string name="channel_desc_uploads">Shows upload progress for photo backups</string>
+    <string name="channel_name_uploads">Uploads</string>
+    <string name="channel_desc_uploads">Shows upload progress for photo and video backups</string>
 
     <!-- Onboarding -->
     <string name="onboarding_step_indicator">Step %1$d of %2$d</string>

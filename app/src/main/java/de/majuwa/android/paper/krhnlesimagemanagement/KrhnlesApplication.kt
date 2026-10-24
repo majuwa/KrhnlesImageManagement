@@ -5,6 +5,7 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.serviceLoaderEnabled
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.hasSameOriginAs
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -54,10 +55,14 @@ class KrhnlesApplication :
                     chain.proceed(requestBuilder.build())
                 }.build()
 
+        // No service-loader components: they would add an unauthenticated network fetcher and a
+        // video decoder for every source; both are registered explicitly instead.
         return ImageLoader
             .Builder(context)
+            .serviceLoaderEnabled(false)
             .components {
                 add(OkHttpNetworkFetcherFactory(callFactory = { authenticatedClient }))
+                add(LocalVideoFrameDecoderFactory())
             }.build()
     }
 }

@@ -84,6 +84,8 @@ dependencies {
 
     // OkHttp
     implementation(libs.okhttp)
+    // Video frame thumbnails; registered only through LocalVideoFrameDecoderFactory (service loader off).
+    implementation(libs.coil.video)
 
     // Login Flow for Nextcloud (resolved locally via composite build submodule)
     implementation(libs.nextcloud.login.flow)

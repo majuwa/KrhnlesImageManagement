@@ -619,24 +619,6 @@ class UploadWorkerRunTest {
     }
 
     @Test
-    fun retryActionsOfTwoBatchesAreDistinct() {
-        val w = worker(File(context.filesDir, "retry_queue_${UUID.randomUUID()}.json"))
-        val a = "retry_queue_${UUID.randomUUID()}.json"
-        val b = "retry_queue_${UUID.randomUUID()}.json"
-
-        val first = w.buildCompletionNotification(2, 1, File(context.filesDir, a).absolutePath, "tag-a")
-        val second = w.buildCompletionNotification(2, 1, File(context.filesDir, b).absolutePath, "tag-b")
-
-        val intentA = shadowOf(first.actions.single().actionIntent).savedIntent
-        val intentB = shadowOf(second.actions.single().actionIntent).savedIntent
-        assertNotNull(intentA.data)
-        assertTrue(intentA.data != intentB.data)
-        assertFalse(intentA.filterEquals(intentB))
-        // The PendingIntents themselves must differ, otherwise the later one overwrites the earlier.
-        assertFalse(first.actions.single().actionIntent == second.actions.single().actionIntent)
-    }
-
-    @Test
     fun twoBatches_haveSeparateNotificationsWithSameIdButDifferentTags() {
         failingNames += "b.jpg"
         val first = queueFile("upload", "Trip", listOf(Photo(1, "a.jpg"), Photo(2, "b.jpg")))

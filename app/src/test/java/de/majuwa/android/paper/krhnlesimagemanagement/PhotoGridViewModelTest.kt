@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.work.testing.WorkManagerTestInitHelper
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaPermissionRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
@@ -69,6 +70,7 @@ class PhotoGridViewModelTest {
                 mediaRepository = fakeMedia,
                 credentialStore = fakeCredentials,
                 uploadedPhotosRepository = fakeUploadedPhotos,
+                mediaPermissions = FakeMediaPermissionRepository(),
             )
     }
 
@@ -203,6 +205,7 @@ class PhotoGridViewModelTest {
                     mediaRepository = fakeMedia,
                     credentialStore = unconfiguredCreds,
                     uploadedPhotosRepository = fakeUploadedPhotos,
+                    mediaPermissions = FakeMediaPermissionRepository(),
                 )
             advanceUntilIdle()
 
@@ -254,6 +257,7 @@ class PhotoGridViewModelTest {
                     mediaRepository = fakeMedia,
                     credentialStore = FakeCredentialRepository(initialAutoDateFoldersEnabled = true),
                     uploadedPhotosRepository = fakeUploadedPhotos,
+                    mediaPermissions = FakeMediaPermissionRepository(),
                 )
             advanceUntilIdle()
 

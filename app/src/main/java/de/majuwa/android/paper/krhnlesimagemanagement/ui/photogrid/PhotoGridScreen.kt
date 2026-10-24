@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -68,9 +70,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
@@ -110,17 +114,7 @@ fun PhotoGridScreen(
     val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    fun hasPhotoAccess(): Boolean =
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.READ_MEDIA_IMAGES,
-        ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            ) == PackageManager.PERMISSION_GRANTED
-
-    var hasPermission by remember { mutableStateOf(hasPhotoAccess()) }
+    val media = rememberMediaPermissions(viewModel)
     var hasNotificationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -130,35 +124,12 @@ fun PhotoGridScreen(
         )
     }
 
-    val permissionLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions(),
-        ) { permissions ->
-            val granted = permissions.any { it.value }
-            hasPermission = granted
-            if (granted) viewModel.loadPhotos()
-        }
-
     val notificationPermissionLauncher =
         rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission(),
         ) { granted ->
             hasNotificationPermission = granted
         }
-
-    val photoPermissions =
-        arrayOf(
-            Manifest.permission.READ_MEDIA_IMAGES,
-            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-        )
-
-    LaunchedEffect(hasPermission) {
-        if (hasPermission) {
-            viewModel.loadPhotos()
-        } else {
-            permissionLauncher.launch(photoPermissions)
-        }
-    }
 
     LaunchedEffect(hasNotificationPermission) {
         if (!hasNotificationPermission) {
@@ -238,6 +209,9 @@ fun PhotoGridScreen(
                     UploadProgressBanner(progress.current, progress.total)
                 }
             }
+            media.banner?.let { banner ->
+                MediaAccessBannerRow(banner, media.bannerOpensSettings, media.onBannerAction)
+            }
             AnimatedVisibility(visible = uiState.showOnlyNewPhotos) {
                 NewOnlyFilterBanner(
                     onClear = { viewModel.toggleShowOnlyNewPhotos() },
@@ -245,9 +219,9 @@ fun PhotoGridScreen(
             }
             Box(modifier = Modifier.weight(1f)) {
                 InnerContent(
-                    hasPermission = hasPermission,
+                    hasPermission = media.access.hasAccess,
                     uiState = uiState,
-                    onRequestPermission = { permissionLauncher.launch(photoPermissions) },
+                    onRequestPermission = media.request,
                     onPhotoClick = { viewModel.togglePhotoSelection(it) },
                     onDateHeaderClick = { viewModel.toggleDateSelection(it) },
                     onRefresh = { viewModel.refreshPhotos() },
@@ -535,7 +509,7 @@ internal fun PhotoGrid(
             ) {
                 DateHeader(
                     formattedDate = formattedDate,
-                    photoCount = photos.size,
+                    itemCount = photos.size,
                     allSelected = photos.all { it.id in selectedPhotoIds },
                     onClick = { onDateHeaderClick(date) },
                 )
@@ -561,13 +535,14 @@ internal fun PhotoGrid(
 @Composable
 internal fun DateHeader(
     formattedDate: String,
-    photoCount: Int,
+    itemCount: Int,
     allSelected: Boolean,
     onClick: () -> Unit,
 ) {
     val state = stringResource(if (allSelected) R.string.cd_selected else R.string.cd_not_selected)
     val clickLabel = stringResource(if (allSelected) R.string.action_deselect_day else R.string.action_select_day)
-    // The announcement is the merged texts (date + photo_count plural); the Checkbox is decorative.
+    // The announcement is the merged texts (date + item_count plural over photos and videos); the
+    // Checkbox is decorative.
     Row(
         modifier =
             Modifier
@@ -592,7 +567,7 @@ internal fun DateHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = pluralStringResource(R.plurals.photo_count, photoCount, photoCount),
+                text = pluralStringResource(R.plurals.item_count, itemCount, itemCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
@@ -616,12 +591,7 @@ internal fun PhotoItem(
     isUploaded: Boolean,
     onClick: () -> Unit,
 ) {
-    val description =
-        if (photo.hasKnownDate) {
-            stringResource(R.string.cd_photo_position_taken_on, position, total, formattedDate)
-        } else {
-            stringResource(R.string.cd_photo_position_date_unknown, position, total)
-        }
+    val description = mediaItemDescription(photo, position, total, formattedDate)
     val selectionState = stringResource(if (isSelected) R.string.cd_selected else R.string.cd_not_selected)
     val state =
         if (isUploaded) stringResource(R.string.cd_photo_state_uploaded, selectionState) else selectionState
@@ -652,6 +622,7 @@ internal fun PhotoItem(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
+        if (photo.isVideo) VideoOverlay(photo.durationMs)
         if (isSelected) {
             Box(
                 modifier =
@@ -697,6 +668,70 @@ internal fun PhotoItem(
                             Modifier
                         },
                     ),
+        )
+    }
+}
+
+/** Description by position and date (never the file name); videos also name their duration when known. */
+@Composable
+private fun mediaItemDescription(
+    photo: Photo,
+    position: Int,
+    total: Int,
+    formattedDate: String,
+): String {
+    if (!photo.isVideo) {
+        return if (photo.hasKnownDate) {
+            stringResource(R.string.cd_photo_position_taken_on, position, total, formattedDate)
+        } else {
+            stringResource(R.string.cd_photo_position_date_unknown, position, total)
+        }
+    }
+    val duration = durationDescription(LocalResources.current, photo.durationMs)
+    return when {
+        duration != null && photo.hasKnownDate -> {
+            stringResource(R.string.cd_video_position_duration_taken_on, position, total, duration, formattedDate)
+        }
+
+        duration != null -> {
+            stringResource(R.string.cd_video_position_duration_date_unknown, position, total, duration)
+        }
+
+        photo.hasKnownDate -> {
+            stringResource(R.string.cd_video_position_taken_on, position, total, formattedDate)
+        }
+
+        else -> {
+            stringResource(R.string.cd_video_position_date_unknown, position, total)
+        }
+    }
+}
+
+/** Decorative play indicator and duration badge of a video tile (the tile node carries the description). */
+@Composable
+private fun BoxScope.VideoOverlay(durationMs: Long?) {
+    Icon(
+        imageVector = Icons.Default.PlayCircle,
+        contentDescription = null,
+        tint = Color.White.copy(alpha = 0.9f),
+        modifier =
+            Modifier
+                .align(Alignment.Center)
+                .size(36.dp),
+    )
+    formatDurationBadge(durationMs)?.let { badge ->
+        Text(
+            text = badge,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                    .clearAndSetSemantics {},
         )
     }
 }

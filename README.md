@@ -5,8 +5,9 @@ A lightweight, privacy-focused Android application designed to selectively back 
 ## 🚀 Features
 
 - **First-Run Introduction:** On the first launch of a fresh install a two-page introduction explains what the app does and offers "Connect now", which opens Settings (Back from Settings returns to the photo grid). Skip is available on both pages; it is shown only once and never to users who already set up a server. Pressing Back on the first page closes the app and shows the introduction again next time. The completion flag is not part of backups, so a restored device without credentials shows the introduction again.
-- **Local Image Grid:** Browse photos stored on your device in a clean, high-performance grid.
-- **TalkBack Support:** Every photo in the grid is announced as one element ("Photo 2 of 5, taken on May 1, 2026", selected / not selected, already uploaded) with a "Select" / "Deselect" action, and each day header as one heading with its photo count and a select-all-of-the-day action. File names are never read aloud; photos without a capture date are announced as "date unknown" and grouped under "Unknown date". Album thumbnails and the fullscreen viewer announce "Photo N of M".
+- **Local Image Grid:** Browse photos and videos stored on your device in a clean, high-performance grid, grouped by capture day (newest first). Video tiles show a frame of the video, a play icon and the duration (`1:05`, `1:02:03`); videos without a capture date are grouped under "Unknown date" like photos.
+- **Videos:** Videos are selected and uploaded exactly like photos (occasion or auto date folders, background upload, Retry Failed, uploaded marker). They are streamed, never loaded into memory, and their size is sent when the device reports it. If the server rejects a file as too large (HTTP 413) or has no storage left (HTTP 507), the result notification says so. Very large videos are uploaded in one request; if an upload is interrupted (for example because Android's background time budget for uploads is used up), it is retried later and continues with the items that were not uploaded yet (only the interrupted item starts again from the beginning). After five interrupted attempts the upload stops with a notification offering "Retry Failed" for the remaining items. Uploaded videos are not shown in the Albums tab or in the duplicate / blur reviews, which only handle photos. Sharing videos into the app is not supported.
+- **TalkBack Support:** Every photo in the grid is announced as one element ("Photo 2 of 5, taken on May 1, 2026", selected / not selected, already uploaded) with a "Select" / "Deselect" action, videos as "Video 1 of 2, 1 minute 5 seconds, taken on May 1, 2026" (no duration when it is unknown), and each day header as one heading with its item count ("3 items", photos and videos) and a "Select all items of this day" action. File names are never read aloud; photos without a capture date are announced as "date unknown" and grouped under "Unknown date". Album thumbnails and the fullscreen viewer announce "Photo N of M".
 - **Smart Selection:** Select images individually or batch-select them grouped by date.
 - **Custom or Automatic Foldering:** Either give each upload a custom occasion name (e.g., "Summer Vacation 2026") or enable automatic `YYYY/MM/DD` day folders for quick archive uploads.
 - **Background Uploads:** Hit upload and move on with your day. Uploads are handled in the background.
@@ -41,7 +42,8 @@ A lightweight, privacy-focused Android application designed to selectively back 
 4. Run on a device with Android 15+ (API 35+)
 
 ### Permissions
-- **READ_MEDIA_IMAGES** — required to browse device photos
+- **READ_MEDIA_IMAGES**, **READ_MEDIA_VIDEO** and **READ_MEDIA_VISUAL_USER_SELECTED** — requested together to browse device photos and videos. Any of them is enough to use the grid. With partial access ("Select photos and videos") a banner offers "Select more photos and videos"; the app never asks again on its own. Users upgrading from a photos-only version are asked for video access once; without it photos keep working and a banner offers to allow videos (or opens the app settings once Android no longer shows the dialog after a second denial; a dismissed dialog can simply be shown again). Granting more access (videos, or full instead of selected access) updates the grid immediately.
+  - Publishing note: `READ_MEDIA_VIDEO` requires the Google Play Console "Photo and Video Permissions" declaration.
 - **INTERNET** — required for WebDAV uploads
 - **POST_NOTIFICATIONS** — for upload progress notifications
 
@@ -67,7 +69,7 @@ In Settings, "Test Connection" checks the stored server and credentials (it give
 - **Blur sensitivity:** Slider in Settings (Low / Medium / High, default Medium) that decides how aggressively the blur review flags photos: High flags more photos, Low only clearly blurry ones. A changed level applies to the next blur scan only; results already shown or being computed are not updated. The setting is stored with the other preferences and, like them, is not restored on a new device and is reset to Medium when you log out. The thresholds are heuristics and may need tuning for your camera.
 
 ### Usage
-1. Grant photo access when prompted
+1. Grant photo and video access when prompted
 2. Browse your photos grouped by date
 3. Tap individual photos or date headers to select
 4. Tap the upload FAB (cloud icon) when photos are selected

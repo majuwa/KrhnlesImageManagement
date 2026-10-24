@@ -28,6 +28,7 @@ import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaPermissionRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
@@ -91,7 +92,15 @@ class PhotoGridScreenAutoDateTest {
                 initialConfig = WebDavConfig("https://cloud.example/dav/", "u", "p", "Photos"),
                 initialAutoDateFoldersEnabled = autoDate,
             )
-        val viewModel = PhotoGridViewModel(app, media, credentials, FakeUploadedPhotosRepository(), workManager)
+        val viewModel =
+            PhotoGridViewModel(
+                app,
+                media,
+                credentials,
+                FakeUploadedPhotosRepository(),
+                workManager,
+                FakeMediaPermissionRepository(),
+            )
         composeTestRule.setContent {
             CompositionLocalProvider(
                 LocalInspectionMode provides true,

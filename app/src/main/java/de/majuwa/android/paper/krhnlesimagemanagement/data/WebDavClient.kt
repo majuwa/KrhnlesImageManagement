@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.os.Build
+import androidx.annotation.VisibleForTesting
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -38,12 +39,20 @@ class WebDavClient(
             .addInterceptor { chain ->
                 val original = chain.request()
                 val builder = original.newBuilder().header("User-Agent", userAgent)
-                // Credentials never leave the configured origin (e.g. after a redirect).
+                // Application interceptor: runs once per call, for the original request only, so
+                // this check alone does not cover redirects. On a followed redirect OkHttp drops
+                // `Authorization` only when host or port change; a same-host, same-port https ->
+                // http redirect would keep it. Uploads and renames therefore never follow redirects
+                // ([noRedirectClient]); the remaining callers (PROPFIND test, MKCOL) send no body.
                 if (original.url.hasSameOriginAs(config.url)) {
                     builder.header("Authorization", Credentials.basic(config.username, config.password))
                 }
                 chain.proceed(builder.build())
             }.build()
+
+    /** The shared client; never gets a call timeout (large uploads). */
+    @VisibleForTesting
+    internal val httpClient: OkHttpClient get() = client
 
     /** Shares pool and interceptors with [client]; used where a redirect must count as failure. */
     private val noRedirectClient: OkHttpClient by lazy {
@@ -51,6 +60,21 @@ class WebDavClient(
             .newBuilder()
             .followRedirects(false)
             .followSslRedirects(false)
+            .build()
+    }
+
+    /**
+     * [noRedirectClient] with a longer read timeout for uploads: the server may take long to answer
+     * after the last byte of a large file. It never follows a redirect: OkHttp turns a 301 / 302 /
+     * 303 `PUT` into a body-less `GET`, whose 2xx would look like a successful upload, so every 3xx
+     * fails the upload instead. Shares pool, dispatcher and the origin-restricted auth interceptor;
+     * no call timeout.
+     */
+    @VisibleForTesting
+    internal val uploadClient: OkHttpClient by lazy {
+        noRedirectClient
+            .newBuilder()
+            .readTimeout(UPLOAD_READ_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             .build()
     }
 
@@ -165,31 +189,40 @@ class WebDavClient(
             }
         }.onFailure { if (it is CancellationException) throw it }
 
+    /**
+     * Streams [inputStream] to `folderName/fileName` with one `PUT` (never buffered in memory).
+     * [contentLength] is sent as `Content-Length` when known; `-1` (unknown) uses chunked transfer.
+     * The body is one-shot: the stream is read once and OkHttp does not replay it for a retry or an
+     * authentication challenge. The call runs on [uploadClient] (no redirects, longer read timeout
+     * for servers that finalise a large file after the last byte, no call timeout) and is cancelled
+     * with the coroutine ([executeCancellable]). Any non-2xx status, including every 3xx redirect,
+     * fails with [WebDavHttpException] (see [toUploadFailure] for 413 / 507); cancellation is
+     * rethrown.
+     */
     suspend fun uploadFile(
         folderName: String,
         fileName: String,
         mimeType: String,
         inputStream: InputStream,
+        contentLength: Long = UNKNOWN_CONTENT_LENGTH,
     ): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val folderSegments = folderName.split("/").filter { it.isNotBlank() }
-                folderSegments.forEach(::validatePathSegment)
-                validatePathSegment(fileName)
-                val body = InputStreamRequestBody(mimeType.toMediaType(), inputStream)
-                val request =
-                    Request
-                        .Builder()
-                        .url(buildPathUrl(folderSegments + fileName))
-                        .put(body)
-                        .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        error("Upload failed: HTTP ${response.code} ${response.message}")
-                    }
+        runCatching {
+            val folderSegments = folderName.split("/").filter { it.isNotBlank() }
+            folderSegments.forEach(::validatePathSegment)
+            validatePathSegment(fileName)
+            val body = InputStreamRequestBody(mimeType.toMediaType(), inputStream, contentLength)
+            val request =
+                Request
+                    .Builder()
+                    .url(buildPathUrl(folderSegments + fileName))
+                    .put(body)
+                    .build()
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Upload failed: HTTP ${response.code}")
                 }
             }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     /** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
     private suspend fun Call.awaitStatus(): Pair<Int, String> =
@@ -232,11 +265,19 @@ class WebDavClient(
         require(segment.none { it.isISOControl() }) { "Invalid path segment contains a control character" }
     }
 
-    private class InputStreamRequestBody(
+    /** Streams [input] once; [length] `-1` = unknown (chunked transfer). */
+    @VisibleForTesting
+    internal class InputStreamRequestBody(
         private val mediaType: MediaType,
         private val input: InputStream,
+        private val length: Long = UNKNOWN_CONTENT_LENGTH,
     ) : RequestBody() {
         override fun contentType(): MediaType = mediaType
+
+        override fun contentLength(): Long = if (length >= 0L) length else UNKNOWN_CONTENT_LENGTH
+
+        /** The stream cannot be replayed: OkHttp must not resend this body (retry, auth challenge). */
+        override fun isOneShot(): Boolean = true
 
         override fun writeTo(sink: BufferedSink) {
             try {
@@ -256,6 +297,12 @@ class WebDavClient(
         /** Overall limit for [testConnection] (connect + TLS + request + response headers). */
         const val CONNECTION_TEST_TIMEOUT_MILLIS = 30_000L
 
+        /** Unknown upload size: no `Content-Length`, chunked transfer. */
+        const val UNKNOWN_CONTENT_LENGTH = -1L
+
+        /** Read timeout of [uploadClient] (time to the response after the last byte, per read). */
+        const val UPLOAD_READ_TIMEOUT_MINUTES = 5L
+
         /** 2xx, including 207 Multi-Status, which is the normal PROPFIND answer. */
         private val HTTP_SUCCESS_CODES = 200..299
         private const val HTTP_CREATED = 201
@@ -268,3 +315,26 @@ class WebDavHttpException(
     val code: Int,
     message: String,
 ) : IOException(message)
+
+/** Why one upload failed, for user-facing messages (never raw exception text). */
+enum class UploadFailure {
+    /** HTTP 413: the file is larger than the server (or a proxy) accepts. */
+    TooLarge,
+
+    /** HTTP 507: the server has no storage left. */
+    StorageFull,
+
+    /** Any other failure (network, other status, unreadable file). */
+    Other,
+}
+
+private const val HTTP_PAYLOAD_TOO_LARGE = 413
+private const val HTTP_INSUFFICIENT_STORAGE = 507
+
+/** Branches on [WebDavHttpException.code] only, never on the message. */
+fun Throwable.toUploadFailure(): UploadFailure =
+    when ((this as? WebDavHttpException)?.code) {
+        HTTP_PAYLOAD_TOO_LARGE -> UploadFailure.TooLarge
+        HTTP_INSUFFICIENT_STORAGE -> UploadFailure.StorageFull
+        else -> UploadFailure.Other
+    }

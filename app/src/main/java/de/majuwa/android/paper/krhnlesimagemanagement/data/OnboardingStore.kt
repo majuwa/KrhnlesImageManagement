@@ -15,7 +15,8 @@ import java.io.IOException
 
 internal const val APP_PREFERENCES_NAME = "app_preferences"
 
-private val Context.appPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
+/** Shared by [OnboardingStore] and [MediaPermissionStore]: one DataStore instance per file. */
+internal val Context.appPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = APP_PREFERENCES_NAME,
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )

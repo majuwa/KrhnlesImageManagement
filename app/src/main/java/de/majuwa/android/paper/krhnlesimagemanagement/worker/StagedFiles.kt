@@ -90,7 +90,8 @@ internal fun stagedNamesOf(json: String): Set<String> {
 
 /**
  * The one way the worker deletes a queue file: first the staged files it references, except
- * [keep] (the staged files of a newly written retry file), then the queue file itself. An
+ * [keep] (the staged files of a newly written retry file), then the queue file itself and a
+ * leftover progress temp file ([queueTempFile]). An
  * unreadable queue file is still deleted; its staged files are left to the age sweep.
  */
 internal fun deleteQueueFile(
@@ -110,4 +111,5 @@ internal fun deleteQueueFile(
         }
     deleteStagedFiles(shareStagingDir(context), staged - keep)
     queueFile.delete()
+    queueTempFile(queueFile).delete()
 }

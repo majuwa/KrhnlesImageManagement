@@ -119,3 +119,20 @@ interface UploadedPhotosRepositoryContract {
 
     suspend fun clear()
 }
+
+/**
+ * Remembers whether the one-time video access request for images-only users was made, and whether
+ * the system ever offered a rationale for video access (so a later denial without rationale is
+ * known to be permanent, not a dismissed dialog).
+ */
+interface MediaPermissionRepository {
+    /** `false` while unset; also `false` when the store cannot be read. */
+    val videoAccessRequested: Flow<Boolean>
+
+    suspend fun markVideoAccessRequested()
+
+    /** `false` while unset; also `false` when the store cannot be read. */
+    val videoRationaleShown: Flow<Boolean>
+
+    suspend fun markVideoRationaleShown()
+}

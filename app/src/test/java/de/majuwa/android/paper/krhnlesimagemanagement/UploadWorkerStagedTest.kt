@@ -232,7 +232,7 @@ class UploadWorkerStagedTest {
     }
 
     @Test
-    fun stoppedAndRerunWorker_uploadsAllPhotosFromStaging() {
+    fun stoppedAndRerunWorker_uploadsTheRemainingPhotosFromStaging() {
         val shared = listOf(Shared("a.jpg"), Shared("b.jpg"), Shared("c.jpg"))
         val queue = stagedQueueFile(shared)
         stopAtProgress = 1
@@ -248,8 +248,10 @@ class UploadWorkerStagedTest {
         val result = run(queue)
 
         assertTrue(result is ListenableWorker.Result.Success)
-        assertEquals(setOf("/Trip/a.jpg", "/Trip/b.jpg", "/Trip/c.jpg"), putBodies.keys.toSet())
+        // a.jpg finished before the stop (persisted in the queue file); only the rest is sent again.
+        assertEquals(setOf("/Trip/b.jpg", "/Trip/c.jpg"), putBodies.keys.toSet())
         assertEquals("data-c.jpg", putBodies["/Trip/c.jpg"])
+        assertEquals(3, result.outputData.getInt(UploadWorker.KEY_UPLOADED_COUNT, -1))
         assertFalse(queue.exists())
         assertTrue(stagedNames(shared).none { stagedFile(it).exists() })
     }

@@ -50,3 +50,31 @@ private fun isQueueFileIn(
         Log.w("QueueFile", "Cannot canonicalize queue file path: ${e.javaClass.simpleName}")
         false
     }
+
+/** Temporary file next to [queueFile] used by [rewriteQueueFile]; never matches a queue file name. */
+internal fun queueTempFile(queueFile: File): File = File(queueFile.parentFile, "${queueFile.name}.tmp")
+
+/**
+ * Replaces the content of [queueFile] with [json] atomically: written to [queueTempFile] first and
+ * renamed over the queue file, so a reader (or a run after process death) sees either the old or
+ * the new content, never a partial file. Returns false (queue file unchanged) on failure.
+ */
+internal fun rewriteQueueFile(
+    queueFile: File,
+    json: String,
+): Boolean {
+    val temp = queueTempFile(queueFile)
+    return try {
+        temp.writeText(json)
+        temp.renameTo(queueFile).also { renamed ->
+            if (!renamed) {
+                Log.w("QueueFile", "Queue file progress could not be saved: rename failed")
+                temp.delete()
+            }
+        }
+    } catch (e: IOException) {
+        Log.w("QueueFile", "Queue file progress could not be saved: ${e.javaClass.simpleName}")
+        temp.delete()
+        false
+    }
+}

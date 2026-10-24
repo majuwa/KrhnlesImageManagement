@@ -1,13 +1,16 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadFailure
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.toUploadFailure
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -15,6 +18,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -339,6 +343,128 @@ class WebDavClientTest {
                 )
             assertTrue(result.isFailure)
             assertTrue(result.exceptionOrNull()!!.message!!.contains("507"))
+        }
+
+    @Test
+    fun `uploadFile sends Content-Length when the size is known`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(201))
+            val content = ByteArray(1234) { it.toByte() }
+
+            val result = client.uploadFile("Videos", "clip.mp4", "video/mp4", ByteArrayInputStream(content), 1234L)
+
+            assertTrue(result.isSuccess)
+            val request = server.takeRequest()
+            assertEquals("1234", request.getHeader("Content-Length"))
+            assertNull(request.getHeader("Transfer-Encoding"))
+            assertEquals("video/mp4", request.getHeader("Content-Type"))
+            assertEquals(1234L, request.bodySize)
+        }
+
+    @Test
+    fun `uploadFile uses chunked transfer when the size is unknown`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(201))
+            val content = ByteArray(5000) { it.toByte() }
+
+            val result = client.uploadFile("Videos", "clip.mp4", "video/*", ByteArrayInputStream(content))
+
+            assertTrue(result.isSuccess)
+            val request = server.takeRequest()
+            assertNull(request.getHeader("Content-Length"))
+            assertEquals("chunked", request.getHeader("Transfer-Encoding"))
+            assertEquals(5000L, request.bodySize)
+        }
+
+    @Test
+    fun `upload body is one-shot and reports a known or unknown length`() {
+        val type = "video/mp4".toMediaType()
+        val known = WebDavClient.InputStreamRequestBody(type, ByteArrayInputStream(ByteArray(3)), 3L)
+        val unknown = WebDavClient.InputStreamRequestBody(type, ByteArrayInputStream(ByteArray(3)), -1L)
+
+        assertTrue(known.isOneShot())
+        assertTrue(unknown.isOneShot())
+        assertEquals(3L, known.contentLength())
+        assertEquals(-1L, unknown.contentLength())
+    }
+
+    @Test
+    fun `upload read timeout applies to the upload client only and no client has a call timeout`() {
+        val shared = client.httpClient
+        val upload = client.uploadClient
+
+        assertEquals(TimeUnit.MINUTES.toMillis(5).toInt(), upload.readTimeoutMillis)
+        assertEquals(TimeUnit.SECONDS.toMillis(60).toInt(), shared.readTimeoutMillis)
+        assertEquals(0, shared.callTimeoutMillis)
+        assertEquals(0, upload.callTimeoutMillis)
+        // A copy of the shared client: same pool and dispatcher, same write timeout.
+        assertTrue(shared.connectionPool === upload.connectionPool)
+        assertTrue(shared.dispatcher === upload.dispatcher)
+        assertEquals(shared.writeTimeoutMillis, upload.writeTimeoutMillis)
+    }
+
+    @Test
+    fun `uploadFile is cancelled with its coroutine when the server never answers`() =
+        runBlocking {
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            var result: Result<Unit>? = null
+            val job =
+                launch(Dispatchers.IO) {
+                    result =
+                        client.uploadFile("Videos", "clip.mp4", "video/mp4", ByteArrayInputStream(ByteArray(10)), 10L)
+                }
+            assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+            val start = System.nanoTime()
+            job.cancelAndJoin()
+            assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) < 5)
+            // Cancellation is rethrown, never returned as a failed result.
+            assertNull(result)
+        }
+
+    @Test
+    fun `uploadFile fails on every redirect without a follow-up request`() =
+        runTest {
+            var code = 0
+            // A followed 301 / 302 / 303 would turn the PUT into a GET to /elsewhere/ answered 200.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        if (request.path!!.startsWith("/elsewhere/")) {
+                            MockResponse().setResponseCode(200)
+                        } else {
+                            MockResponse().setResponseCode(code).setHeader("Location", server.url("/elsewhere/"))
+                        }
+                }
+            listOf(301, 302, 303, 307, 308).forEach { status ->
+                code = status
+                val before = server.requestCount
+                val failure =
+                    client
+                        .uploadFile("Videos", "clip.mp4", "video/mp4", ByteArrayInputStream(ByteArray(10)), 10L)
+                        .exceptionOrNull()
+                assertEquals("HTTP $status", status, (failure as WebDavHttpException).code)
+                assertEquals("HTTP $status", before + 1, server.requestCount)
+            }
+            assertFalse(client.uploadClient.followRedirects)
+            assertFalse(client.uploadClient.followSslRedirects)
+        }
+
+    @Test
+    fun `uploadFile maps 413 and 507 to typed failures`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(413))
+            server.enqueue(MockResponse().setResponseCode(507))
+            server.enqueue(MockResponse().setResponseCode(500))
+
+            val tooLarge = client.uploadFile("V", "a.mp4", "video/mp4", ByteArrayInputStream(ByteArray(1)))
+            val full = client.uploadFile("V", "b.mp4", "video/mp4", ByteArrayInputStream(ByteArray(1)))
+            val other = client.uploadFile("V", "c.mp4", "video/mp4", ByteArrayInputStream(ByteArray(1)))
+
+            assertEquals(413, (tooLarge.exceptionOrNull() as WebDavHttpException).code)
+            assertEquals(UploadFailure.TooLarge, tooLarge.exceptionOrNull()!!.toUploadFailure())
+            assertEquals(UploadFailure.StorageFull, full.exceptionOrNull()!!.toUploadFailure())
+            assertEquals(UploadFailure.Other, other.exceptionOrNull()!!.toUploadFailure())
+            assertEquals(UploadFailure.Other, java.io.IOException("x").toUploadFailure())
         }
 
     // ── Error Recovery ──────────────────────────────────────────────────────
