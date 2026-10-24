@@ -5,4 +5,6 @@
     <exclude domain="sharedpref" path="krhnles_secure.xml"/>
     <!-- Restored device without credentials must see onboarding again -->
     <exclude domain="file" path="datastore/app_preferences.preferences_pb"/>
+    <!-- MediaStore ids are device-specific: a restored set would mark wrong photos -->
+    <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
 </full-backup-content>
