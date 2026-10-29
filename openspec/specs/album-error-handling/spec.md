@@ -1,7 +1,7 @@
 # album-error-handling Specification
 
 ## Purpose
-TBD - created by archiving change split-albums-viewmodel. Update Purpose after archive.
+Keeps the album list, album details and the duplicate and blur reviews usable when loading fails: every failure is shown as a localized, plain-language message, a missing or unusable configuration never crashes these screens, and an open album stops using the previous server and credentials after a logout or account change.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # onboarding Specification
 
 ## Purpose
-TBD - created by archiving change onboarding-first-run-setup. Update Purpose after archive.
+Introduces first-time users to the app in two skippable pages and leads them to the connection settings, while existing users go straight to their photos; the completed flag is persisted, survives restarts and is never restored from backup.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # photo-grid-accessibility Specification
 
 ## Purpose
-TBD - created by archiving change improve-photo-grid-talkback. Update Purpose after archive.
+Makes the local photo grid usable with screen readers: every photo, video and date header is one meaningful element with a localized description, state and labelled action, and photos are never announced by their file names.
 
 ## Requirements
 
