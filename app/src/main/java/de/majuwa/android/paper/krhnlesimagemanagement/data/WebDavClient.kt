@@ -20,6 +20,7 @@ import okhttp3.Response
 import okio.BufferedSink
 import java.io.IOException
 import java.io.InputStream
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
@@ -197,7 +198,9 @@ class WebDavClient(
      * for servers that finalise a large file after the last byte, no call timeout) and is cancelled
      * with the coroutine ([executeCancellable]). Any non-2xx status, including every 3xx redirect,
      * fails with [WebDavHttpException] (see [toUploadFailure] for 413 / 507); cancellation is
-     * rethrown.
+     * rethrown. With [requestServerHash] the `PUT` carries `X-Hash: sha256` (Nextcloud hashes the
+     * stored content) and the answer's `X-Hash-SHA256` is returned in [UploadResponse] if it is a
+     * well-formed SHA-256.
      */
     suspend fun uploadFile(
         folderName: String,
@@ -205,7 +208,8 @@ class WebDavClient(
         mimeType: String,
         inputStream: InputStream,
         contentLength: Long = UNKNOWN_CONTENT_LENGTH,
-    ): Result<Unit> =
+        requestServerHash: Boolean = false,
+    ): Result<UploadResponse> =
         runCatching {
             val folderSegments = folderName.split("/").filter { it.isNotBlank() }
             folderSegments.forEach(::validatePathSegment)
@@ -216,13 +220,101 @@ class WebDavClient(
                     .Builder()
                     .url(buildPathUrl(folderSegments + fileName))
                     .put(body)
+                    .apply { if (requestServerHash) header(HEADER_REQUEST_HASH, HASH_ALGORITHM_SHA256) }
                     .build()
             executeCancellable(uploadClient.newCall(request)) { response, _ ->
                 if (!response.isSuccessful) {
                     throw WebDavHttpException(response.code, "Upload failed: HTTP ${response.code}")
                 }
+                UploadResponse(serverSha256 = response.header(HEADER_RESPONSE_SHA256)?.takeIf(::isSha256Hex))
             }
         }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Downloads `folderName/fileName` and returns the SHA-256 and byte count of the body (never
+     * buffered). The caller passes the number of bytes it uploaded as [maxBytes]: a larger
+     * `Content-Length`, or a body that outgrows it while streaming, fails with
+     * [RemoteFileTooLargeException] (the server holds more than was sent) as soon as it is known,
+     * distinct from the [IOException]s of a network failure. Runs on [uploadClient] (no redirects:
+     * any 3xx fails with [WebDavHttpException], no call timeout, read timeout per read) with
+     * `Accept-Encoding: identity` so the stored bytes are compared, and is cancelled with the
+     * coroutine; cancellation is rethrown.
+     */
+    suspend fun downloadSha256(
+        folderName: String,
+        fileName: String,
+        maxBytes: Long,
+    ): Result<RemoteDigest> =
+        runCatching {
+            val segments = remoteFileSegments(folderName, fileName)
+            val request =
+                Request
+                    .Builder()
+                    .url(buildPathUrl(segments))
+                    .get()
+                    .header("Accept-Encoding", "identity")
+                    .build()
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Download failed: HTTP ${response.code}")
+                }
+                val body = response.body
+                if (body.contentLength() > maxBytes) throw RemoteFileTooLargeException()
+                digestOf(LimitedInputStream(body.byteStream(), maxBytes) { RemoteFileTooLargeException() })
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Size of `folderName/fileName` on the server from one `HEAD` (`Content-Length`; `null` when the
+     * server sends none). `Accept-Encoding: identity` keeps it the stored size. Runs on
+     * [noRedirectClient] (any 3xx fails), is cancelled with the coroutine; a non-2xx status fails
+     * with [WebDavHttpException]; invalid segments fail without a request.
+     */
+    suspend fun remoteFileSize(
+        folderName: String,
+        fileName: String,
+    ): Result<Long?> =
+        runCatching {
+            val segments = remoteFileSegments(folderName, fileName)
+            val request =
+                Request
+                    .Builder()
+                    .url(buildPathUrl(segments))
+                    .head()
+                    .header("Accept-Encoding", "identity")
+                    .build()
+            executeCancellable(noRedirectClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Size check failed: HTTP ${response.code}")
+                }
+                response.header("Content-Length")?.toLongOrNull()?.takeIf { it >= 0L }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    private fun remoteFileSegments(
+        folderName: String,
+        fileName: String,
+    ): List<String> {
+        val folderSegments = folderName.split("/").filter { it.isNotBlank() }
+        folderSegments.forEach(::validatePathSegment)
+        validatePathSegment(fileName)
+        return folderSegments + fileName
+    }
+
+    private fun digestOf(stream: InputStream): RemoteDigest {
+        val digest = MessageDigest.getInstance("SHA-256")
+        var count = 0L
+        stream.use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                digest.update(buffer, 0, read)
+                count += read
+            }
+        }
+        return RemoteDigest(sha256 = digest.digest().toHexString(), sizeBytes = count)
+    }
 
     /** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
     private suspend fun Call.awaitStatus(): Pair<Int, String> =
@@ -305,10 +397,33 @@ class WebDavClient(
 
         /** 2xx, including 207 Multi-Status, which is the normal PROPFIND answer. */
         private val HTTP_SUCCESS_CODES = 200..299
+        private const val HEADER_REQUEST_HASH = "X-Hash"
+        private const val HEADER_RESPONSE_SHA256 = "X-Hash-SHA256"
+        private const val HASH_ALGORITHM_SHA256 = "sha256"
         private const val HTTP_CREATED = 201
         private const val HTTP_NO_CONTENT = 204
     }
 }
+
+/** What a successful `PUT` answered: the server-computed SHA-256 (64 hex chars), null when absent or malformed. */
+data class UploadResponse(
+    val serverSha256: String?,
+)
+
+/** SHA-256 (lower-case hex) and byte count of a downloaded body. */
+data class RemoteDigest(
+    val sha256: String,
+    val sizeBytes: Long,
+)
+
+/** The downloaded file is larger than the local file that was uploaded; never a network failure. */
+class RemoteFileTooLargeException : IOException("Remote file is larger than the uploaded file")
+
+private const val SHA256_HEX_LENGTH = 64
+
+/** True for exactly 64 hex digits (any case): the only shape accepted as a server SHA-256. */
+internal fun isSha256Hex(value: String): Boolean =
+    value.length == SHA256_HEX_LENGTH && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
 /** A WebDAV request completed but the server answered with the non-success HTTP status [code]. */
 class WebDavHttpException(
@@ -323,6 +438,9 @@ enum class UploadFailure {
 
     /** HTTP 507: the server has no storage left. */
     StorageFull,
+
+    /** The server copy differs from the local file, or the check could not finish. */
+    Verification,
 
     /** Any other failure (network, other status, unreadable file). */
     Other,

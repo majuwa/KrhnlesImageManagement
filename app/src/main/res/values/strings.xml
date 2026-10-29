@@ -105,6 +105,33 @@
         <item quantity="other">Queued %1$d uploads for %2$s.</item>
     </plurals>
 
+    <!-- Remove uploaded photos from the device -->
+    <string name="cd_more_options">More options</string>
+    <string name="action_remove_uploaded">Remove uploaded photos from device</string>
+    <string name="action_move_to_trash">Move to trash</string>
+    <plurals name="removal_checking_progress">
+        <item quantity="one">Checking %1$d of %2$d photo or video…</item>
+        <item quantity="other">Checking %1$d of %2$d photos and videos…</item>
+    </plurals>
+    <string name="removal_checking_preparing">Preparing…</string>
+    <plurals name="removal_confirm_title">
+        <item quantity="one">Move %d photo or video to trash?</item>
+        <item quantity="other">Move %d photos and videos to trash?</item>
+    </plurals>
+    <string name="removal_confirm_message">These copies were uploaded, checked against the server and are unchanged. They go to the system trash, where you can restore them for about 30 days. Android asks you to confirm once more. Nothing is deleted on the server.</string>
+    <string name="removal_nothing_title">Nothing to remove</string>
+    <string name="removal_nothing_message">Only photos and videos whose upload was checked, that are unchanged on this device and still on the server can be removed. Photos uploaded before this feature, shared photos and photos that could not be checked are kept.</string>
+    <string name="removal_not_configured_message">Connect to your server in Settings first. The photos are checked against it before anything is removed.</string>
+    <string name="removal_server_unreachable_title">Server not reachable</string>
+    <string name="removal_server_unreachable_message">The server did not answer several times in a row, so the check stopped. No photo was removed. Try again later or check your connection.</string>
+    <string name="removal_trashing">Moving to trash…</string>
+    <plurals name="removal_result_trashed">
+        <item quantity="one">%d photo or video moved to the trash.</item>
+        <item quantity="other">%d photos and videos moved to the trash.</item>
+    </plurals>
+    <string name="removal_result_cancelled">Nothing was moved to the trash.</string>
+    <string name="removal_result_failed">The photos could not be moved to the trash.</string>
+
     <!-- Permission -->
     <string name="permission_rationale">Photo and video access is required to browse your photos and videos.</string>
     <string name="banner_media_partial_access">Only the photos and videos you selected are shown.</string>
@@ -139,6 +166,8 @@
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
     <string name="label_wifi_only">Upload on Wi-Fi only</string>
     <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
+    <string name="label_verify_by_download">Verify by downloading again</string>
+    <string name="hint_verify_by_download">Downloads every uploaded photo and video once more to check it arrived intact. Uses extra data. Only needed for servers that cannot check uploads themselves (not Nextcloud with hash support).</string>
     <string name="label_auto_date_folders">Auto date folders</string>
     <string name="hint_auto_date_folders">Skip the occasion dialog and upload each selection as one upload into YYYY/MM/DD folders based on each photo\'s capture day (for example 2026/05/14).</string>
     <string name="label_blur_sensitivity">Blur sensitivity</string>
@@ -296,6 +325,7 @@
     <string name="upload_error_folder_unavailable">the folder was not found or you do not have permission to create it on the server.</string>
     <string name="upload_error_not_configured">no server is configured. Open Settings and connect your server first.</string>
     <string name="upload_failure_too_large">A file is too large for the server.</string>
+    <string name="upload_failure_verification">A file could not be verified on the server.</string>
     <string name="upload_failure_storage_full">The server storage is full.</string>
     <string name="upload_failure_interrupted">The system stopped the upload repeatedly. Retry it later.</string>
     <!-- Result notification text: %1$s = counts (or a first reason), %2$s = the (next) failure reason. -->

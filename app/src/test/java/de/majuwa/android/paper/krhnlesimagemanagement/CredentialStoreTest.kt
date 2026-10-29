@@ -348,6 +348,19 @@ class CredentialStoreTest {
         }
 
     @Test
+    fun `verify by download defaults to off, survives a new store instance and is reset by clear`() =
+        runTest {
+            assertFalse(store.verifyByDownload.first())
+
+            store.saveVerifyByDownload(true)
+            assertTrue(store.verifyByDownload.first())
+            assertTrue(CredentialStore(context, CredentialCipher(keys)).verifyByDownload.first())
+
+            store.clear()
+            assertFalse(store.verifyByDownload.first())
+        }
+
+    @Test
     fun `blur sensitivity writes do not re-emit the credential flows`() =
         runTest {
             store.save("https://cloud.example.com/dav/", "user", "secret")
@@ -365,6 +378,7 @@ class CredentialStoreTest {
             store.saveBlurSensitivity(BlurSensitivity.HIGH)
             store.saveWifiOnly(true)
             store.saveAutoDateFolders(true)
+            store.saveVerifyByDownload(true)
             // Fence: a credentials write is observed (and emitted) only after the earlier writes.
             store.saveBaseFolder("Photos")
             withContext(Dispatchers.Default) { delay(SETTLE_MS) }

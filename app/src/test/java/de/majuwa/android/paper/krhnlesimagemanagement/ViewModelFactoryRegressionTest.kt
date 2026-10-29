@@ -9,6 +9,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewMo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.StartupViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.UploadedRemovalViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
 import org.junit.Assert.assertNotNull
@@ -38,6 +39,7 @@ class ViewModelFactoryRegressionTest(
                 arrayOf(AlbumDetailViewModel::class.java),
                 arrayOf(StartupViewModel::class.java),
                 arrayOf(ShareViewModel::class.java),
+                arrayOf(UploadedRemovalViewModel::class.java),
             )
     }
 

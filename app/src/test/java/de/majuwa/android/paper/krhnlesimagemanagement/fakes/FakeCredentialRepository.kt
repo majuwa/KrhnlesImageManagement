@@ -16,10 +16,23 @@ class FakeCredentialRepository(
     initialWifiOnly: Boolean = false,
     initialAutoDateFoldersEnabled: Boolean = false,
     initialBlurSensitivity: BlurSensitivity = BlurSensitivity.MEDIUM,
+    initialVerifyByDownload: Boolean = false,
 ) : CredentialRepository {
     private val configState = MutableStateFlow(initialConfig)
     private val wifiOnlyState = MutableStateFlow(initialWifiOnly)
     private val autoDateFoldersState = MutableStateFlow(initialAutoDateFoldersEnabled)
+
+    private val verifyByDownloadState = MutableStateFlow(initialVerifyByDownload)
+
+    override val verifyByDownload: Flow<Boolean> = verifyByDownloadState
+
+    /** When non-null, [saveVerifyByDownload] throws this instead of storing anything. */
+    var verifyByDownloadSaveFailure: Throwable? = null
+
+    override suspend fun saveVerifyByDownload(enabled: Boolean) {
+        verifyByDownloadSaveFailure?.let { throw it }
+        verifyByDownloadState.value = enabled
+    }
 
     private val blurSensitivityState = MutableStateFlow(initialBlurSensitivity)
 
@@ -106,11 +119,21 @@ class FakeCredentialRepository(
     /** Test helper to read the current blur sensitivity synchronously. */
     fun blurSensitivityValue(): BlurSensitivity = blurSensitivityState.value
 
+    /** When non-null, [clear] throws this before clearing anything. */
+    var clearFailure: Throwable? = null
+
     override suspend fun clear() {
+        clearFailure?.let { throw it }
         configState.value = WebDavConfig()
         credentialStateOverride.value = null
         wifiOnlyState.value = false
         autoDateFoldersState.value = false
+        verifyByDownloadState.value = false
         blurSensitivityState.value = BlurSensitivity.MEDIUM
+    }
+
+    /** Test helper: replaces the stored configuration (e.g. a change on another screen). */
+    fun setConfig(config: WebDavConfig) {
+        configState.value = config
     }
 }

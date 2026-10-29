@@ -9,4 +9,6 @@
     <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
     <!-- Folder names are user-written and may be sensitive -->
     <exclude domain="file" path="datastore/upload_history.preferences_pb"/>
+    <!-- Device-specific MediaStore ids and uris of verified uploads: a restored set would be wrong -->
+    <exclude domain="file" path="datastore/verified_uploads.preferences_pb"/>
 </full-backup-content>

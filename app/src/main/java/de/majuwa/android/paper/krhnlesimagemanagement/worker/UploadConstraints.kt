@@ -45,6 +45,18 @@ internal fun uploadConstraints(wifiOnly: Boolean): Constraints =
         .build()
 
 /**
+ * Reads the "verify by downloading again" setting, bounded by [timeoutMs]. A timeout or any
+ * non-cancellation failure yields `false`: an unreadable setting never causes extra data use.
+ */
+internal suspend fun readVerifyByDownload(
+    verifyByDownload: Flow<Boolean>,
+    timeoutMs: Long = WIFI_ONLY_READ_TIMEOUT_MS,
+): Boolean =
+    runCatching { withTimeoutOrNull(timeoutMs) { verifyByDownload.first() } }
+        .onFailure { if (it is CancellationException) throw it }
+        .getOrNull() ?: false
+
+/**
  * Reads the current Wi-Fi-only setting, bounded by [timeoutMs]. A timeout or any non-cancellation
  * failure yields `true` (unmetered), so an unreadable setting never uses mobile data.
  */

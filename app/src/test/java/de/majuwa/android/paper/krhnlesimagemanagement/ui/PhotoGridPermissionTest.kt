@@ -167,6 +167,8 @@ class PhotoGridPermissionTest {
 
         assertEquals(listOf(MEDIA.toList()), launches)
         assertTrue(permissions.isRequested())
+        // The one combined request also asked for the media location: it is not asked separately.
+        assertTrue(permissions.isLocationRequested())
         composeTestRule.onNodeWithText(string(R.string.banner_video_access_missing)).assertExists()
         composeTestRule.onNodeWithText(string(R.string.action_grant_video_access)).assertExists()
         photoTiles().assertCountEquals(1)
@@ -178,7 +180,7 @@ class PhotoGridPermissionTest {
         shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_IMAGES)
         FakeMediaStoreProvider.videoFailure = SecurityException("no video access")
 
-        setScreen(FakeMediaPermissionRepository(initialRequested = true))
+        setScreen(FakeMediaPermissionRepository(initialRequested = true, initialLocationRequested = true))
 
         assertTrue(launches.isEmpty())
         composeTestRule.onNodeWithText(string(R.string.banner_video_access_missing)).assertExists()
@@ -264,7 +266,13 @@ class PhotoGridPermissionTest {
         FakeMediaStoreProvider.videoFailure = SecurityException("no video access")
         setVideoRationale(false)
 
-        setScreen(FakeMediaPermissionRepository(initialRequested = true, initialRationaleShown = true))
+        setScreen(
+            FakeMediaPermissionRepository(
+                initialRequested = true,
+                initialRationaleShown = true,
+                initialLocationRequested = true,
+            ),
+        )
         composeTestRule.onNodeWithText(string(R.string.action_grant_video_access)).performClick()
         composeTestRule.waitForIdle()
 
@@ -306,7 +314,7 @@ class PhotoGridPermissionTest {
 
     @Test
     fun uploadedVideoWithTheSameRawIdAsAPhoto_onlyTheVideoIsMarkedAndHiddenUnderNewOnly() {
-        shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        shadowOf(app).grantPermissions(*FULL_ACCESS)
         FakeMediaStoreProvider.imageRows = listOf(row(42, "a.jpg", day, "image/jpeg"))
         FakeMediaStoreProvider.videoRows = listOf(row(42, "b.mp4", day + 1, "video/mp4", durationMs = 5_000))
         val uploaded = FakeUploadedPhotosRepository()
@@ -345,7 +353,7 @@ class PhotoGridPermissionTest {
 
     @Test
     fun fullAccess_showsPhotosAndVideosWithoutBannerOrRequest() {
-        shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        shadowOf(app).grantPermissions(*FULL_ACCESS)
 
         setScreen()
 
@@ -358,12 +366,86 @@ class PhotoGridPermissionTest {
         )
     }
 
+    // ── media location (ACCESS_MEDIA_LOCATION) ──────────────────────────────
+
+    @Test
+    fun upgrade_fullAccessWithoutLocation_isAskedOnce_andADenialShowsNoBanner() {
+        shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        // Denied: nothing is granted by the answer.
+        val permissions = FakeMediaPermissionRepository()
+
+        setScreen(permissions)
+
+        assertEquals(listOf(MEDIA.toList()), launches)
+        assertTrue(permissions.isLocationRequested())
+        assertFalse("video was not missing, so it is not marked", permissions.isRequested())
+        photoTiles().assertCountEquals(1)
+        videoTiles().assertCountEquals(1)
+        composeTestRule.onAllNodesWithText(string(R.string.banner_video_access_missing)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(string(R.string.action_select_more_media)).assertCountEquals(0)
+    }
+
+    @Test
+    fun location_alreadyAsked_isNotAskedAgain() {
+        shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+
+        setScreen(FakeMediaPermissionRepository(initialLocationRequested = true))
+
+        assertTrue(launches.isEmpty())
+        photoTiles().assertCountEquals(1)
+    }
+
+    @Test
+    fun location_isNeverAskedBeforeTheStoredFlagIsRead() {
+        shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        val permissions = FakeMediaPermissionRepository()
+        permissions.locationState.value = null
+
+        setScreen(permissions)
+        assertTrue(launches.isEmpty())
+
+        permissions.locationState.value = false
+        composeTestRule.waitForIdle()
+        assertEquals(1, launches.size)
+    }
+
+    @Test
+    fun partialAccessWithoutLocation_isNeverAskedForIt() {
+        shadowOf(app).grantPermissions(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        val permissions = FakeMediaPermissionRepository()
+
+        setScreen(permissions)
+
+        assertTrue(launches.isEmpty())
+        assertFalse(permissions.isLocationRequested())
+    }
+
+    @Test
+    fun theFirstRequestAlsoAsksForTheLocation_andItIsNotAskedAgainAfterwards() {
+        grantOnRequest = setOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        val permissions = FakeMediaPermissionRepository()
+
+        setScreen(permissions)
+
+        assertEquals(listOf(MEDIA.toList()), launches)
+        assertTrue(permissions.isLocationRequested())
+        photoTiles().assertCountEquals(1)
+    }
+
     private companion object {
+        val FULL_ACCESS =
+            arrayOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.ACCESS_MEDIA_LOCATION,
+            )
+
         val MEDIA =
             arrayOf(
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                Manifest.permission.ACCESS_MEDIA_LOCATION,
             )
     }
 }

@@ -5,6 +5,7 @@ import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationManager
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
@@ -16,7 +17,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaStoreProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
@@ -37,6 +40,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import java.io.ByteArrayInputStream
@@ -75,19 +79,37 @@ class UploadWorkerForegroundTest {
     /** Index of the first refused `setForeground` call; null = never refused. */
     private var foregroundFailsFrom: Int? = null
     private var foregroundCalls = 0
+    private val verifiedUploads = FakeVerifiedUploadsRepository()
+
+    /** Nextcloud URL + a server hash that always matches (the PUT body is hashed by the dispatcher). */
+    private var nextcloudWithHash = false
     private var wifiOnly = false
     private var networkMetered = false
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        shadowOf(context as android.app.Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        Robolectric.setupContentProvider(FakeMediaStoreProvider::class.java, FakeMediaStoreProvider.AUTHORITY)
+        FakeMediaStoreProvider.reset()
+        shadowOf(context as android.app.Application).grantPermissions(
+            Manifest.permission.POST_NOTIFICATIONS,
+            Manifest.permission.ACCESS_MEDIA_LOCATION,
+        )
         server = MockWebServer()
         server.dispatcher =
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests += "${request.method} ${request.path}"
-                    return MockResponse().setResponseCode(201)
+                    val response = MockResponse().setResponseCode(201)
+                    if (request.method == "PUT" && nextcloudWithHash) {
+                        val hash =
+                            java.security.MessageDigest
+                                .getInstance("SHA-256")
+                                .digest(request.body.readByteArray())
+                                .joinToString("") { "%02x".format(it) }
+                        response.setHeader("X-Hash-SHA256", hash)
+                    }
+                    return response
                 }
             }
         server.start()
@@ -113,6 +135,9 @@ class UploadWorkerForegroundTest {
                     .put("displayName", name),
             )
             shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+            shadowOf(context.contentResolver)
+                .registerInputStream(MediaStore.setRequireOriginal(uri), ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+            FakeMediaStoreProvider.itemRows[uri.toString()] = FakeMediaStoreProvider.item(3L, 1_700_000_000L + i)
         }
         return File(context.filesDir, "upload_queue_1_${UUID.randomUUID()}.json").also {
             it.writeText(JSONObject().put("folderName", "Trip").put("photos", photos).toString())
@@ -145,13 +170,23 @@ class UploadWorkerForegroundTest {
                             appContext,
                             workerParameters,
                             FakeCredentialRepository(
-                                initialConfig = WebDavConfig(server.url("/").toString(), "u", "p", ""),
+                                initialConfig =
+                                    WebDavConfig(
+                                        server
+                                            .url(
+                                                if (nextcloudWithHash) "/remote.php/dav/files/u/" else "/",
+                                            ).toString(),
+                                        "u",
+                                        "p",
+                                        "",
+                                    ),
                                 initialWifiOnly = wifiOnly,
                             ),
                             ::WebDavClient,
                             uploaded,
                             history,
                             { networkMetered },
+                            verifiedUploads,
                         )
                     },
                 ).build()
@@ -213,6 +248,31 @@ class UploadWorkerForegroundTest {
             .notification.extras
             .getCharSequence(android.app.Notification.EXTRA_TITLE)
             .toString()
+
+    @Test
+    fun foregroundRefusedAfterAVerifiedEntry_keepsItsRecord_andTheRerunDoesNotUploadItAgain() {
+        nextcloudWithHash = true
+        foregroundFailsFrom = 1
+        val queue = queueFile("a.jpg", "b.jpg")
+
+        val first = run(queue)
+
+        assertTrue(first is ListenableWorker.Result.Retry)
+        assertEquals(listOf(1L), verifiedUploads.current.map { it.id })
+        assertEquals(listOf(true, false), uploadedMarkers(queue))
+
+        foregroundFailsFrom = null
+        foregroundCalls = 0
+        requests.clear()
+        val second = run(queue)
+
+        assertTrue(second is ListenableWorker.Result.Success)
+        assertEquals(
+            listOf("MKCOL /remote.php/dav/files/u/Trip", "PUT /remote.php/dav/files/u/Trip/b.jpg"),
+            requests.toList(),
+        )
+        assertEquals(setOf(1L, 2L), verifiedUploads.current.map { it.id }.toSet())
+    }
 
     @Test
     fun foregroundRefusedDuringProgress_keepsProgress_andTheRetryUploadsOnlyTheRest() {

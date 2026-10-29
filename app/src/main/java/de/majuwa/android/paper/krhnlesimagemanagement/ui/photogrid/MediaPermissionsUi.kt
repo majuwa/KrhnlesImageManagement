@@ -49,10 +49,11 @@ internal class MediaPermissionsUi(
 }
 
 /**
- * Requests images, video and partial access together and loads the media whenever access exists.
- * Without any access the request is launched once; images-only users (upgrade from the photos-only
- * version) are asked for video access once (persisted flag, read before any request, plus a
- * per-session guard); partial-access users never automatically. Every permission result that
+ * Requests images, video, partial access and the media location together and loads the media
+ * whenever access exists. Without any access the request is launched once; images-only users
+ * (upgrade from the photos-only version) are asked for video access once, users with media access
+ * but without the media location for it once (persisted flags, read before any request, plus
+ * per-session guards; see [upgradeRequest]); partial-access users never automatically. Every permission result that
  * keeps access reloads the media (also a widened one). The banner opens the app settings only after
  * a video denial without rationale once a rationale was offered before (persisted), never after a
  * merely dismissed dialog. Access is re-read on resume, so a grant in the system settings applies
@@ -65,8 +66,10 @@ internal fun rememberMediaPermissions(viewModel: PhotoGridViewModel): MediaPermi
     var access by remember { mutableStateOf(MediaAccess.of(context)) }
     var videoDeniedPermanently by rememberSaveable { mutableStateOf(false) }
     var videoRequestedThisSession by rememberSaveable { mutableStateOf(false) }
+    var locationRequestedThisSession by rememberSaveable { mutableStateOf(false) }
     val videoAccessRequested by viewModel.videoAccessRequested.collectAsStateWithLifecycle()
     val videoRationaleShown by viewModel.videoRationaleShown.collectAsStateWithLifecycle()
+    val mediaLocationRequested by viewModel.mediaLocationRequested.collectAsStateWithLifecycle()
 
     val launcher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -81,7 +84,14 @@ internal fun rememberMediaPermissions(viewModel: PhotoGridViewModel): MediaPermi
         }
 
     LaunchedEffect(access.hasAccess) {
-        if (access.hasAccess) viewModel.loadPhotos() else launcher.launch(MEDIA_PERMISSIONS)
+        if (access.hasAccess) {
+            viewModel.loadPhotos()
+        } else {
+            // The first request also asks for the media location: it is not asked again automatically.
+            locationRequestedThisSession = true
+            viewModel.markMediaLocationRequested()
+            launcher.launch(MEDIA_PERMISSIONS)
+        }
     }
 
     // A rationale offered already (e.g. a denial in an earlier session) is remembered too.
@@ -89,12 +99,24 @@ internal fun rememberMediaPermissions(viewModel: PhotoGridViewModel): MediaPermi
         if (access.videoMissing && activity.showsVideoRationale()) viewModel.markVideoRationaleShown()
     }
 
-    LaunchedEffect(access.videoMissing, videoAccessRequested) {
-        if (access.videoMissing && videoAccessRequested == false && !videoRequestedThisSession) {
+    LaunchedEffect(access, videoAccessRequested, mediaLocationRequested) {
+        val upgrade =
+            upgradeRequest(
+                access,
+                videoAccessRequested,
+                mediaLocationRequested,
+                videoRequestedThisSession,
+                locationRequestedThisSession,
+            ) ?: return@LaunchedEffect
+        if (upgrade.video) {
             videoRequestedThisSession = true
             viewModel.markVideoAccessRequested()
-            launcher.launch(MEDIA_PERMISSIONS)
         }
+        if (upgrade.location) {
+            locationRequestedThisSession = true
+            viewModel.markMediaLocationRequested()
+        }
+        launcher.launch(MEDIA_PERMISSIONS)
     }
 
     LifecycleResumeEffect(Unit) {

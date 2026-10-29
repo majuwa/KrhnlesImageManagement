@@ -19,6 +19,9 @@ interface CredentialRepository {
     val webDavConfig: Flow<WebDavConfig>
     val wifiOnly: Flow<Boolean>
 
+    /** Verify uploads by downloading them again (extra data); `false` while unset. */
+    val verifyByDownload: Flow<Boolean>
+
     /** Chosen blur sensitivity; Medium while unset or when the stored value is unreadable. */
     val blurSensitivity: Flow<BlurSensitivity>
 
@@ -38,6 +41,8 @@ interface CredentialRepository {
     suspend fun saveWifiOnly(wifiOnly: Boolean)
 
     suspend fun saveAutoDateFolders(enabled: Boolean)
+
+    suspend fun saveVerifyByDownload(enabled: Boolean)
 
     suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity)
 
@@ -121,9 +126,37 @@ interface UploadedPhotosRepositoryContract {
 }
 
 /**
- * Remembers whether the one-time video access request for images-only users was made, and whether
+ * Photos whose upload was verified byte-identical on the server (see [VerifiedUploadsStore]); the
+ * only input of the "Remove uploaded photos from device" action.
+ */
+interface VerifiedUploadsRepositoryContract {
+    /** Newest first; malformed stored elements are skipped. */
+    val records: Flow<List<VerifiedUpload>>
+
+    /** Stores [record], replacing an older record of the same photo id. */
+    suspend fun recordVerified(record: VerifiedUpload)
+
+    /**
+     * One edit for a `PUT` to [target] (before it and after it, whatever its outcome): every record
+     * at [target] is dropped whatever its id (the file there is no longer the one it describes),
+     * the ids in [forgetIds] too, then [record] (if non-null, the verified result of this `PUT`) is
+     * stored.
+     */
+    suspend fun applyUpload(
+        target: UploadTarget,
+        record: VerifiedUpload? = null,
+        forgetIds: Set<Long> = emptySet(),
+    )
+
+    suspend fun forget(ids: Set<Long>)
+
+    suspend fun clear()
+}
+
+/**
+ * Remembers whether the one-time video access request for images-only users was made, whether
  * the system ever offered a rationale for video access (so a later denial without rationale is
- * known to be permanent, not a dismissed dialog).
+ * known to be permanent, not a dismissed dialog) and whether the media location access was asked.
  */
 interface MediaPermissionRepository {
     /** `false` while unset; also `false` when the store cannot be read. */
@@ -135,4 +168,12 @@ interface MediaPermissionRepository {
     val videoRationaleShown: Flow<Boolean>
 
     suspend fun markVideoRationaleShown()
+
+    /**
+     * Whether the app asked for `ACCESS_MEDIA_LOCATION` (asked once automatically, so users of an
+     * older version are not asked again); `false` while unset and when the store cannot be read.
+     */
+    val mediaLocationRequested: Flow<Boolean>
+
+    suspend fun markMediaLocationRequested()
 }

@@ -67,6 +67,7 @@ class CredentialStore internal constructor(
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
         val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val KEY_BLUR_SENSITIVITY = stringPreferencesKey("blur_sensitivity")
+        val KEY_VERIFY_BY_DOWNLOAD = booleanPreferencesKey("verify_by_download")
 
         /**
          * Bumped in every DataStore edit that accompanies a change of the encrypted prefs, so that the
@@ -119,6 +120,9 @@ class CredentialStore internal constructor(
     val baseFolder: Flow<String> = context.credentialDataStore.data.map { it[KEY_BASE_FOLDER] ?: "" }
 
     override val wifiOnly: Flow<Boolean> = context.credentialDataStore.data.map { it[KEY_WIFI_ONLY] ?: false }
+
+    override val verifyByDownload: Flow<Boolean> =
+        context.credentialDataStore.data.map { it[KEY_VERIFY_BY_DOWNLOAD] ?: false }
 
     /**
      * Read through `asMap()` so a persisted value of another type (restored/edited file) yields the default
@@ -202,6 +206,10 @@ class CredentialStore internal constructor(
 
     override suspend fun saveAutoDateFolders(enabled: Boolean) {
         context.credentialDataStore.edit { it[KEY_AUTO_DATE_FOLDERS] = enabled }
+    }
+
+    override suspend fun saveVerifyByDownload(enabled: Boolean) {
+        context.credentialDataStore.edit { it[KEY_VERIFY_BY_DOWNLOAD] = enabled }
     }
 
     override suspend fun clear() {

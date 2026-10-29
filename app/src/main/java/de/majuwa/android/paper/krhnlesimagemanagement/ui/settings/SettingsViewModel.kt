@@ -12,6 +12,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveExcepti
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
@@ -50,12 +52,15 @@ data class SettingsUiState(
     val httpWarning: Boolean = false,
     /** True when uploads should be restricted to Wi-Fi (unmetered) connections. */
     val wifiOnly: Boolean = false,
+    /** True when every upload is also verified by downloading it again (extra data). */
+    val verifyByDownload: Boolean = false,
     /** Non-null when credentials are stored but cannot be decrypted; the UI explains why the user must log in again. */
     val credentialProblem: CredentialCorruption? = null,
 )
 
 private const val TAG = "SettingsViewModel"
 private const val BLUR_RESTORE_TIMEOUT_MS = 3_000L
+private const val CONFIG_READ_TIMEOUT_MS = 3_000L
 
 class SettingsViewModel
     @JvmOverloads
@@ -67,6 +72,8 @@ class SettingsViewModel
             NextcloudLoginFlow(),
         private val uploadedPhotosRepository: UploadedPhotosRepositoryContract =
             UploadedPhotosStore(application),
+        private val verifiedUploadsRepository: VerifiedUploadsRepositoryContract =
+            VerifiedUploadsStore(application),
         private val connectionTester: suspend (WebDavConfig) -> Result<Unit> = { config ->
             WebDavClient(config).testConnection()
         },
@@ -110,6 +117,11 @@ class SettingsViewModel
                 }
             }
             viewModelScope.launch {
+                credentialStore.verifyByDownload.collect { value ->
+                    _uiState.update { it.copy(verifyByDownload = value) }
+                }
+            }
+            viewModelScope.launch {
                 credentialStore.blurSensitivity.collect { level ->
                     // While saves are pending the optimistic value is newer than the stored one.
                     if (pendingBlurSaves == 0) _uiState.update { it.copy(blurSensitivity = level) }
@@ -139,6 +151,15 @@ class SettingsViewModel
         fun setWifiOnly(enabled: Boolean) {
             viewModelScope.launch {
                 credentialStore.saveWifiOnly(enabled)
+            }
+        }
+
+        /** The toggle shows the stored value, so a failed write only leaves it unchanged (logged by type). */
+        fun setVerifyByDownload(enabled: Boolean) {
+            viewModelScope.launch {
+                runCatching { credentialStore.saveVerifyByDownload(enabled) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .onFailure { Log.w(TAG, "Saving verify by download failed: ${it.javaClass.simpleName}") }
             }
         }
 
@@ -279,29 +300,12 @@ class SettingsViewModel
             testConnectionJob =
                 viewModelScope.launch {
                     _uiState.update { it.copy(isTesting = true, testResult = null) }
-                    val result = runConnectionTest()
+                    val result = runConnectionTest(credentialStore, connectionTester)
                     // A test cancelled by logout or a config change must never publish its stale result.
                     ensureActive()
                     _uiState.update { it.copy(isTesting = false, testResult = result) }
                 }
         }
-
-        /** Runs the check; returns a result for every outcome and only throws on cancellation. */
-        private suspend fun runConnectionTest(): ConnectionTestResult =
-            runCatching {
-                val config = credentialStore.webDavConfig.first()
-                if (!config.isValid) {
-                    ConnectionTestResult.NotConfigured
-                } else {
-                    connectionTester(config).getOrThrow()
-                    ConnectionTestResult.Success
-                }
-            }.getOrElse { failure ->
-                if (failure is CancellationException) throw failure
-                // Log the type only: exception messages may contain server details (never shown in the UI).
-                Log.w(TAG, "Connection test failed: ${failure.javaClass.simpleName}")
-                failure.toConnectionTestResult()
-            }
 
         /** Cancels a running test and clears its result, e.g. because the credentials changed. */
         private fun cancelConnectionTest() {
@@ -313,19 +317,34 @@ class SettingsViewModel
         fun logout() {
             cancelConnectionTest()
             viewModelScope.launch {
-                credentialStore.clear()
-                uploadedPhotosRepository.clear()
+                // Verified records first: they make local photos removable. One failing clear never
+                // skips the others.
+                clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
+                clearLogged("credentials") { credentialStore.clear() }
+                clearLogged("uploaded markers") { uploadedPhotosRepository.clear() }
                 _uiState.update { SettingsUiState() }
             }
         }
 
-        /** Saves credentials; on failure shows a user-facing error and returns false instead of crashing. */
+        /**
+         * Saves credentials; on failure shows a user-facing error and returns false instead of crashing.
+         * A different server URL or username (or an unreadable previous config) first clears the
+         * verified upload records: they belong to the old account and must never make a photo
+         * removable against the new one.
+         */
         private suspend fun persistCredentials(
             url: String,
             username: String,
             password: String,
         ): Boolean =
             try {
+                val previous =
+                    runCatching { withTimeoutOrNull(CONFIG_READ_TIMEOUT_MS) { credentialStore.webDavConfig.first() } }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .getOrNull()
+                if (previous == null || previous.url != url || previous.username != username) {
+                    clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
+                }
                 credentialStore.save(url, username, password)
                 true
             } catch (e: CredentialSaveException) {
@@ -343,3 +362,33 @@ private fun normalizeUrl(url: String): String {
 }
 
 private fun isExplicitHttp(url: String): Boolean = url.trim().lowercase().startsWith("http://")
+
+/** Runs the check; returns a result for every outcome and only throws on cancellation. */
+private suspend fun runConnectionTest(
+    credentialStore: CredentialRepository,
+    connectionTester: suspend (WebDavConfig) -> Result<Unit>,
+): ConnectionTestResult =
+    runCatching {
+        val config = credentialStore.webDavConfig.first()
+        if (!config.isValid) {
+            ConnectionTestResult.NotConfigured
+        } else {
+            connectionTester(config).getOrThrow()
+            ConnectionTestResult.Success
+        }
+    }.getOrElse { failure ->
+        if (failure is CancellationException) throw failure
+        // Log the type only: exception messages may contain server details (never shown in the UI).
+        Log.w(TAG, "Connection test failed: ${failure.javaClass.simpleName}")
+        failure.toConnectionTestResult()
+    }
+
+/** Runs one clear step; a failure is logged by type only and never skips the next step. */
+private suspend fun clearLogged(
+    what: String,
+    clear: suspend () -> Unit,
+) {
+    runCatching { clear() }
+        .onFailure { if (it is CancellationException) throw it }
+        .onFailure { Log.w(TAG, "Clearing $what failed: ${it.javaClass.simpleName}") }
+}

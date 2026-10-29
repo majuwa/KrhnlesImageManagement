@@ -179,6 +179,38 @@ private fun LoggedInContent(
 
     Spacer(modifier = Modifier.height(16.dp))
 
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag("verifyByDownloadRow")
+                .minimumInteractiveComponentSize()
+                .toggleable(
+                    value = uiState.verifyByDownload,
+                    role = Role.Switch,
+                    onValueChange = viewModel::setVerifyByDownload,
+                ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.label_verify_by_download),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(R.string.hint_verify_by_download),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = uiState.verifyByDownload,
+            onCheckedChange = null,
+        )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
     AutoDateFoldersSetting(
         enabled = uiState.autoDateFoldersEnabled,
         onEnabledChange = viewModel::setAutoDateFoldersEnabled,

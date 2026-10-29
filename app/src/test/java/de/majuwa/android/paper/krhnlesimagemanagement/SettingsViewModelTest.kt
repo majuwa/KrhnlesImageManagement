@@ -3,9 +3,11 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
@@ -46,6 +48,7 @@ class SettingsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeCredentials: FakeCredentialRepository
     private lateinit var fakeUploadedPhotos: FakeUploadedPhotosRepository
+    private lateinit var fakeVerifiedUploads: FakeVerifiedUploadsRepository
     private lateinit var viewModel: SettingsViewModel
 
     @Before
@@ -61,12 +64,14 @@ class SettingsViewModelTest {
                 ),
             )
         fakeUploadedPhotos = FakeUploadedPhotosRepository()
+        fakeVerifiedUploads = FakeVerifiedUploadsRepository()
         val app = RuntimeEnvironment.getApplication() as Application
         viewModel =
             SettingsViewModel(
                 application = app,
                 credentialStore = fakeCredentials,
                 uploadedPhotosRepository = fakeUploadedPhotos,
+                verifiedUploadsRepository = fakeVerifiedUploads,
             )
     }
 
@@ -321,6 +326,7 @@ class SettingsViewModelTest {
             application = RuntimeEnvironment.getApplication() as Application,
             credentialStore = fakeCredentials,
             uploadedPhotosRepository = fakeUploadedPhotos,
+            verifiedUploadsRepository = fakeVerifiedUploads,
             connectionTester = tester,
         )
 
@@ -482,6 +488,33 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             assertTrue(fakeUploadedPhotos.uploadedPhotoIds.first().isEmpty())
+        }
+
+    @Test
+    fun `logout clears the verified upload records`() =
+        runTest {
+            fakeVerifiedUploads.recordVerified(
+                VerifiedUpload(1L, "content://media/external/images/media/1", 1L, 1L, "u", "f", "a.jpg", 1L),
+            )
+            advanceUntilIdle()
+
+            viewModel.logout()
+            advanceUntilIdle()
+
+            assertTrue(fakeVerifiedUploads.current.isEmpty())
+        }
+
+    @Test
+    fun `setVerifyByDownload persists and is reflected in the ui state`() =
+        runTest {
+            advanceUntilIdle()
+            assertFalse(viewModel.uiState.value.verifyByDownload)
+
+            viewModel.setVerifyByDownload(true)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.verifyByDownload)
+            assertTrue(fakeCredentials.verifyByDownload.first())
         }
 
     @Test
@@ -696,6 +729,7 @@ class SettingsViewModelTest {
                     application = RuntimeEnvironment.getApplication(),
                     credentialStore = lagging,
                     uploadedPhotosRepository = fakeUploadedPhotos,
+                    verifiedUploadsRepository = fakeVerifiedUploads,
                 )
             advanceUntilIdle()
             assertEquals(CredentialCorruption.KEY_INVALIDATED, vm.uiState.value.credentialProblem)
@@ -761,6 +795,8 @@ class SettingsViewModelTest {
                 emit(false)
             }
 
+        override val verifyByDownload: Flow<Boolean> = flow { emit(false) }
+
         override val blurSensitivity: Flow<BlurSensitivity> = flow { emit(BlurSensitivity.MEDIUM) }
 
         override val isConfigured: Flow<Boolean> =
@@ -788,6 +824,8 @@ class SettingsViewModelTest {
         override suspend fun saveWifiOnly(wifiOnly: Boolean) = Unit
 
         override suspend fun saveAutoDateFolders(enabled: Boolean) = Unit
+
+        override suspend fun saveVerifyByDownload(enabled: Boolean) = Unit
 
         override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) = Unit
 

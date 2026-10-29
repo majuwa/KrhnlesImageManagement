@@ -23,6 +23,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
@@ -30,6 +31,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -132,6 +135,31 @@ class SettingsScreenTest {
             .assertCountEquals(0)
         composeTestRule
             .onNodeWithTag("wifiOnlyRow")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
+    }
+
+    @Test
+    fun `verify by download row is one switch node that persists the click and defaults to off`() {
+        val store = FakeCredentialRepository(WebDavConfig("https://cloud.example.com/dav/", "u", "p", "Photos"))
+        setSettingsContent(
+            SettingsViewModel(
+                application = RuntimeEnvironment.getApplication() as Application,
+                credentialStore = store,
+                verifiedUploadsRepository = FakeVerifiedUploadsRepository(),
+            ),
+        )
+
+        composeTestRule.onNodeWithTag("verifyByDownloadRow").performScrollTo().assertIsOff()
+        composeTestRule.onNodeWithTag("verifyByDownloadRow").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("verifyByDownloadRow").assertIsOn()
+        assertTrue(runBlocking { store.verifyByDownload.first() })
+        composeTestRule
+            .onAllNodes(isToggleable() and hasText("Verify by downloading again"))
+            .assertCountEquals(1)
+        composeTestRule
+            .onNodeWithTag("verifyByDownloadRow")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
     }
 

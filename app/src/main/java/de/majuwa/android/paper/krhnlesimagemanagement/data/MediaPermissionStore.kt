@@ -16,7 +16,9 @@ import java.io.IOException
  * `video_access_requested` is set once the app asked an images-only user for video access, so the
  * upgrade request happens at most once; `video_rationale_shown` is set once
  * `shouldShowRequestPermissionRationale(READ_MEDIA_VIDEO)` was true after a denial, so a later
- * denial without rationale counts as permanent (open the app settings).
+ * denial without rationale counts as permanent (open the app settings); `media_location_requested`
+ * is set once `ACCESS_MEDIA_LOCATION` was requested, so a user with media access but without it is
+ * asked at most once automatically.
  */
 class MediaPermissionStore internal constructor(
     private val dataStore: DataStore<Preferences>,
@@ -26,6 +28,7 @@ class MediaPermissionStore internal constructor(
     private companion object {
         val KEY_VIDEO_ACCESS_REQUESTED = booleanPreferencesKey("video_access_requested")
         val KEY_VIDEO_RATIONALE_SHOWN = booleanPreferencesKey("video_rationale_shown")
+        val KEY_MEDIA_LOCATION_REQUESTED = booleanPreferencesKey("media_location_requested")
     }
 
     private fun flag(key: Preferences.Key<Boolean>): Flow<Boolean> =
@@ -43,5 +46,11 @@ class MediaPermissionStore internal constructor(
 
     override suspend fun markVideoRationaleShown() {
         dataStore.edit { it[KEY_VIDEO_RATIONALE_SHOWN] = true }
+    }
+
+    override val mediaLocationRequested: Flow<Boolean> = flag(KEY_MEDIA_LOCATION_REQUESTED)
+
+    override suspend fun markMediaLocationRequested() {
+        dataStore.edit { it[KEY_MEDIA_LOCATION_REQUESTED] = true }
     }
 }

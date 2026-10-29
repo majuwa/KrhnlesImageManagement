@@ -7,6 +7,7 @@
         <exclude domain="file" path="datastore/app_preferences.preferences_pb"/>
         <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
         <exclude domain="file" path="datastore/upload_history.preferences_pb"/>
+        <exclude domain="file" path="datastore/verified_uploads.preferences_pb"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="datastore/credentials.preferences_pb"/>
@@ -14,5 +15,6 @@
         <exclude domain="file" path="datastore/app_preferences.preferences_pb"/>
         <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
         <exclude domain="file" path="datastore/upload_history.preferences_pb"/>
+        <exclude domain="file" path="datastore/verified_uploads.preferences_pb"/>
     </device-transfer>
 </data-extraction-rules>

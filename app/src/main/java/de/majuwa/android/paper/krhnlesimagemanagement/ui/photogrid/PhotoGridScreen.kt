@@ -51,6 +51,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -83,6 +85,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -106,6 +109,7 @@ fun PhotoGridScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToUploadHistory: () -> Unit,
     onStartUpload: (batches: List<UploadBatch>) -> Unit,
+    removalViewModel: UploadedRemovalViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val autoDateFoldersEnabled by viewModel.autoDateFoldersEnabled.collectAsStateWithLifecycle()
@@ -113,6 +117,8 @@ fun PhotoGridScreen(
     val uploadBaseFolder by viewModel.uploadBaseFolder.collectAsStateWithLifecycle()
     val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val removalState by removalViewModel.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val media = rememberMediaPermissions(viewModel)
     var hasNotificationPermission by remember {
@@ -174,6 +180,8 @@ fun PhotoGridScreen(
                         onNavigateToUploadHistory = onNavigateToUploadHistory,
                         onNavigateToSettings = onNavigateToSettings,
                         onToggleFilter = { viewModel.toggleShowOnlyNewPhotos() },
+                        removalEnabled = removalState == RemovalState.Idle,
+                        onRemoveUploaded = removalViewModel::start,
                     )
                 },
                 colors =
@@ -183,6 +191,7 @@ fun PhotoGridScreen(
                     ),
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             AnimatedVisibility(
                 visible = uiState.selectedPhotoIds.isNotEmpty(),
@@ -229,6 +238,13 @@ fun PhotoGridScreen(
             }
         }
     }
+
+    UploadedRemovalHost(
+        viewModel = removalViewModel,
+        snackbarHostState = snackbarHostState,
+        onNavigateToSettings = onNavigateToSettings,
+        onTrashed = { viewModel.refreshPhotos() },
+    )
 
     if (uiState.showOccasionDialog) {
         val selectedPhotos = viewModel.getSelectedPhotos()
@@ -277,6 +293,8 @@ private fun PhotoGridTopBarActions(
     onNavigateToUploadHistory: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onToggleFilter: () -> Unit,
+    removalEnabled: Boolean,
+    onRemoveUploaded: () -> Unit,
 ) {
     if (uiState.selectedPhotoIds.isNotEmpty()) {
         TextButton(onClick = onClearSelection) {
@@ -313,6 +331,9 @@ private fun PhotoGridTopBarActions(
     }
     IconButton(onClick = onNavigateToSettings) {
         Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.cd_settings))
+    }
+    if (uiState.selectedPhotoIds.isEmpty()) {
+        UploadedRemovalMenu(enabled = removalEnabled, onRemoveUploaded = onRemoveUploaded)
     }
 }
 

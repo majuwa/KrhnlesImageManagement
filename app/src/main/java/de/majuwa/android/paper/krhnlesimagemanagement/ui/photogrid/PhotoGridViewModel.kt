@@ -135,6 +135,23 @@ class PhotoGridViewModel
             }
         }
 
+        /**
+         * Whether `ACCESS_MEDIA_LOCATION` was asked for already; null until the stored flag is read
+         * (the screen must not request before it is known).
+         */
+        val mediaLocationRequested: StateFlow<Boolean?> =
+            mediaPermissions.mediaLocationRequested
+                .catch { emit(false) }
+                .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+        /** Persists that the media location access was asked for; a failed write only costs a repeated request. */
+        fun markMediaLocationRequested() {
+            viewModelScope.launch {
+                runCatching { mediaPermissions.markMediaLocationRequested() }
+                    .onFailure { if (it is CancellationException) throw it }
+            }
+        }
+
         /** Persists that the video access request was made; a failed write only costs a repeated request. */
         fun markVideoAccessRequested() {
             viewModelScope.launch {

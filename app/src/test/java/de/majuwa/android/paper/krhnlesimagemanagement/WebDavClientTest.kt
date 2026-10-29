@@ -1,6 +1,8 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import de.majuwa.android.paper.krhnlesimagemanagement.data.RemoteFileTooLargeException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadFailure
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadResponse
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.toUploadFailure
@@ -407,7 +409,7 @@ class WebDavClientTest {
     fun `uploadFile is cancelled with its coroutine when the server never answers`() =
         runBlocking {
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
-            var result: Result<Unit>? = null
+            var result: Result<UploadResponse>? = null
             val job =
                 launch(Dispatchers.IO) {
                     result =
