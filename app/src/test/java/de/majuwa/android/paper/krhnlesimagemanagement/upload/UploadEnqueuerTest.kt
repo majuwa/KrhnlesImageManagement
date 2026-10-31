@@ -117,6 +117,9 @@ class UploadEnqueuerTest {
                     .single { it.name.startsWith("upload_queue_") }
                     .path,
             )
+        // Both tags: the upload tag (Cancel, in-app progress) and the per-queue tag (start-up recovery).
+        assertTrue("photo_upload" in work.tags)
+        assertTrue("upload_queue_file:${queueFile.name}" in work.tags)
         val json = JSONObject(queueFile.readText())
         assertEquals("Trip", json.getString("folderName"))
         assertEquals(2, json.getJSONArray("photos").length())

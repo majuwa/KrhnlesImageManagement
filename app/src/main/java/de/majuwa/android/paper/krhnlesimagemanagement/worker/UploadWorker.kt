@@ -1,22 +1,15 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.worker
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.util.Log
-import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.graphics.drawable.IconCompat
 import androidx.core.net.toUri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
+import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
@@ -46,7 +39,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.util.DigestCountingInputSt
 import de.majuwa.android.paper.krhnlesimagemanagement.util.MediaFileState
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isAllowedPhotoUri
 import de.majuwa.android.paper.krhnlesimagemanagement.util.mediaFileStateOf
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONException
 import java.io.File
@@ -68,6 +63,11 @@ class UploadWorker internal constructor(
     private val uploadHistory: UploadHistoryRepository = UploadHistoryStore(context.applicationContext),
     private val isActiveNetworkMetered: () -> Boolean = { isActiveNetworkMetered(context.applicationContext) },
     private val verifiedUploads: VerifiedUploadsRepositoryContract = VerifiedUploadsStore(context.applicationContext),
+    /**
+     * Test seam for [userCancelled]; null = the real rule (stopped by the app through WorkManager's
+     * cancel API, `STOP_REASON_CANCELLED_BY_APP`).
+     */
+    private val userCancelledOverride: (() -> Boolean)? = null,
 ) : CoroutineWorker(context, params) {
     /** Used by WorkManager's default factory. */
     constructor(context: Context, params: WorkerParameters) : this(
@@ -98,6 +98,20 @@ class UploadWorker internal constructor(
         val interrupted: Boolean,
     )
 
+    /** Queue with every entry uploaded so far; what a user cancel turns into the retry file. */
+    @Volatile
+    private var liveQueue: UploadQueue? = null
+
+    /** Failure causes seen so far in this run (for the reasons of a cancelled notification). */
+    private val liveFailures = mutableSetOf<UploadFailure>()
+
+    /**
+     * Set once the run reports its result (or gives up): from then on a cancel no longer
+     * finalizes, the terminal report is complete and never split.
+     */
+    @Volatile
+    private var terminal = false
+
     companion object {
         const val KEY_QUEUE_FILE = "queue_file"
         const val KEY_PROGRESS = "progress"
@@ -118,8 +132,6 @@ class UploadWorker internal constructor(
          */
         const val RESULT_NOTIFICATION_ID = 1002
         val NOTIFICATION_ICON = R.drawable.ic_notification_upload
-        private const val CHANNEL_ID = "upload_channel"
-        private const val REQUEST_CODE_RETRY = 2001
 
         /**
          * Foreground-service refusals of one queue (persisted as `interruptions` in the queue file;
@@ -147,7 +159,33 @@ class UploadWorker internal constructor(
                 deleteQueueFile(applicationContext, queueFile)
                 return Result.failure()
             }
+        liveQueue = queue
+        return try {
+            runUpload(queueFile, queue)
+        } catch (e: CancellationException) {
+            // Only a cancel by the app is the user's: it is terminal in WorkManager, so the queue
+            // must be finalized here. Every other stop (constraints, foreground-service time limit,
+            // preemption, quota, unknown) is re-run by WorkManager: keep the queue as it is.
+            if (!terminal && userCancelled()) finalizeOnCancel(queueFile)
+            throw e
+        }
+    }
 
+    /** True if WorkManager stopped this work because the app cancelled it (the user's Cancel). */
+    private fun userCancelled(): Boolean =
+        userCancelledOverride?.invoke() ?: (isStopped && stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP)
+
+    private suspend fun finalizeOnCancel(queueFile: File) {
+        val queue = liveQueue ?: return
+        // A chunked-upload session of the in-flight item is discarded here (best effort, before
+        // the claim) once the nextcloud-chunked-upload change exists; see docs/architecture.md.
+        finalizeCancelledQueue(applicationContext, queueFile, queue, liveFailures.toSet(), uploadHistory)
+    }
+
+    private suspend fun runUpload(
+        queueFile: File,
+        queue: UploadQueue,
+    ): Result {
         // The Wi-Fi-only setting may have been switched on after this work was enqueued (its
         // constraint is fixed at enqueue time). Back off via WorkManager until an unmetered network
         // is active; the queue file stays untouched meanwhile.
@@ -158,17 +196,19 @@ class UploadWorker internal constructor(
         val config = credentialRepository.webDavConfig.first()
 
         if (!config.isValid) {
-            deleteQueueFile(applicationContext, queueFile)
-            createNotificationChannel()
-            notifyIfPermitted(
-                buildFailureNotification(
-                    applicationContext.getString(
-                        R.string.notification_create_folder_failed,
-                        folderCreationErrorMessage(applicationContext.resources, FolderCreationError.NotConfigured),
+            terminalReport {
+                deleteQueueFile(applicationContext, queueFile)
+                applicationContext.createUploadNotificationChannel()
+                applicationContext.notifyIfPermitted(
+                    applicationContext.buildFailureNotification(
+                        applicationContext.getString(
+                            R.string.notification_create_folder_failed,
+                            folderCreationErrorMessage(applicationContext.resources, FolderCreationError.NotConfigured),
+                        ),
                     ),
-                ),
-                queueFile.name,
-            )
+                    queueFile.name,
+                )
+            }
             return Result.failure()
         }
 
@@ -179,8 +219,15 @@ class UploadWorker internal constructor(
         return outcome.result
     }
 
+    /** Runs a terminal report (result, history, notification) to its end even if the work is cancelled meanwhile. */
+    private suspend fun <T> terminalReport(block: suspend () -> T): T =
+        withContext(NonCancellable) {
+            terminal = true
+            block()
+        }
+
     override suspend fun getForegroundInfo(): ForegroundInfo {
-        createNotificationChannel()
+        applicationContext.createUploadNotificationChannel()
         return buildForegroundInfo(0, 0)
     }
 
@@ -201,7 +248,7 @@ class UploadWorker internal constructor(
         val remoteFolderPaths = List(total) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
         val client = clientFactory(config)
 
-        createNotificationChannel()
+        applicationContext.createUploadNotificationChannel()
         // A refused foreground service (time budget used up, background start) retries the run
         // later; the queue stays.
         if (!setForegroundOrFalse(buildForegroundInfo(total - pending.size, total))) {
@@ -213,13 +260,18 @@ class UploadWorker internal constructor(
             val folderPaths = pending.map { remoteFolderPaths[it] }
             val folderError = createRemoteFolders(client, queue, config.uploadPathPrefix, folderPaths)
             if (folderError != null) {
-                recordHistory(occasionName = queue.historyLabel, photoCount = total, failedCount = pending.size)
-                val message =
-                    applicationContext.getString(
-                        R.string.notification_create_folder_failed,
-                        folderCreationErrorMessage(applicationContext.resources, folderError),
+                terminalReport {
+                    uploadHistory.recordRun(queue.historyLabel, total, pending.size)
+                    val message =
+                        applicationContext.getString(
+                            R.string.notification_create_folder_failed,
+                            folderCreationErrorMessage(applicationContext.resources, folderError),
+                        )
+                    applicationContext.notifyIfPermitted(
+                        applicationContext.buildFailureNotification(message),
+                        notificationTag,
                     )
-                notifyIfPermitted(buildFailureNotification(message), notificationTag)
+                }
                 return UploadOutcome(Result.failure())
             }
         }
@@ -242,6 +294,9 @@ class UploadWorker internal constructor(
         queueFile: File,
         notificationTag: String,
     ): UploadOutcome {
+        // A user cancel is not an interruption: it is finalized by the caller of doWork, never
+        // counted and never retried.
+        if (userCancelled()) throw CancellationException("Upload cancelled by the user")
         if (run.queue.interruptions + 1 < MAX_UPLOAD_RUN_ATTEMPTS &&
             runAttemptCount < MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP
         ) {
@@ -268,56 +323,45 @@ class UploadWorker internal constructor(
         run: UploadRun,
         notificationTag: String,
         gaveUp: Boolean = false,
-    ): UploadOutcome {
-        val queue = run.queue
-        val total = queue.entries.size
-        val failedIndices = queue.pendingIndices
-        val failed = failedIndices.size
-        val uploaded = total - failed
-        recordHistory(occasionName = queue.historyLabel, photoCount = total, failedCount = failed)
+    ): UploadOutcome =
+        terminalReport {
+            val queue = run.queue
+            val total = queue.entries.size
+            val failedIndices = queue.pendingIndices
+            val failed = failedIndices.size
+            val uploaded = total - failed
+            uploadHistory.recordRun(queue.historyLabel, total, failed)
 
-        val retryQueueFilePath =
-            if (failedIndices.isNotEmpty()) writeRetryQueueFile(queue, failedIndices)?.absolutePath else null
-        val retainedStaged =
-            if (retryQueueFilePath != null) {
-                failedIndices.mapNotNull { queue.entries[it].staged }.toSet()
-            } else {
-                emptySet()
-            }
-        val resources = applicationContext.resources
-        val reasons =
-            listOfNotNull(
-                uploadFailureMessage(resources, run.failures),
-                resources.getString(R.string.upload_failure_interrupted).takeIf { gaveUp },
+            val retryQueueFilePath =
+                if (failedIndices.isNotEmpty()) writeRetryQueueFile(queue, failedIndices)?.absolutePath else null
+            val retainedStaged =
+                if (retryQueueFilePath != null) {
+                    failedIndices.mapNotNull { queue.entries[it].staged }.toSet()
+                } else {
+                    emptySet()
+                }
+            val resources = applicationContext.resources
+            val reasons =
+                listOfNotNull(
+                    uploadFailureMessage(resources, run.failures),
+                    resources.getString(R.string.upload_failure_interrupted).takeIf { gaveUp },
+                )
+            val summary =
+                CompletionSummary(
+                    uploaded,
+                    failed,
+                    retryQueueFilePath,
+                    joinNotificationTexts(resources, reasons),
+                    gaveUp,
+                )
+            applicationContext.notifyIfPermitted(
+                applicationContext.buildCompletionNotification(summary, notificationTag),
+                notificationTag,
             )
-        val summary =
-            CompletionSummary(uploaded, failed, retryQueueFilePath, joinNotificationTexts(resources, reasons), gaveUp)
-        notifyIfPermitted(buildCompletionNotification(summary, notificationTag), notificationTag)
 
-        val data = workDataOf(KEY_UPLOADED_COUNT to uploaded, KEY_FAILED_COUNT to failed)
-        return UploadOutcome(if (gaveUp) Result.failure(data) else Result.success(data), retainedStaged)
-    }
-
-    private suspend fun recordHistory(
-        occasionName: String,
-        photoCount: Int,
-        failedCount: Int,
-    ) {
-        val now = System.currentTimeMillis()
-        runCatching {
-            uploadHistory.addEntry(
-                UploadHistoryEntry(
-                    id = now,
-                    occasionName = occasionName,
-                    timestampMillis = now,
-                    photoCount = photoCount,
-                    failedCount = failedCount,
-                ),
-            )
-        }.onFailure { throwable ->
-            Log.w(UPLOAD_WORKER_TAG, "Failed to persist upload history entry: ${throwable.javaClass.simpleName}")
+            val data = workDataOf(KEY_UPLOADED_COUNT to uploaded, KEY_FAILED_COUNT to failed)
+            UploadOutcome(if (gaveUp) Result.failure(data) else Result.success(data), retainedStaged)
         }
-    }
 
     /**
      * Uploads every pending entry `i` of [initialQueue] into `remoteFolderPaths[i]`; one progress over
@@ -339,15 +383,12 @@ class UploadWorker internal constructor(
         for ((n, i) in pending.withIndex()) {
             val entry = queue.entries[i]
             val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry)
-            if (outcome.failure == null) {
-                queue = queue.withUploaded(i)
-                // A failed rewrite only means a re-run uploads this entry again.
-                rewriteQueueFile(queueFile, queue.toProgressJson().toString())
-                uploadedPhotos.markUploaded(entry.id)
-            } else {
-                failures.add(outcome.failure)
-            }
-            recordOutcome(upload, entry, outcome)
+            // A finished PUT is always booked, even if the user cancels right now: the item is
+            // marked uploaded and never re-sent. The cancel surfaces at the next suspension point.
+            queue = withContext(NonCancellable) { bookOutcome(upload, queue, i, outcome, queueFile) }
+            outcome.failure?.let { failures.add(it) }
+            liveQueue = queue
+            liveFailures.addAll(failures)
 
             finished++
             setProgress(workDataOf(KEY_PROGRESS to finished, KEY_TOTAL to total))
@@ -355,6 +396,31 @@ class UploadWorker internal constructor(
             if (!foregroundKept && n < pending.lastIndex) return UploadRun(queue, failures, interrupted = true)
         }
         return UploadRun(queue, failures, interrupted = false)
+    }
+
+    /**
+     * Books the finished `PUT` of entry [index]: on success the queue file is rewritten atomically
+     * with the `uploaded` marker and the photo is marked at once, then the verified-upload record is
+     * bound to the target. Runs non-cancellable; every DataStore write is bounded by
+     * [BOOKKEEPING_TIMEOUT_MS] so the block always ends. Returns the queue with the entry marked.
+     */
+    private suspend fun bookOutcome(
+        upload: UploadContext,
+        queue: UploadQueue,
+        index: Int,
+        outcome: PhotoUploadOutcome,
+        queueFile: File,
+    ): UploadQueue {
+        val entry = queue.entries[index]
+        var booked = queue
+        if (outcome.failure == null) {
+            booked = queue.withUploaded(index)
+            // A failed rewrite only means a re-run uploads this entry again.
+            rewriteQueueFile(queueFile, booked.toProgressJson().toString())
+            withTimeoutOrNull(BOOKKEEPING_TIMEOUT_MS) { uploadedPhotos.markUploaded(entry.id) }
+        }
+        withTimeoutOrNull(BOOKKEEPING_TIMEOUT_MS) { recordOutcome(upload, entry, outcome) }
+        return booked
     }
 
     /**
@@ -540,118 +606,11 @@ class UploadWorker internal constructor(
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
 
-    private fun uploadNotificationBuilder(): NotificationCompat.Builder =
-        NotificationCompat
-            .Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(IconCompat.createWithResource(applicationContext, NOTIFICATION_ICON))
-
+    /** The progress notification of this work, with its Cancel action. */
     internal fun buildProgressNotification(
         current: Int,
         total: Int,
-    ): Notification {
-        val text =
-            if (total == 0) {
-                applicationContext.getString(R.string.notification_preparing)
-            } else {
-                "$current / $total"
-            }
-        return uploadNotificationBuilder()
-            .setContentTitle(applicationContext.getString(R.string.notification_uploading_title))
-            .setContentText(text)
-            .setProgress(total, current, total == 0)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
-    }
-
-    /** The batch result; [failureReason] (user-facing cause, e.g. HTTP 413 / 507) follows the counts. */
-    internal fun buildCompletionNotification(
-        summary: CompletionSummary,
-        notificationTag: String,
-    ): Notification {
-        val uploaded = summary.uploaded
-        val failed = summary.failed
-        val retryQueueFilePath = summary.retryQueueFilePath
-        val failureReason = summary.failureReason
-        val resources = applicationContext.resources
-        val counts =
-            if (failed == 0) {
-                resources.getQuantityString(R.plurals.notification_upload_success, uploaded, uploaded)
-            } else {
-                resources.getQuantityString(R.plurals.notification_upload_partial, uploaded, uploaded, failed)
-            }
-        val text =
-            if (failed > 0 && failureReason != null) {
-                resources.getString(R.string.notification_text_with_reason, counts, failureReason)
-            } else {
-                counts
-            }
-        val title = if (summary.gaveUp) R.string.notification_upload_failed else R.string.notification_upload_complete
-        val builder =
-            uploadNotificationBuilder()
-                .setContentTitle(applicationContext.getString(title))
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setOngoing(false)
-
-        if (failed > 0 && retryQueueFilePath != null) {
-            val retryIntent =
-                Intent(applicationContext, RetryUploadReceiver::class.java).apply {
-                    putExtra(RetryUploadReceiver.EXTRA_QUEUE_FILE, retryQueueFilePath)
-                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_ID, RESULT_NOTIFICATION_ID)
-                    putExtra(RetryUploadReceiver.EXTRA_NOTIFICATION_TAG, notificationTag)
-                    // Unique data URI: PendingIntent identity ignores extras, so each retry file needs its own.
-                    data = "retry://${File(retryQueueFilePath).name}".toUri()
-                }
-            val retryPendingIntent =
-                PendingIntent.getBroadcast(
-                    applicationContext,
-                    REQUEST_CODE_RETRY,
-                    retryIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
-            val retryLabel =
-                applicationContext.getString(R.string.notification_retry_failed, failed)
-            builder.addAction(0, retryLabel, retryPendingIntent)
-        }
-
-        return builder.build()
-    }
-
-    internal fun buildFailureNotification(message: String): Notification =
-        uploadNotificationBuilder()
-            .setContentTitle(applicationContext.getString(R.string.notification_upload_failed))
-            .setContentText(message)
-            .setOngoing(false)
-            .build()
-
-    private fun createNotificationChannel() {
-        val channel =
-            NotificationChannel(
-                CHANNEL_ID,
-                applicationContext.getString(R.string.channel_name_uploads),
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = applicationContext.getString(R.string.channel_desc_uploads)
-            }
-        val manager = applicationContext.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
-    }
-
-    private fun notifyIfPermitted(
-        notification: Notification,
-        notificationTag: String,
-    ) {
-        if (ActivityCompat.checkSelfPermission(
-                applicationContext,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            NotificationManagerCompat
-                .from(applicationContext)
-                .notify(notificationTag, RESULT_NOTIFICATION_ID, notification)
-        }
-    }
+    ): Notification = applicationContext.buildProgressNotification(current, total, id)
 }
 
 /** The queue file named by [path] if it is an existing, validated worker queue file, else null. */
@@ -742,7 +701,7 @@ private fun Context.openEntry(
 }
 
 /** Parses [queueFile]; null (logged by type only) when it is unreadable or malformed. */
-private fun parseQueue(queueFile: File): UploadQueue? =
+internal fun parseQueue(queueFile: File): UploadQueue? =
     try {
         parseUploadQueue(queueFile.readText()).also {
             if (it == null) Log.w(UPLOAD_WORKER_TAG, "Malformed queue file: inconsistent folder format")
@@ -783,3 +742,6 @@ private suspend fun CredentialRepository.isStillConfiguredAs(run: WebDavConfig):
 }
 
 private const val CONFIG_RECHECK_TIMEOUT_MS = 3_000L
+
+/** Bound of each DataStore write of the per-item bookkeeping that runs non-cancellable. */
+private const val BOOKKEEPING_TIMEOUT_MS = 5_000L

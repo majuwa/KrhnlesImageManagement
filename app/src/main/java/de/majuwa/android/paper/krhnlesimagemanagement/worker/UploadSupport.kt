@@ -9,7 +9,9 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadFailure
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import java.io.FileNotFoundException
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
@@ -73,6 +75,11 @@ internal data class CompletionSummary(
     val failureReason: String? = null,
     /** The run stopped after too many interrupted attempts: titled "Upload failed". */
     val gaveUp: Boolean = false,
+    /**
+     * The user cancelled the run: titled "Upload cancelled"; [failed] counts the items not
+     * uploaded (they are never called failed).
+     */
+    val cancelled: Boolean = false,
 )
 
 /** User-facing reason for the failures of a run, or null if none has a specific message. */
@@ -103,3 +110,31 @@ internal fun joinNotificationTexts(
         ->
         resources.getString(R.string.notification_text_with_reason, first, second)
     }
+
+/**
+ * Adds the history entry of one finished run ([failedCount] = the items not uploaded when
+ * [cancelled]). A failure to persist is logged by type only and never fails the upload.
+ */
+internal suspend fun UploadHistoryRepository.recordRun(
+    label: String,
+    photoCount: Int,
+    failedCount: Int,
+    cancelled: Boolean = false,
+) {
+    val now = System.currentTimeMillis()
+    runCatching {
+        addEntry(
+            UploadHistoryEntry(
+                id = now,
+                occasionName = label,
+                timestampMillis = now,
+                photoCount = photoCount,
+                failedCount = failedCount,
+                cancelled = cancelled,
+            ),
+        )
+    }.onFailure { throwable ->
+        if (throwable is CancellationException) throw throwable
+        Log.w(TAG, "Failed to persist upload history entry: ${throwable.javaClass.simpleName}")
+    }
+}

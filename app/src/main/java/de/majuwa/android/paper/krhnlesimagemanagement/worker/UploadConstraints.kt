@@ -18,12 +18,18 @@ internal const val WIFI_ONLY_READ_TIMEOUT_MS = 3_000L
 /** Tag of every upload work request. */
 internal const val UPLOAD_WORK_TAG = "photo_upload"
 
+/** Prefix of the per-queue work tag (`upload_queue_file:<queue file name>`), see [queueFileTag]. */
+internal const val QUEUE_FILE_TAG_PREFIX = "upload_queue_file:"
+
+/** The tag that finds the work of the queue file named [queueFileName] (used by the start-up recovery). */
+internal fun queueFileTag(queueFileName: String): String = "$QUEUE_FILE_TAG_PREFIX$queueFileName"
+
 /** First back-off delay of a retried upload run; doubles per run (exponential, capped by WorkManager). */
 internal const val UPLOAD_BACKOFF_DELAY_SECONDS = 60L
 
 /**
  * The one upload work request for [queueFile] (new uploads and retries): [constraints], the
- * upload tag and an explicit exponential back-off, so a run that keeps being interrupted (refused
+ * upload tag, a per-queue tag and an explicit exponential back-off, so a run that keeps being interrupted (refused
  * foreground service, Wi-Fi-only on a metered network) waits longer each time instead of looping.
  */
 internal fun uploadWorkRequest(
@@ -35,6 +41,7 @@ internal fun uploadWorkRequest(
         .setConstraints(constraints)
         .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, UPLOAD_BACKOFF_DELAY_SECONDS, TimeUnit.SECONDS)
         .addTag(UPLOAD_WORK_TAG)
+        .addTag(queueFileTag(queueFile.name))
         .build()
 
 /** Network constraint of an upload: unmetered when Wi-Fi-only is enabled, otherwise none. */
