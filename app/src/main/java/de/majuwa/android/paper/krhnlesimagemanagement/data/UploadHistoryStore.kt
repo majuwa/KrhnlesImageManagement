@@ -95,6 +95,8 @@ class UploadHistoryStore internal constructor(
                             timestampMillis = item.getLong("timestampMillis"),
                             photoCount = item.getInt("photoCount"),
                             failedCount = item.getInt("failedCount"),
+                            // Strict: only a JSON `true` marks a cancelled run (older entries have no key).
+                            cancelled = item.opt("cancelled") == true,
                         )
                     if (isValidEntry(entry)) {
                         add(entry)
@@ -127,6 +129,7 @@ class UploadHistoryStore internal constructor(
                             put("timestampMillis", entry.timestampMillis)
                             put("photoCount", entry.photoCount)
                             put("failedCount", entry.failedCount)
+                            if (entry.cancelled) put("cancelled", true)
                         },
                     )
                 }

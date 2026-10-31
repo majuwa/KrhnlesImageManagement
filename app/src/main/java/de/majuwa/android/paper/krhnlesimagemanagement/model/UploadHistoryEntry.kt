@@ -5,5 +5,8 @@ data class UploadHistoryEntry(
     val occasionName: String,
     val timestampMillis: Long,
     val photoCount: Int,
+    /** For a [cancelled] run this is the number of items not uploaded (never called failed). */
     val failedCount: Int,
+    /** The user cancelled the run; absent in entries of older versions = false. */
+    val cancelled: Boolean = false,
 )

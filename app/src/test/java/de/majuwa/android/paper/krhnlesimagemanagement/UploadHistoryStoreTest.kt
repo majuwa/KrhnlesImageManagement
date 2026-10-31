@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -197,5 +198,86 @@ class UploadHistoryStoreTest {
             assertEquals("Trip", reloaded.single().occasionName)
             assertEquals(5, reloaded.single().photoCount)
             assertEquals(1, reloaded.single().failedCount)
+        }
+
+    @Test
+    fun `cancelled flag round-trips and is written only when set`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            val store = UploadHistoryStore(ds)
+            store.addEntry(UploadHistoryEntry(1, "Cancelled", 2000, 10, 6, cancelled = true))
+            store.addEntry(UploadHistoryEntry(2, "Plain", 1000, 3, 1))
+
+            val read = store.entries.first().associateBy { it.id }
+            assertTrue(read.getValue(1).cancelled)
+            assertEquals(false, read.getValue(2).cancelled)
+            assertEquals(6, read.getValue(1).failedCount)
+            val raw = JSONArray(ds.data.first()[key])
+            val byId = (0 until raw.length()).map { raw.getJSONObject(it) }.associateBy { it.getLong("id") }
+            assertTrue(byId.getValue(1).has("cancelled"))
+            assertTrue(!byId.getValue(2).has("cancelled"))
+        }
+
+    @Test
+    fun `entries without a cancelled key read as not cancelled`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            ds.edit {
+                it[key] = """[{"id":1,"occasionName":"old","timestampMillis":1000,"photoCount":2,"failedCount":1}]"""
+            }
+
+            assertEquals(
+                false,
+                UploadHistoryStore(ds)
+                    .entries
+                    .first()
+                    .single()
+                    .cancelled,
+            )
+        }
+
+    @Test
+    fun `a string or number cancelled value reads as not cancelled`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val ds = dataStore(backgroundScope)
+            ds.edit {
+                it[key] =
+                    """
+                    [
+                      {"id":1,"occasionName":"s","timestampMillis":1000,"photoCount":2,"failedCount":1,"cancelled":"true"},
+                      {"id":2,"occasionName":"n","timestampMillis":2000,"photoCount":2,"failedCount":1,"cancelled":1},
+                      {"id":3,"occasionName":"b","timestampMillis":3000,"photoCount":2,"failedCount":1,"cancelled":true}
+                    ]
+                    """.trimIndent()
+            }
+
+            val read = UploadHistoryStore(ds).entries.first().associateBy { it.id }
+            assertEquals(false, read.getValue(1).cancelled)
+            assertEquals(false, read.getValue(2).cancelled)
+            assertEquals(true, read.getValue(3).cancelled)
+        }
+
+    @Test
+    fun `an id collision keeps the cancelled flag`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val store = UploadHistoryStore(dataStore(backgroundScope))
+            store.addEntry(entry(1, 1000))
+            store.addEntry(UploadHistoryEntry(1, "Cancelled", 1000, 4, 2, cancelled = true))
+
+            assertEquals(
+                listOf(true, false),
+                store.entries
+                    .first()
+                    .map { it.cancelled }
+                    .sortedDescending(),
+            )
+            assertEquals(
+                2,
+                store.entries
+                    .first()
+                    .map { it.id }
+                    .distinct()
+                    .size,
+            )
         }
 }
