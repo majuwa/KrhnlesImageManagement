@@ -38,13 +38,16 @@ class UploadWorkerCancelWorkManagerTest {
     private val h = UploadCancelHarness()
     private lateinit var workManager: WorkManager
 
+    /** WorkManager's executor of this test; shut down in [tearDown] so no threads outlive the test. */
+    private val pool = Executors.newFixedThreadPool(4)
+
     @Before
     fun setUp() {
         h.setUp()
         val config =
             Configuration
                 .Builder()
-                .setExecutor(Executors.newFixedThreadPool(4))
+                .setExecutor(pool)
                 .setWorkerFactory(h.workerFactory())
                 .build()
         WorkManagerTestInitHelper.initializeTestWorkManager(h.context, config)
@@ -55,6 +58,7 @@ class UploadWorkerCancelWorkManagerTest {
     fun tearDown() {
         runBlocking { workManager.cancelAllWork().await() }
         h.tearDown()
+        pool.shutdownNow()
     }
 
     private fun state(id: UUID) = workManager.getWorkInfoById(id).get()?.state

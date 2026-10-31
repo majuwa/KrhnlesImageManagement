@@ -76,6 +76,9 @@ class CancelUploadReceiverTest {
     private lateinit var context: Context
     private lateinit var workManager: WorkManager
 
+    /** WorkManager's executor of this test; shut down in [tearDown] so no threads outlive the test. */
+    private val pool = Executors.newFixedThreadPool(4)
+
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
@@ -83,7 +86,7 @@ class CancelUploadReceiverTest {
         val config =
             Configuration
                 .Builder()
-                .setExecutor(Executors.newFixedThreadPool(4))
+                .setExecutor(pool)
                 .setWorkerFactory(
                     object : WorkerFactory() {
                         override fun createWorker(
@@ -105,6 +108,7 @@ class CancelUploadReceiverTest {
     @After
     fun tearDown() {
         runBlocking { workManager.cancelAllWork().await() }
+        pool.shutdownNow()
     }
 
     private fun holdingRequest(tag: String?): OneTimeWorkRequest =

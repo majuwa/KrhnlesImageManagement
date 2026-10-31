@@ -54,6 +54,9 @@ class UploadCancellationTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val history = CancelTestHistory()
 
+    /** WorkManager's executor of this test; shut down in [tearDown] so no threads outlive the test. */
+    private val pool = Executors.newFixedThreadPool(4)
+
     @Before
     fun setUp() {
         shadowOf(context as android.app.Application).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -61,7 +64,7 @@ class UploadCancellationTest {
         val config =
             Configuration
                 .Builder()
-                .setExecutor(Executors.newFixedThreadPool(4))
+                .setExecutor(pool)
                 .setWorkerFactory(
                     object : WorkerFactory() {
                         override fun createWorker(
@@ -86,6 +89,7 @@ class UploadCancellationTest {
             dir.listFiles()?.filter { it.name.endsWith(".json") || it.name.endsWith(".tmp") }?.forEach { it.delete() }
         }
         shareStagingDir(context).deleteRecursively()
+        pool.shutdownNow()
     }
 
     private fun queue(

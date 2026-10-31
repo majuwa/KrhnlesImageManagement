@@ -75,6 +75,9 @@ class PhotoGridCancelUploadTest {
     private lateinit var app: Application
     private lateinit var workManager: WorkManager
 
+    /** WorkManager's executor of this test; shut down in [tearDown] so no threads outlive the test. */
+    private val pool = Executors.newFixedThreadPool(4)
+
     @Before
     fun setUp() {
         app = ApplicationProvider.getApplicationContext()
@@ -82,7 +85,7 @@ class PhotoGridCancelUploadTest {
         val config =
             Configuration
                 .Builder()
-                .setExecutor(Executors.newFixedThreadPool(4))
+                .setExecutor(pool)
                 .setWorkerFactory(
                     object : WorkerFactory() {
                         override fun createWorker(
@@ -104,6 +107,7 @@ class PhotoGridCancelUploadTest {
     @After
     fun tearDown() {
         runBlocking { workManager.cancelAllWork().await() }
+        pool.shutdownNow()
     }
 
     private fun state(id: UUID) = workManager.getWorkInfoById(id).get()?.state
