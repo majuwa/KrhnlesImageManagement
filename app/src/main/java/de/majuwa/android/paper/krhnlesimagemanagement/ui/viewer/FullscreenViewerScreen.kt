@@ -44,6 +44,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -198,12 +202,18 @@ private fun ZoomablePage(
                 .data(url)
                 .crossfade(true)
                 .build(),
-        contentDescription = contentDescription,
+        // The description lives on the page itself, not on the image painter: SubcomposeAsyncImage
+        // only applies `contentDescription` to the painter content, so the `loading` slot below
+        // (and any later state) would otherwise leave the page without a TalkBack label.
+        contentDescription = null,
         contentScale = ContentScale.Fit,
         modifier =
             Modifier
                 .fillMaxSize()
-                .onSizeChanged { size = it }
+                .semantics {
+                    this.contentDescription = contentDescription
+                    role = Role.Image
+                }.onSizeChanged { size = it }
                 .graphicsLayer(
                     scaleX = scale,
                     scaleY = scale,
