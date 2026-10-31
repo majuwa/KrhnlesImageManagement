@@ -89,6 +89,19 @@ class UploadHistoryScreenTest {
     }
 
     @Test
+    fun cancelledEntryShowsUploadedAndNotUploadedCountsNotFailed() {
+        show(
+            FakeHistory(
+                listOf(UploadHistoryEntry(1, "Trip", 1_000, photoCount = 10, failedCount = 6, cancelled = true)),
+            ),
+        )
+
+        rule.onNodeWithText("Trip").assertExists()
+        rule.onNodeWithText("Cancelled · 4 uploaded · 6 not uploaded").assertExists()
+        rule.onAllNodesWithText(rule.activity.getString(R.string.upload_history_counts, 4, 6)).assertCountEquals(0)
+    }
+
+    @Test
     fun emptyStateHidesClearAll() {
         show(FakeHistory(emptyList()))
 

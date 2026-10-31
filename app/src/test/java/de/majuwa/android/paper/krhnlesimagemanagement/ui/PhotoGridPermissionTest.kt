@@ -43,6 +43,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRe
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -124,7 +125,7 @@ class PhotoGridPermissionTest {
         val viewModel =
             PhotoGridViewModel(
                 app,
-                MediaRepository(app.contentResolver),
+                MediaRepository(app.contentResolver, Dispatchers.Unconfined),
                 FakeCredentialRepository(),
                 uploaded,
                 workManager,

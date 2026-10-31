@@ -98,7 +98,12 @@
         <item quantity="other">%d items</item>
     </plurals>
     <string name="upload_progress">Uploading %1$d / %2$d</string>
+    <string name="action_cancel_upload">Cancel upload</string>
     <string name="upload_history_counts" tools:ignore="PluralsCandidate">%1$d succeeded · %2$d failed</string>
+    <plurals name="upload_history_counts_cancelled">
+        <item quantity="one">Cancelled · %1$d uploaded · %2$d not uploaded</item>
+        <item quantity="other">Cancelled · %1$d uploaded · %2$d not uploaded</item>
+    </plurals>
     <!-- %2$s is the item_count plural ("1 item" / "3 items"). -->
     <plurals name="toast_upload_started">
         <item quantity="one">Queued %1$d upload for %2$s.</item>
@@ -321,6 +326,12 @@
     <string name="notification_upload_failed">Upload failed</string>
     <string name="notification_create_folder_failed">Failed to create folder: %1$s</string>
     <string name="notification_retry_failed">Retry Failed (%d)</string>
+    <string name="notification_action_cancel">Cancel</string>
+    <string name="notification_upload_cancelled">Upload cancelled</string>
+    <plurals name="notification_upload_cancelled_counts">
+        <item quantity="one">%1$d uploaded, %2$d not uploaded.</item>
+        <item quantity="other">%1$d uploaded, %2$d not uploaded.</item>
+    </plurals>
     <string name="upload_error_invalid_folder_name">the folder name is not valid. Use a name without slashes or backslashes that is not just dots.</string>
     <string name="upload_error_folder_unavailable">the folder was not found or you do not have permission to create it on the server.</string>
     <string name="upload_error_not_configured">no server is configured. Open Settings and connect your server first.</string>

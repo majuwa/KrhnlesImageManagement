@@ -31,6 +31,7 @@ class UploadConstraintsTest {
         assertEquals(file.absolutePath, request.workSpec.input.getString(UploadWorker.KEY_QUEUE_FILE))
         assertEquals(NetworkType.UNMETERED, request.workSpec.constraints.requiredNetworkType)
         assertTrue("photo_upload" in request.tags)
+        assertTrue("upload_queue_file:upload_queue_1_a.json" in request.tags)
     }
 
     @Test

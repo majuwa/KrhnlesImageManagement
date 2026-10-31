@@ -133,17 +133,18 @@ class WebDavClient(
                         if (created.add(cumulativeSegments)) mkcol(cumulativeSegments)
                     }
                 }
-            }
+            }.onFailure { if (it is CancellationException) throw it }
         }
 
-    private fun mkcol(cumulativeSegments: List<String>) {
+    /** Cancellable with the coroutine ([executeCancellable]): a user cancel aborts a running MKCOL at once. */
+    private suspend fun mkcol(cumulativeSegments: List<String>) {
         val request =
             Request
                 .Builder()
                 .url(buildPathUrl(cumulativeSegments))
                 .method("MKCOL", null)
                 .build()
-        client.newCall(request).execute().use { response ->
+        executeCancellable(client.newCall(request)) { response, _ ->
             if (!response.isSuccessful && response.code != 405) {
                 throw WebDavHttpException(
                     response.code,

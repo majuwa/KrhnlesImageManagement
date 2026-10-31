@@ -2,7 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Looper
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.ShareTestHarness
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,9 +23,10 @@ class MainActivityShareTest {
             }
 
         val controller = Robolectric.buildActivity(MainActivity::class.java, intent).setup()
-        repeat(5) { shadowOf(Looper.getMainLooper()).idle() }
-
         val activity = controller.get()
+        // Wait (bounded) for the observable outcome instead of a fixed number of looper passes.
+        ShareTestHarness.waitUntil { activity.isFinishing }
+
         assertTrue(activity.isFinishing)
         assertEquals(activity.getString(R.string.share_no_photos), ShadowToast.getTextOfLatestToast())
         assertEquals(null, shadowOf(activity).nextStartedActivity)

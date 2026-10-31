@@ -94,6 +94,8 @@ class RetryUploadReceiverTest {
             val infos = workInfos()
             assertEquals(1, infos.size)
             assertEquals(NetworkType.NOT_REQUIRED, infos.single().constraints.requiredNetworkType)
+            assertTrue("photo_upload" in infos.single().tags)
+            assertTrue("upload_queue_file:${file.name}" in infos.single().tags)
         }
 
     @Test

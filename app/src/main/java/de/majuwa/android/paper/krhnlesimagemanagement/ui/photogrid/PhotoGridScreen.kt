@@ -215,7 +215,11 @@ fun PhotoGridScreen(
         ) {
             AnimatedVisibility(visible = uploadProgress != null) {
                 uploadProgress?.let { progress ->
-                    UploadProgressBanner(progress.current, progress.total)
+                    UploadProgressBanner(
+                        current = progress.current,
+                        total = progress.total,
+                        onCancel = { viewModel.cancelUpload(progress.workId) },
+                    )
                 }
             }
             media.banner?.let { banner ->
@@ -384,9 +388,10 @@ private fun AutoDateFolderPreviewDialog(
 }
 
 @Composable
-private fun UploadProgressBanner(
+internal fun UploadProgressBanner(
     current: Int,
     total: Int,
+    onCancel: () -> Unit,
 ) {
     Column(
         modifier =
@@ -395,11 +400,20 @@ private fun UploadProgressBanner(
                 .background(MaterialTheme.colorScheme.primaryContainer)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Text(
-            text = stringResource(R.string.upload_progress, current, total),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.upload_progress, current, total),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.action_cancel_upload))
+            }
+        }
         LinearProgressIndicator(
             progress = { if (total > 0) current.toFloat() / total else 0f },
             modifier =

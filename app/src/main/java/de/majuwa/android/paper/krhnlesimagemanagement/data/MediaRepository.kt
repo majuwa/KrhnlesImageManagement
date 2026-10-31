@@ -9,6 +9,7 @@ import android.util.Log
 import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.mediaItemId
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -17,6 +18,7 @@ import java.time.ZoneId
 
 class MediaRepository(
     private val contentResolver: ContentResolver,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : MediaRepositoryContract {
     /**
      * Loads the device's images and videos, merged and ordered by raw `DATE_TAKEN`, newest first
@@ -24,7 +26,7 @@ class MediaRepository(
      * [SecurityException] from the video query) only the images are returned.
      */
     override suspend fun loadPhotos(): List<Photo> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val images = queryMedia(MediaKind.Image)
             val videos =
                 try {

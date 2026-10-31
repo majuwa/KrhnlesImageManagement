@@ -167,6 +167,21 @@ class WebDavClientTest {
         }
 
     @Test
+    fun `createDirectory is cancelled with its coroutine when the server never answers`() =
+        runBlocking {
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            var result: Result<*>? = null
+            val job = launch(Dispatchers.IO) { result = client.createDirectory("Photos/Trip") }
+            assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+            val start = System.nanoTime()
+            job.cancelAndJoin()
+            assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) < 5)
+            assertTrue(job.isCancelled)
+            assertNull(result)
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
     fun `createDirectory ignores 405 already exists`() =
         runTest {
             server.enqueue(MockResponse().setResponseCode(405)) // Already exists

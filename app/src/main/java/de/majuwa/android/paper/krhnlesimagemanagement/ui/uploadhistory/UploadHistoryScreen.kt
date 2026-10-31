@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -171,11 +172,20 @@ private fun UploadHistoryItem(
                 )
                 Text(
                     text =
-                        stringResource(
-                            R.string.upload_history_counts,
-                            uploadedCount,
-                            entry.failedCount,
-                        ),
+                        if (entry.cancelled) {
+                            pluralStringResource(
+                                R.plurals.upload_history_counts_cancelled,
+                                entry.failedCount,
+                                uploadedCount,
+                                entry.failedCount,
+                            )
+                        } else {
+                            stringResource(
+                                R.string.upload_history_counts,
+                                uploadedCount,
+                                entry.failedCount,
+                            )
+                        },
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 8.dp),
                 )

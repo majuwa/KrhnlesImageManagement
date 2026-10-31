@@ -8,6 +8,8 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.CompletionSummary
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.buildCompletionNotification
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.buildFailureNotification
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertNotNull
@@ -178,15 +180,14 @@ class UploadWorkerIntegrationTest {
 
     @Test
     fun completionNotification_usesDedicatedNotificationIcon() {
-        val worker = buildWorker()
         assertDedicatedIcon(
-            worker.buildCompletionNotification(
+            context.buildCompletionNotification(
                 CompletionSummary(uploaded = 3, failed = 0, retryQueueFilePath = null),
                 notificationTag = "tag-1",
             ),
         )
         assertDedicatedIcon(
-            worker.buildCompletionNotification(
+            context.buildCompletionNotification(
                 CompletionSummary(uploaded = 2, failed = 1, retryQueueFilePath = "retry.json"),
                 notificationTag = "tag-2",
             ),
@@ -195,17 +196,16 @@ class UploadWorkerIntegrationTest {
 
     @Test
     fun failureNotification_usesDedicatedNotificationIcon() {
-        assertDedicatedIcon(buildWorker().buildFailureNotification("boom"))
+        assertDedicatedIcon(context.buildFailureNotification("boom"))
     }
 
     @Test
     fun retryActionsOfTwoBatchesAreDistinct() {
-        val w = buildWorker()
         val a = File(context.filesDir, "retry_queue_${UUID.randomUUID()}.json").absolutePath
         val b = File(context.filesDir, "retry_queue_${UUID.randomUUID()}.json").absolutePath
 
-        val first = w.buildCompletionNotification(CompletionSummary(2, 1, a), "tag-a")
-        val second = w.buildCompletionNotification(CompletionSummary(2, 1, b), "tag-b")
+        val first = context.buildCompletionNotification(CompletionSummary(2, 1, a), "tag-a")
+        val second = context.buildCompletionNotification(CompletionSummary(2, 1, b), "tag-b")
 
         val intentA = shadowOf(first.actions.single().actionIntent).savedIntent
         val intentB = shadowOf(second.actions.single().actionIntent).savedIntent

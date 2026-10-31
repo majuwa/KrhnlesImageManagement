@@ -145,7 +145,7 @@ class PhotoGridRemovalTest {
         val gridViewModel =
             PhotoGridViewModel(
                 app,
-                MediaRepository(app.contentResolver),
+                MediaRepository(app.contentResolver, Dispatchers.Unconfined),
                 FakeCredentialRepository(),
                 FakeUploadedPhotosRepository(),
                 WorkManager.getInstance(app),

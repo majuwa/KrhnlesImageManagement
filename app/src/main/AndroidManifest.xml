@@ -51,6 +51,10 @@
             android:name=".worker.RetryUploadReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".worker.CancelUploadReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

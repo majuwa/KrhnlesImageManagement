@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
@@ -15,7 +16,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosReposit
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.cancelRunningUpload
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,12 +29,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.UUID
 
 private const val WHILE_SUBSCRIBED_TIMEOUT_MS = 5_000L
+private const val TAG = "PhotoGridViewModel"
 
+/** [workId] is the running upload work this progress belongs to (the target of its Cancel button). */
 data class UploadProgress(
     val current: Int,
     val total: Int,
+    val workId: UUID,
 )
 
 data class PhotoGridUiState(
@@ -62,6 +69,7 @@ class PhotoGridViewModel
             WorkManager.getInstance(application),
         private val mediaPermissions: MediaPermissionRepository =
             MediaPermissionStore(application),
+        private val cancelUploadWork: suspend (WorkManager, UUID) -> Boolean = ::cancelRunningUpload,
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(PhotoGridUiState())
         val uiState: StateFlow<PhotoGridUiState> = _uiState.asStateFlow()
@@ -95,9 +103,31 @@ class PhotoGridViewModel
                     running?.progress?.let { data ->
                         val current = data.getInt(UploadWorker.KEY_PROGRESS, 0)
                         val total = data.getInt(UploadWorker.KEY_TOTAL, 0)
-                        if (total > 0) UploadProgress(current, total) else null
+                        if (total > 0) UploadProgress(current, total, running.id) else null
                     }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(WHILE_SUBSCRIBED_TIMEOUT_MS), null)
+
+        private var cancelUploadJob: Job? = null
+
+        /**
+         * Cancels the running upload [workId] (the banner's "Cancel upload"). A guarded one-shot: a
+         * second tap while the first is still being handled is ignored; the work is bounded
+         * ([cancelRunningUpload]) and a failure is swallowed (the banner simply stays while the
+         * upload runs). The upload finalizes itself: remaining items become a retry file.
+         */
+        fun cancelUpload(workId: UUID) {
+            if (cancelUploadJob?.isActive == true) return
+            cancelUploadJob =
+                viewModelScope.launch {
+                    try {
+                        cancelUploadWork(workManager, workId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Upload could not be cancelled: ${e.javaClass.simpleName}")
+                    }
+                }
+        }
 
         val isConfigured: StateFlow<Boolean> =
             credentialStore.isConfigured
