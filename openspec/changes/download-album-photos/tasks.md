@@ -111,8 +111,8 @@
   Verify that it compiles and that 5.3–5.5 pass.
 - [ ] 5.3 Add the notifications:
   - `download_channel` (IMPORTANCE_LOW)
-  - foreground / progress id 1003 with determinate progress and a Cancel action (`createCancelPendingIntent`)
-  - result id 1004 tagged with the queue file name, gated on `POST_NOTIFICATIONS`
+  - foreground / progress id 1004 with determinate progress and a Cancel action (`createCancelPendingIntent`)
+  - result id 1005 tagged with the queue file name, gated on `POST_NOTIFICATIONS`
   - `ForegroundInfo` type `dataSync`
   - small icon `ic_stat_download`
 
@@ -139,7 +139,7 @@
   - **refused foreground:** `Result.retry()` and `interruptions` incremented; gives up at the cap and at the backstop with the `Interrupted` reason
 
   Verify that the test passes.
-- [ ] 5.6 Add a "Saving album photos" section to docs/architecture.md and add the worker to the package tree. Cover the queue format, chain semantics (APPEND_OR_REPLACE, never `failure()`, cancel cascade), notification ids 1003 / 1004, stop rules, user cancel vs. system stop, and interruptions. Verify that the section references every test class from 5.1–5.5.
+- [ ] 5.6 Add a "Saving album photos" section to docs/architecture.md and add the worker to the package tree. Cover the queue format, chain semantics (APPEND_OR_REPLACE, never `failure()`, cancel cascade), notification ids 1004 / 1005, stop rules, user cancel vs. system stop, and interruptions. Verify that the section references every test class from 5.1–5.5.
 
 ## 6. Enqueuing
 

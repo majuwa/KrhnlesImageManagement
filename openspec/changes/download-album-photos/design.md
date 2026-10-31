@@ -54,7 +54,7 @@ The work input `Data` carries only `KEY_QUEUE_FILE`. The queue holds no credenti
 - A writer that updates progress through `rewriteQueueFile()`.
 
 **Why a serialized chain (APPEND_OR_REPLACE):**
-- One foreground notification id (1003) suffices, because two download workers never run at once.
+- One foreground notification id (1004) suffices, because two download workers never run at once.
 - Batches finish in start order.
 - The device is not flooded with parallel transfers.
 
@@ -184,14 +184,14 @@ Stop rules (they keep a bad batch from hammering the server):
 - A lost network is a WorkManager constraint stop (Decision 6), not a failure.
 
 Result notification:
-- Id `DOWNLOAD_RESULT_NOTIFICATION_ID` (1004), tag = queue file name.
+- Id `DOWNLOAD_RESULT_NOTIFICATION_ID` (1005), tag = queue file name.
 - Title: `download_complete` / `download_partial` / `download_failed` / `download_cancelled`.
 - Text: `R.plurals.download_saved_count` / `download_failed_count`, plus one `download_failure_*` sentence per distinct reason, joined via `joinNotificationTexts()`.
 - Shown through a `notifyIfPermitted`-style check of `POST_NOTIFICATIONS`.
 - The counts cover the whole batch, including entries saved by earlier runs.
 
 Notification channel and glyph:
-- Progress and foreground use id 1003 in channel `download_channel` (IMPORTANCE_LOW, `channel_name_downloads`), with small icon `ic_stat_download`.
+- Progress and foreground use id 1004 in channel `download_channel` (IMPORTANCE_LOW, `channel_name_downloads`), with small icon `ic_stat_download`.
 - The Cancel action is `WorkManager.createCancelPendingIntent(id)`.
 - 1001 / 1002 stay with uploads, so an upload and a download never replace each other's notifications.
 
