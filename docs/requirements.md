@@ -36,6 +36,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | U-003 | The upload destination folder is derived from the occasion name provided by the user.           | Implemented |
 | U-004 | Self-signed TLS certificates must be handled gracefully with a clear user-facing error message. | Implemented |
 | U-005 | A retry mechanism must be available when an upload fails.                                       | Implemented |
+| U-006 | A running upload can be cancelled and resumed later (Cancel in the notification and in the app; uploaded items stay uploaded, the rest is resumed with "Retry Failed"). | Implemented |
 
 ---
 
