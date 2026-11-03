@@ -108,11 +108,15 @@ A resumed transfer SHALL continue only when all of these hold: the server still 
 - **THEN** the progress is ignored, the file is uploaded from the start and the rest of the queue is unaffected
 
 ### Requirement: Transient chunk failures are retried in the run
-A chunked file whose request fails transiently SHALL be tried again in the same run from its saved progress, with at most 3 attempts per file and run. Transient means a network error, a read timeout, 408, 423, 429 or 5xx. Any other failure, or a failure after the last attempt, SHALL fail the file for this run.
+A chunked file whose request fails transiently SHALL be tried again in the same run from its saved progress, with at most 3 attempts per file and run. Transient means a network error, a read timeout, 408, 423, 429 or 5xx except 501 and 507. A 404, 409 or 412 on a chunk `PUT` or the `MOVE` means the server lost the transfer: it SHALL be removed and the next attempt SHALL start again from the first chunk. Any other failure, or a failure after the last attempt, SHALL fail the file for this run.
 
 #### Scenario: Network drop on chunk 30
 - **WHEN** the connection drops while chunk 30 is sent and the next attempt succeeds
 - **THEN** chunks 1 to 29 are not sent again and the file counts as uploaded
+
+#### Scenario: Server lost the session during the transfer
+- **WHEN** a chunk `PUT` is answered with 412
+- **THEN** a `DELETE` is sent for the upload folder and the next attempt uploads the file from the first chunk with a new transfer
 
 #### Scenario: Repeated server errors
 - **WHEN** three attempts of the same file are answered with 503
@@ -138,7 +142,15 @@ When a transfer will not be resumed, the upload SHALL send one `DELETE` for its 
 
 #### Scenario: User cancels during chunks
 - **WHEN** the user cancels the upload while chunk 5 is sent
-- **THEN** the transfer is stopped and a `DELETE` is sent for its upload folder
+- **THEN** the transfer is stopped, the "Upload cancelled" notification and retry file are produced as for any cancel (the retry file without chunk progress), and afterwards a `DELETE` is sent for its upload folder
+
+#### Scenario: User cancels before the saved transfer is resumed
+- **WHEN** a queue file holds chunk progress from an earlier run and the user cancels before the next request of that transfer is sent
+- **THEN** a `DELETE` is sent for that saved upload folder
+
+#### Scenario: User cancels right after the final MOVE
+- **WHEN** the `MOVE` was answered with 201 and the user cancels before the next file starts
+- **THEN** the file counts as uploaded and no `DELETE` is sent
 
 #### Scenario: Cleanup fails
 - **WHEN** the `DELETE` times out or is answered with 500
@@ -149,11 +161,15 @@ When a transfer will not be resumed, the upload SHALL send one `DELETE` for its 
 - **THEN** no `DELETE` is sent and the next run resumes the transfer
 
 ### Requirement: Uploads endpoint unavailable falls back
-When the server refuses the `MKCOL` that creates a new upload folder with a status other than 413 or 507, the file and the rest of the run SHALL use one `PUT` per file.
+When the server refuses the `MKCOL` that creates a new upload folder with a status that is neither transient (as defined above) nor 413 or 507, the file and the rest of the run SHALL use one `PUT` per file. A transient answer SHALL be retried like any transient chunk failure.
 
 #### Scenario: Uploads collection missing
 - **WHEN** the `MKCOL` of a new transfer is answered with 404 or 405
 - **THEN** the file is uploaded with one `PUT` and the run sends no further `MKCOL` to the uploads collection
+
+#### Scenario: Uploads collection briefly unavailable
+- **WHEN** the `MKCOL` of a new transfer is answered with 503 and the next attempt succeeds
+- **THEN** the file is uploaded in chunks with the same transfer id
 
 ### Requirement: Chunked progress is shown
 While a file is uploaded in chunks, the progress notification SHALL show the share of that file already confirmed in percent, next to the file count of the batch. The text SHALL come from a string resource.

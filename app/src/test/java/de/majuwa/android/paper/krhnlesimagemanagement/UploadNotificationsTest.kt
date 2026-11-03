@@ -114,4 +114,36 @@ class UploadNotificationsTest {
 
         assertNotEquals(first, second)
     }
+
+    @Test
+    fun chunkedProgress_showsTheFileShareNextToTheBatchCount_andKeepsTheCancelAction() {
+        val workId = UUID.randomUUID()
+        val notification = context.buildProgressNotification(1, 3, workId, filePercent = 50)
+
+        assertEquals(context.getString(R.string.notification_uploading_file_progress, 1, 3, 50), text(notification))
+        assertEquals("1 / 3 · 50 %", text(notification))
+        // The bar stays per batch.
+        assertEquals(3, notification.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
+        assertEquals(1, notification.extras.getInt(Notification.EXTRA_PROGRESS))
+        val action = notification.actions.single()
+        assertEquals("Cancel", action.title.toString())
+        assertTrue(action.actionIntent.isImmutable)
+        val intent = shadowOf(action.actionIntent).savedIntent
+        assertEquals(CancelUploadReceiver::class.java.name, intent.component?.className)
+        assertEquals(workId.toString(), intent.getStringExtra(CancelUploadReceiver.EXTRA_WORK_ID))
+    }
+
+    @Test
+    fun progressWithoutAPercentage_keepsThePlainBatchCount() {
+        val notification = context.buildProgressNotification(2, 5, UUID.randomUUID(), filePercent = null)
+
+        assertEquals("2 / 5", text(notification))
+        assertEquals(
+            "Cancel",
+            notification.actions
+                .single()
+                .title
+                .toString(),
+        )
+    }
 }

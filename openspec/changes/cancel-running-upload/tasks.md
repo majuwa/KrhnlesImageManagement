@@ -46,7 +46,7 @@
 
 ## 7. Sibling integration
 
-- [x] 7.1 If `nextcloud-chunked-upload` has been applied before this change, delete the in-flight upload-session directory on a user cancel inside the cancel path (bounded, `NonCancellable`, before the claim, failures logged by type only) and keep it on a system stop, with a MockWebServer test for both; otherwise add the same contract to `docs/architecture.md` as a requirement for that change; verify by the test or the documented note
+- [x] 7.1 If `nextcloud-chunked-upload` has been applied before this change, delete the in-flight upload-session directory on a user cancel inside the cancel path (bounded, `NonCancellable`, failures logged by type only; implemented by `nextcloud-chunked-upload` *after* the claim, see its design D7, tested in `UploadWorkerChunkedTest`) and keep it on a system stop, with a MockWebServer test for both; otherwise add the same contract to `docs/architecture.md` as a requirement for that change; verify by the test or the documented note
 ## 8. Integration checks
 
 - [x] 8.1 Run `./gradlew test` and verify all tests pass

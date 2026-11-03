@@ -468,45 +468,6 @@ class WebDavClient(
         return folderSegments + fileName
     }
 
-    private fun digestOf(stream: InputStream): RemoteDigest {
-        val digest = MessageDigest.getInstance("SHA-256")
-        var count = 0L
-        stream.use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read == -1) break
-                digest.update(buffer, 0, read)
-                count += read
-            }
-        }
-        return RemoteDigest(sha256 = digest.digest().toHexString(), sizeBytes = count)
-    }
-
-    /** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
-    private suspend fun Call.awaitStatus(): Pair<Int, String> =
-        suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { cancel() }
-            enqueue(
-                object : Callback {
-                    override fun onFailure(
-                        call: Call,
-                        e: IOException,
-                    ) {
-                        continuation.resumeWithException(e)
-                    }
-
-                    override fun onResponse(
-                        call: Call,
-                        response: Response,
-                    ) {
-                        val status = response.use { it.code to it.message }
-                        continuation.resume(status)
-                    }
-                },
-            )
-        }
-
     private fun buildPathUrl(segments: List<String>): HttpUrl =
         requireBaseHttpUrl()
             .newBuilder()
@@ -666,4 +627,43 @@ fun Throwable.toUploadFailure(): UploadFailure =
         HTTP_PAYLOAD_TOO_LARGE -> UploadFailure.TooLarge
         HTTP_INSUFFICIENT_STORAGE -> UploadFailure.StorageFull
         else -> UploadFailure.Other
+    }
+
+private fun digestOf(stream: InputStream): RemoteDigest {
+    val digest = MessageDigest.getInstance("SHA-256")
+    var count = 0L
+    stream.use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read == -1) break
+            digest.update(buffer, 0, read)
+            count += read
+        }
+    }
+    return RemoteDigest(sha256 = digest.digest().toHexString(), sizeBytes = count)
+}
+
+/** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
+private suspend fun Call.awaitStatus(): Pair<Int, String> =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: IOException,
+                ) {
+                    continuation.resumeWithException(e)
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    val status = response.use { it.code to it.message }
+                    continuation.resume(status)
+                }
+            },
+        )
     }

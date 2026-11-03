@@ -40,18 +40,20 @@ private fun Context.uploadNotificationBuilder(): NotificationCompat.Builder =
 /**
  * Foreground / progress notification of the upload work [workId]; its "Cancel" action is an
  * immutable, explicit broadcast to the non-exported [CancelUploadReceiver]. The data URI makes the
- * `PendingIntent` unique per work (identity ignores extras).
+ * `PendingIntent` unique per work (identity ignores extras). [filePercent] is the share of the file
+ * being uploaded in chunks (`notification_uploading_file_progress`); the bar stays per batch.
  */
 internal fun Context.buildProgressNotification(
     current: Int,
     total: Int,
     workId: UUID,
+    filePercent: Int? = null,
 ): Notification {
     val text =
-        if (total == 0) {
-            getString(R.string.notification_preparing)
-        } else {
-            "$current / $total"
+        when {
+            total == 0 -> getString(R.string.notification_preparing)
+            filePercent != null -> getString(R.string.notification_uploading_file_progress, current, total, filePercent)
+            else -> "$current / $total"
         }
     val cancelIntent =
         Intent(this, CancelUploadReceiver::class.java).apply {

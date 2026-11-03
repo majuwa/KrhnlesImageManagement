@@ -2,12 +2,15 @@ package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import android.content.ContentProvider
 import android.content.ContentValues
+import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
+import java.io.File
 
 /**
  * A `media` authority provider for Robolectric tests of `MediaRepository`: one [MatrixCursor] per
@@ -73,6 +76,29 @@ class FakeMediaStoreProvider : ContentProvider() {
         return MatrixCursor(columns).apply { addRow(columns.map { row[it] }.toTypedArray()) }
     }
 
+    /**
+     * Serves the bytes of [files] (keyed by the uri without its query, so the `requireOriginal`
+     * variant gets the same content) with their real length, like the platform's descriptor. Other
+     * uris keep the default behaviour (not openable through the provider).
+     */
+    override fun openAssetFile(
+        uri: Uri,
+        mode: String,
+    ): AssetFileDescriptor? {
+        val content =
+            files[
+                uri
+                    .buildUpon()
+                    .clearQuery()
+                    .build()
+                    .toString(),
+            ] ?: return super.openAssetFile(uri, mode)
+        val file = File.createTempFile("media", ".bin").apply { deleteOnExit() }
+        file.writeBytes(content)
+        val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return AssetFileDescriptor(pfd, 0, content.size.toLong())
+    }
+
     override fun getType(uri: Uri): String? = null
 
     override fun insert(
@@ -106,6 +132,9 @@ class FakeMediaStoreProvider : ContentProvider() {
                 MediaStore.Video.VideoColumns.DURATION,
             )
 
+        /** File contents by uri string (without query), opened with their length by [openAssetFile]. */
+        val files = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+
         /** MediaStore item rows by uri string (`content://media/external/images/media/<id>`). */
         val itemRows = java.util.concurrent.ConcurrentHashMap<String, Map<String, Any?>>()
 
@@ -126,6 +155,7 @@ class FakeMediaStoreProvider : ContentProvider() {
 
         fun reset() {
             itemRows.clear()
+            files.clear()
             itemFailures.clear()
             itemQueries.clear()
             imageRows = emptyList()
