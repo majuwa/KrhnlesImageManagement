@@ -101,6 +101,7 @@ Every group ends green on `./gradlew test spotlessCheck detekt lintDebug` (no su
 
 - [x] 5.1 Run `./gradlew test spotlessCheck detekt lintDebug` and `./gradlew jacocoTestReport`; verify all pass with zero lint issues and no new detekt findings, and that the jacoco report covers `ChunkedUploader`, `NextcloudChunking` and the new `WebDavClient` methods.
 - [ ] 5.2 Manual check against a real Nextcloud instance: upload a video larger than 600 MiB behind an nginx proxy with `client_max_body_size 512m`. Kill the app mid-transfer and confirm the resume skips confirmed chunks. Note in the PR whether the `MOVE` answered `X-Hash-SHA256` and which Nextcloud version and storage were used.
+  - Archived on 2026-11-03 with this manual check still open (accepted by the user); do it before the release.
 
 ## 6. Review fixes (code and security review of 971be23)
 

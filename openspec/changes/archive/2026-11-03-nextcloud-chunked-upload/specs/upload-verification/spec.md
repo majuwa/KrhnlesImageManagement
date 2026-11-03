@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Every upload is verified when a strategy is available
-Every upload of a photo or video from the device SHALL be verified with the strategies below. Verification SHALL NOT read the local file a second time: the SHA-256 of the local content and its byte count SHALL be computed from the same bytes that are sent to the server. For a resumed chunked upload, the bytes confirmed by an earlier attempt SHALL be read once more on the device, not sent again, and included in the hash. They SHALL match the SHA-256 saved when they were sent, otherwise the transfer starts again.
+Every upload of a photo or video from the device SHALL be verified with the strategies below. The SHA-256 and byte count of the local content SHALL be computed from the bytes sent to the server, without a second read of the file. A resumed chunked upload SHALL include the bytes confirmed earlier by reading them once more on the device (not sending them again); they SHALL match their saved SHA-256, otherwise the transfer starts again.
 
 #### Scenario: Hash matches the sent bytes
 - **WHEN** a 5 MB photo is uploaded
@@ -18,7 +18,7 @@ Every upload of a photo or video from the device SHALL be verified with the stra
 - **THEN** no further chunk of the old transfer is sent and the video is uploaded again from the first chunk
 
 ### Requirement: Nextcloud servers verify with a server-side hash
-For a server URL that contains `/remote.php/`, the request that writes the file SHALL request a server-side SHA-256 (`X-Hash: sha256`). That request is the `PUT`, or the final `MOVE` for a chunked upload. Chunk `PUT`s SHALL NOT carry the header. If the answer carries `X-Hash-SHA256`, the upload SHALL be verified when it equals the local hash (case-insensitive hex) and SHALL be a mismatch otherwise. No further request SHALL be sent. Servers whose URL does not contain `/remote.php/` SHALL NOT receive the header.
+For a server URL that contains `/remote.php/`, the request that writes the file (the `PUT`, or the final `MOVE` of a chunked upload, never a chunk `PUT`) SHALL request `X-Hash: sha256`. An `X-Hash-SHA256` in the answer SHALL verify the upload when it equals the local hash (case-insensitive hex) and SHALL be a mismatch otherwise, without a further request. Servers whose URL does not contain `/remote.php/` SHALL NOT receive the header.
 
 #### Scenario: Server hash matches
 - **WHEN** a Nextcloud server answers the upload with an `X-Hash-SHA256` equal to the local hash
