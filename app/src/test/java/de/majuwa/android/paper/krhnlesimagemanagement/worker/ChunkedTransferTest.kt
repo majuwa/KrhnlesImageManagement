@@ -82,6 +82,16 @@ class ChunkedTransferTest {
     }
 
     @Test
+    fun `confirmed bytes of a huge chunk size do not overflow`() {
+        val total = Long.MAX_VALUE - 1
+        val state = ChunkedTransferState(ID, total / 2 + 1, total, 1, HASH, true, HASH)
+
+        assertEquals(2, state.chunkCount)
+        assertEquals(total / 2 + 1, state.confirmedBytes)
+        assertEquals(total, state.copy(confirmedChunks = 2).confirmedBytes)
+    }
+
+    @Test
     fun `binding changes with server, user, folder and file name`() {
         val base =
             chunkedBinding(

@@ -48,7 +48,16 @@ internal data class ChunkedUploadPolicy(
 internal fun chunkCountOf(
     total: Long,
     chunkBytes: Long,
-): Int = ((total + chunkBytes - 1) / chunkBytes).toInt()
+): Int = chunkCountOfLong(total, chunkBytes).toInt()
+
+/**
+ * Number of chunks as a `Long` for positive [total] and [chunkBytes], without overflow (no
+ * `total + chunkBytes - 1`): only a count already checked against [MAX_CHUNK_NUMBER] may become an `Int`.
+ */
+private fun chunkCountOfLong(
+    total: Long,
+    chunkBytes: Long,
+): Long = (total - 1) / chunkBytes + 1
 
 /**
  * Where a chunked transfer stands, persisted in the queue file entry (`chunked` object) after every
@@ -67,8 +76,9 @@ internal data class ChunkedTransferState(
 ) {
     val chunkCount: Int get() = chunkCountOf(totalBytes, chunkBytes)
 
-    /** Bytes of the confirmed prefix. */
-    val confirmedBytes: Long get() = minOf(confirmedChunks.toLong() * chunkBytes, totalBytes)
+    /** Bytes of the confirmed prefix (never multiplied past the total, so it cannot overflow). */
+    val confirmedBytes: Long
+        get() = if (confirmedChunks >= chunkCount) totalBytes else confirmedChunks.toLong() * chunkBytes
 
     fun toJson(): JSONObject =
         JSONObject()
@@ -98,7 +108,7 @@ internal data class ChunkedTransferState(
                             .opt(
                                 KEY_CONFIRMED_CHUNKS,
                             ).asWholeNumber()
-                            .coerceAtMost(Int.MAX_VALUE.toLong())
+                            .coerceIn(-1L, Int.MAX_VALUE.toLong())
                             .toInt(),
                     prefixSha256 = (obj.opt(KEY_PREFIX_SHA256) as? String).orEmpty().lowercase(),
                     original = obj.opt(KEY_ORIGINAL) == true,
@@ -111,12 +121,16 @@ internal data class ChunkedTransferState(
         private fun Any?.asWholeNumber(): Long = if (this is Int || this is Long) (this as Number).toLong() else -1L
     }
 
-    /** True if every field is in range: a valid id, positive sizes, at most the real chunk count, hex hashes. */
+    /**
+     * True if every field is in range: a valid id, positive sizes, a chunk no larger than the file,
+     * at most [MAX_CHUNK_NUMBER] chunks (compared as a `Long` before any conversion to `Int`, so a
+     * crafted count cannot wrap into range), at most the real chunk count confirmed, hex hashes.
+     */
     private fun isConsistent(): Boolean =
         isValidTransferId(transferId) &&
-            chunkBytes > 0L &&
             totalBytes > 0L &&
-            chunkCount <= MAX_CHUNK_NUMBER &&
+            chunkBytes in 1L..totalBytes &&
+            chunkCountOfLong(totalBytes, chunkBytes) <= MAX_CHUNK_NUMBER &&
             confirmedChunks in 0..chunkCount &&
             isSha256Hex(prefixSha256) &&
             isSha256Hex(binding)

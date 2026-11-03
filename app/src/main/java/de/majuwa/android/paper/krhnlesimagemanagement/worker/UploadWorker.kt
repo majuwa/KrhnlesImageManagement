@@ -124,7 +124,9 @@ class UploadWorker internal constructor(
 
     /**
      * Aborts the chunked transfers saved in a queue with this run's client and folders (each `DELETE`
-     * bounded by the given timeout); set once the run knows its configuration. Used by a user cancel.
+     * bounded by the given timeout); set right after the run read its configuration (no suspension
+     * point in between). Used by a user cancel; a cancel before that reads the configuration itself
+     * ([cancelAborter]).
      */
     @Volatile
     private var abortTransfers: (suspend (UploadQueue, Long) -> Unit)? = null
@@ -203,7 +205,28 @@ class UploadWorker internal constructor(
         // before its MKCOL) is removed on the server: best effort, not cancellable, bounded per
         // request. Only a user cancel gets here; a system stop keeps them so the next run resumes.
         finalizeCancelledQueue(applicationContext, queueFile, queue, liveFailures.toSet(), uploadHistory)
-        abortTransfers?.invoke(queue, chunking.cancelAbortTimeoutMs)
+        val abort = abortTransfers ?: cancelAborter(queue)
+        abort?.invoke(queue, chunking.cancelAbortTimeoutMs)
+    }
+
+    /**
+     * The aborter of a cancel that came before the run read its configuration (Wi-Fi-only or
+     * configuration read): reads the configuration now (bounded, not cancellable: the work is already
+     * cancelled) so the transfers saved in [queue] are still removed (binding-checked). Null when
+     * nothing is saved or no valid configuration could be read.
+     */
+    private suspend fun cancelAborter(queue: UploadQueue): (suspend (UploadQueue, Long) -> Unit)? {
+        if (queue.entries.none { it.chunked != null && !it.uploaded }) return null
+        val config =
+            withContext(NonCancellable) {
+                runCatching {
+                    withTimeoutOrNull(
+                        CONFIG_RECHECK_TIMEOUT_MS,
+                    ) { credentialRepository.webDavConfig.first() }
+                }.onFailure { if (it is CancellationException) throw it }
+                    .getOrNull()
+            }
+        return config?.takeIf { it.isValid }?.let { transferAborter(it, clientFactory(it), queue) }
     }
 
     private suspend fun runUpload(
@@ -269,12 +292,11 @@ class UploadWorker internal constructor(
         val notificationTag = queueFile.name
         val total = queue.entries.size
         val pending = queue.pendingIndices
-        val remoteFolderPaths = List(total) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
+        val remoteFolderPaths = remoteFolderPathsOf(config, queue)
         val client = clientFactory(config)
-        abortTransfers = { q, timeoutMs -> client.abortOpenTransfers(q, remoteFolderPaths, timeoutMs) }
-        val abortOpen: suspend (UploadQueue) -> Unit = {
-            client.abortOpenTransfers(it, remoteFolderPaths, chunking.abortTimeoutMs)
-        }
+        val aborter = transferAborter(config, client, queue)
+        abortTransfers = aborter
+        val abortOpen: suspend (UploadQueue) -> Unit = { aborter(it, chunking.abortTimeoutMs) }
 
         applicationContext.createUploadNotificationChannel()
         // A refused foreground service (time budget used up, background start) retries the run
@@ -288,6 +310,8 @@ class UploadWorker internal constructor(
             val folderPaths = pending.map { remoteFolderPaths[it] }
             val folderError = createRemoteFolders(client, queue, config.uploadPathPrefix, folderPaths)
             if (folderError != null) {
+                // The run ends without a retry file: its saved transfers will never be resumed.
+                abortOpen(queue)
                 terminalReport {
                     uploadHistory.recordRun(queue.historyLabel, total, pending.size)
                     val message =
@@ -544,7 +568,8 @@ class UploadWorker internal constructor(
     /**
      * Uploads [entry] in chunks ([ChunkedUploader], design D5 / D6). The progress is saved in the queue
      * file after every step, every confirmed chunk but the last updates the notification (a refusal
-     * interrupts the run), and an assembled original is verified like a `PUT`. Null = the uploads
+     * interrupts the run, and so does a last attempt that failed transiently: the progress is kept),
+     * and an assembled original is verified like a `PUT`. Null = the uploads
      * endpoint is not usable (design D10): this and every later file of the run use one `PUT`.
      */
     private suspend fun uploadChunked(
@@ -659,7 +684,8 @@ private class UploadContext(
 /**
  * [failure] null = uploaded; [target] is where the upload wrote (null: nothing was sent); [record]
  * is set only for a verified upload of an original. [interrupted]: a chunked upload was interrupted
- * by a refused foreground service (its progress is kept, nothing is booked).
+ * by a refused foreground service or by attempts that all failed transiently, e.g. a network outage
+ * (its progress is kept, nothing is booked; the run is retried like any interruption).
  */
 private class PhotoUploadOutcome(
     val failure: UploadFailure?,
@@ -667,6 +693,22 @@ private class PhotoUploadOutcome(
     val record: VerifiedUpload? = null,
     val interrupted: Boolean = false,
 )
+
+/** Aborts the binding-matched transfers of a queue with [client] and the folders of [queue] under [config]. */
+private fun transferAborter(
+    config: WebDavConfig,
+    client: WebDavClient,
+    queue: UploadQueue,
+): suspend (UploadQueue, Long) -> Unit {
+    val remoteFolderPaths = remoteFolderPathsOf(config, queue)
+    return { q, timeoutMs -> client.abortOpenTransfers(q, remoteFolderPaths, timeoutMs) }
+}
+
+/** Remote folder of every entry of [queue] (by index) under the upload path of [config]. */
+private fun remoteFolderPathsOf(
+    config: WebDavConfig,
+    queue: UploadQueue,
+): List<String> = List(queue.entries.size) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
 
 /** Entry [index] of the run, its [queueFile] and the batch progress ([finished] of [total]) for the notification. */
 private class EntrySlot(

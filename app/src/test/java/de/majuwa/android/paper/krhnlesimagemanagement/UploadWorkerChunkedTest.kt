@@ -343,21 +343,6 @@ class UploadWorkerChunkedTest {
     }
 
     @Test
-    fun threeTransientFailures_failTheEntry_deleteTheTransfer_retryFileWithoutProgress() {
-        h.override = { if (it.method == "PUT" && it.name == "00001") code(503) else null }
-
-        val result = h.run(singleVideoQueue())
-
-        assertTrue(result is ListenableWorker.Result.Success)
-        assertEquals(3, h.chunkPuts().size)
-        assertEquals(listOf(2_000L, 8_000L), h.sleeps)
-        assertEquals(1, h.of("DELETE").size)
-        assertTrue(h.uploadFolders.isEmpty())
-        assertNull(chunkedOf(h.retryFiles().single().readText()))
-        assertTrue(h.uploadedIds().isEmpty())
-    }
-
-    @Test
     fun move400_failsWithOther_deletesTheTransfer_notMarkedUploaded() {
         h.override = { if (it.method == "MOVE") code(400) else null }
 

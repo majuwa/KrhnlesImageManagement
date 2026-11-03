@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.google.common.util.concurrent.Futures
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
@@ -106,6 +107,9 @@ class ChunkedUploadHarness {
     var uploadedOverride: UploadedPhotosRepositoryContract? = null
     var verifiedOverride: VerifiedUploadsRepositoryContract? = null
     var userCancelled: (() -> Boolean)? = null
+
+    /** Wraps the worker's credential repository (e.g. to cancel while a setting is read). */
+    var credentials: (CredentialRepository) -> CredentialRepository = { it }
     var verifyByDownload = false
     var serverPath = "/remote.php/dav/files/u/"
 
@@ -328,7 +332,9 @@ class ChunkedUploadHarness {
                 UploadWorker(
                     appContext,
                     workerParameters,
-                    FakeCredentialRepository(initialConfig = config(), initialVerifyByDownload = verifyByDownload),
+                    credentials(
+                        FakeCredentialRepository(initialConfig = config(), initialVerifyByDownload = verifyByDownload),
+                    ),
                     ::WebDavClient,
                     uploadedOverride ?: uploaded,
                     history,

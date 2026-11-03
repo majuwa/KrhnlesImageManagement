@@ -229,6 +229,12 @@ class UploadQueueProgressTest {
                 listOf<Pair<String, Any?>>("binding" to hash.dropLast(1)),
                 listOf<Pair<String, Any?>>("binding" to REMOVE),
                 listOf<Pair<String, Any?>>("chunkBytes" to 1, "totalBytes" to 10_001), // over 10,000 chunks
+                // Review of #69: a count that wrapped through toInt() into range (2^32 + 5 -> 5).
+                listOf<Pair<String, Any?>>("chunkBytes" to 1, "totalBytes" to (1L shl 32) + 5),
+                listOf<Pair<String, Any?>>("chunkBytes" to 1, "totalBytes" to Long.MAX_VALUE),
+                listOf<Pair<String, Any?>>("chunkBytes" to 26), // a chunk larger than the file
+                listOf<Pair<String, Any?>>("chunkBytes" to Long.MAX_VALUE),
+                listOf<Pair<String, Any?>>("confirmedChunks" to -(1L shl 32)), // wrapped to 0 before
             )
 
         invalid.forEach { overrides -> assertEquals(overrides.toString(), null, chunkedOf(*overrides.toTypedArray())) }

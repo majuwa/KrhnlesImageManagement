@@ -19,11 +19,19 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
+import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "ChunkedUploader"
 
 /** Attempts per file and run; each attempt resumes from the saved progress (design D6). */
 internal const val MAX_CHUNKED_ATTEMPTS_PER_RUN = 3
+
+/**
+ * Restarts per file and run after a `MOVE` (all chunks confirmed) was answered 404 / 409 / 412
+ * (design D5): one; a second such answer fails the file, so a server cannot make the app send the
+ * whole file again and again.
+ */
+internal const val MAX_MOVE_LOST_RESTARTS_PER_RUN = 1
 
 /** Waits before the second and the third attempt after a transient failure. */
 internal val CHUNKED_RETRY_DELAYS_MS = longArrayOf(2_000L, 8_000L)
@@ -118,7 +126,11 @@ internal sealed interface ChunkedResult {
         val opened: OpenedEntry,
     ) : ChunkedResult
 
-    /** The foreground service was refused after a chunk; the progress ([state]) is kept. */
+    /**
+     * The run ends here with the progress ([state]) kept for the next run: the foreground service
+     * was refused after a chunk, or the last attempt of this run failed transiently (design D6, e.g.
+     * a network outage). The worker treats both as an interruption.
+     */
     class Interrupted(
         val state: ChunkedTransferState?,
     ) : ChunkedResult
@@ -173,6 +185,17 @@ internal class ChunkedUploader(
     var state: ChunkedTransferState? = saved
         private set
 
+    /** Server, account and destination of this upload ([chunkedBinding]). */
+    private val binding = chunkedBinding(request.locations.collectionUrl, request.locations.destinationUrl)
+
+    /** Restarts after a lost upload at the `MOVE` in this run (see [MAX_MOVE_LOST_RESTARTS_PER_RUN]). */
+    private var moveLostRestarts = 0
+
+    /**
+     * Runs up to [MAX_CHUNKED_ATTEMPTS_PER_RUN] attempts. When the last one fails transiently the
+     * progress is kept and the run is interrupted (resumed by the next run) instead of discarding
+     * every confirmed chunk; any other final failure removes the transfer.
+     */
     suspend fun upload(): ChunkedResult {
         var failure: Throwable? = null
         for (number in 1..MAX_CHUNKED_ATTEMPTS_PER_RUN) {
@@ -195,7 +218,8 @@ internal class ChunkedUploader(
 
                 is Attempt.Transient -> {
                     failure = attempt.cause
-                    if (number < MAX_CHUNKED_ATTEMPTS_PER_RUN) settings.sleep(CHUNKED_RETRY_DELAYS_MS[number - 1])
+                    if (number == MAX_CHUNKED_ATTEMPTS_PER_RUN) return stalled(attempt.cause)
+                    settings.sleep(CHUNKED_RETRY_DELAYS_MS[number - 1])
                 }
 
                 is Attempt.Fatal -> {
@@ -208,15 +232,36 @@ internal class ChunkedUploader(
         return ChunkedResult.Failed(failure ?: IOException("Chunked upload did not finish"))
     }
 
-    private suspend fun attempt(): Attempt {
-        val opened = callbacks.open() ?: return Attempt.Fatal(FileNotFoundException("File could not be opened"))
-        return try {
-            opened.source.stream.use { stream -> transfer(opened, stream) }
-        } catch (e: IOException) {
-            // A read of the local file failed (a failed request is a Result, not an exception).
-            Attempt.Transient(e)
-        }
+    /** The last attempt of this run failed transiently: keep the progress, the next run resumes it. */
+    private fun stalled(cause: Throwable): ChunkedResult {
+        val reason = (cause as? WebDavHttpException)?.let { "HTTP ${it.code}" } ?: cause.javaClass.simpleName
+        Log.w(
+            TAG,
+            "Chunked upload failed $MAX_CHUNKED_ATTEMPTS_PER_RUN times ($reason); progress kept for the next run",
+        )
+        return ChunkedResult.Interrupted(state)
     }
+
+    /**
+     * One attempt. A failed request is a `Result`, not an exception: an [IOException] here is a read
+     * of the local file (transient), any other exception (e.g. a `SecurityException` from the provider
+     * while the prefix is re-read) fails the file; a cancellation is never caught.
+     */
+    private suspend fun attempt(): Attempt =
+        try {
+            val opened = callbacks.open()
+            if (opened == null) {
+                Attempt.Fatal(FileNotFoundException("File could not be opened"))
+            } else {
+                opened.source.stream.use { stream -> transfer(opened, stream) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            Attempt.Transient(e)
+        } catch (e: Exception) {
+            Attempt.Fatal(e)
+        }
 
     /** One attempt (design D5): the length first, then the digest wrapper, then the requests. */
     private suspend fun transfer(
@@ -236,21 +281,24 @@ internal class ChunkedUploader(
     }
 
     /**
-     * Keeps the saved transfer only if it is the same one (same binding, length and source kind),
+     * Keeps the saved transfer only if it is the same one (same binding, length, source kind and chunk size),
      * else starts a new one. Returns null when the transfer is ready for its chunks.
      */
     private suspend fun begin(
         length: Long,
         original: Boolean,
     ): Attempt? {
-        val binding = chunkedBinding(request.locations.collectionUrl, request.locations.destinationUrl)
         val saved = state
-        if (saved != null && saved.binding == binding && saved.isSameSource(length, original)) {
+        if (saved != null &&
+            saved.binding == binding &&
+            saved.isSameSource(length, original, settings.policy.chunkBytesFor(length))
+        ) {
             return resume(saved)
         }
-        // Another server / account / destination: no request for the old id (it may not be ours).
-        if (saved != null && saved.binding == binding) client.abortQuietly(saved.transferId, settings.abortTimeoutMs)
-        return startNew(length, original, binding)
+        // Removed on the server only if it has this binding (another server / account /
+        // destination gets no request for the old id: it may not be ours).
+        discard()
+        return startNew(length, original)
     }
 
     private suspend fun resume(saved: ChunkedTransferState): Attempt? {
@@ -269,7 +317,6 @@ internal class ChunkedUploader(
     private suspend fun startNew(
         length: Long,
         original: Boolean,
-        binding: String,
     ): Attempt? {
         val fresh =
             ChunkedTransferState(
@@ -380,21 +427,39 @@ internal class ChunkedUploader(
                 requestServerHash = request.requestServerHash && opened.original != null,
             )
         val failure = moved.exceptionOrNull()
-        if (failure != null) return failedRequest(failure)
+        if (failure != null) return failedRequest(failure, atMove = true)
         // Assembled: the transfer is no longer open, so a cancel from now on never sends a DELETE.
         state = null
         callbacks.persist(null)
         return Attempt.Done(ChunkedResult.Uploaded(moved.getOrThrow(), counting, opened))
     }
 
-    /** A chunk `PUT` or the `MOVE` failed; 404 / 409 / 412 mean the server lost the upload. */
-    private suspend fun failedRequest(cause: Throwable): Attempt =
-        if (cause is WebDavHttpException && cause.code in LOST_UPLOAD_CODES) {
-            discardAndRestart()
-        } else if (cause.isTransientChunkFailure()) {
-            Attempt.Transient(cause)
-        } else {
-            Attempt.Fatal(cause)
+    /**
+     * A chunk `PUT` or the `MOVE` failed; 404 / 409 / 412 mean the server lost the upload. Lost at
+     * the `MOVE` (every chunk confirmed), the file is sent again at most
+     * [MAX_MOVE_LOST_RESTARTS_PER_RUN] time per run; after that it fails (the transfer is removed).
+     */
+    private suspend fun failedRequest(
+        cause: Throwable,
+        atMove: Boolean = false,
+    ): Attempt =
+        when {
+            cause is WebDavHttpException && cause.code in LOST_UPLOAD_CODES -> {
+                if (atMove && moveLostRestarts >= MAX_MOVE_LOST_RESTARTS_PER_RUN) {
+                    Attempt.Fatal(cause)
+                } else {
+                    if (atMove) moveLostRestarts++
+                    discardAndRestart()
+                }
+            }
+
+            cause.isTransientChunkFailure() -> {
+                Attempt.Transient(cause)
+            }
+
+            else -> {
+                Attempt.Fatal(cause)
+            }
         }
 
     private suspend fun discardAndRestart(): Attempt {
@@ -402,20 +467,28 @@ internal class ChunkedUploader(
         return Attempt.Restart
     }
 
-    /** Removes the transfer from the server (best effort, bounded) and forgets its progress. */
+    /**
+     * Forgets the transfer's progress and removes it from the server (best effort, bounded), but
+     * only if it has this upload's binding: a transfer of another server, account or destination
+     * gets no request.
+     */
     private suspend fun discard() {
         val current = state ?: return
         state = null
-        client.abortQuietly(current.transferId, settings.abortTimeoutMs)
+        if (current.binding == binding) client.abortQuietly(current.transferId, settings.abortTimeoutMs)
         callbacks.persist(null)
     }
 }
 
-/** The saved transfer was started from a file of this [length] opened the same way ([original] or not). */
+/**
+ * The saved transfer was started from a file of this [length] opened the same way ([original] or
+ * not) with the chunk size the policy chooses for it ([chunkBytes]).
+ */
 private fun ChunkedTransferState.isSameSource(
     length: Long,
     original: Boolean,
-): Boolean = totalBytes == length && this.original == original
+    chunkBytes: Long,
+): Boolean = totalBytes == length && this.original == original && this.chunkBytes == chunkBytes
 
 private fun WebDavHttpException.isSizeOrStorageError(): Boolean =
     code == HTTP_PAYLOAD_TOO_LARGE || code == HTTP_INSUFFICIENT_STORAGE
