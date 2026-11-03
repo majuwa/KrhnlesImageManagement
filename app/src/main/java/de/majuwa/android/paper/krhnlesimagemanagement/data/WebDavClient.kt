@@ -79,6 +79,20 @@ class WebDavClient(
             .build()
     }
 
+    /**
+     * [uploadClient] with a [CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES] read timeout, for the final `MOVE`
+     * of a chunked upload: Nextcloud assembles a multi-gigabyte file before it answers. Derived from
+     * [uploadClient], so it keeps its pool, dispatcher, no-redirect rule, origin-restricted auth
+     * interceptor (and whatever the upload client is later built with); no call timeout.
+     */
+    @VisibleForTesting
+    internal val assemblyClient: OkHttpClient by lazy {
+        uploadClient
+            .newBuilder()
+            .readTimeout(CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+            .build()
+    }
+
     private val baseUrl: String
         get() = config.url.trimEnd('/')
 
@@ -292,6 +306,158 @@ class WebDavClient(
             }
         }.onFailure { if (it is CancellationException) throw it }
 
+    /**
+     * Creates the Nextcloud upload folder of [transferId] (`MKCOL` below the uploads collection)
+     * for the file [folderName]/[fileName] of [totalLength] bytes: 201 is [ChunkedUploadCreation.Created],
+     * 405 [ChunkedUploadCreation.AlreadyExists] (an earlier attempt of the same transfer); every other
+     * status, including any redirect, fails with [WebDavHttpException]. Invalid ids / segments, or a
+     * server URL without a uploads collection, fail without a request. Cancellable, no redirects.
+     */
+    suspend fun createChunkedUpload(
+        transferId: String,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+    ): Result<ChunkedUploadCreation> =
+        runCatching {
+            val request =
+                chunkedRequest(transferId, folderName, fileName, totalLength) { it.method("MKCOL", null) }
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                when (response.code) {
+                    HTTP_CREATED -> ChunkedUploadCreation.Created
+                    HTTP_METHOD_NOT_ALLOWED -> ChunkedUploadCreation.AlreadyExists
+                    else -> throw WebDavHttpException(response.code, "Upload folder failed: HTTP ${response.code}")
+                }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Sends chunk [chunkNumber] of the transfer: exactly [chunkLength] bytes read from [stream],
+     * which stays open (the caller reads the next chunk from it). A stream that ends early fails
+     * with an [IOException]. Never asks for a server hash. Any non-2xx status fails with
+     * [WebDavHttpException]. Cancellable, no redirects, no call timeout.
+     */
+    suspend fun uploadChunk(
+        transferId: String,
+        chunkNumber: Int,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+        stream: InputStream,
+        chunkLength: Long,
+    ): Result<Unit> =
+        runCatching {
+            val request =
+                chunkedRequest(transferId, folderName, fileName, totalLength, chunkName(chunkNumber)) {
+                    it.put(BoundedInputStreamRequestBody(stream, chunkLength))
+                }
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Chunk upload failed: HTTP ${response.code}")
+                }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Assembles the transfer into its destination with `MOVE <transfer>/.file`. Only 201 / 204 are
+     * success. With [requestServerHash] the request carries `X-Hash: sha256` (Nextcloud hashes the
+     * assembled file on regular storage) and the answer's `X-Hash-SHA256` is returned if it is a
+     * well-formed SHA-256. Runs on [assemblyClient].
+     */
+    suspend fun finishChunkedUpload(
+        transferId: String,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+        requestServerHash: Boolean = false,
+    ): Result<UploadResponse> =
+        runCatching {
+            val request =
+                chunkedRequest(transferId, folderName, fileName, totalLength, CHUNKED_ASSEMBLED_NAME) {
+                    it.method("MOVE", null)
+                    if (requestServerHash) it.header(HEADER_REQUEST_HASH, HASH_ALGORITHM_SHA256)
+                }
+            executeCancellable(assemblyClient.newCall(request)) { response, _ ->
+                if (response.code != HTTP_CREATED && response.code != HTTP_NO_CONTENT) {
+                    throw WebDavHttpException(response.code, "Assembling failed: HTTP ${response.code}")
+                }
+                UploadResponse(serverSha256 = response.header(HEADER_RESPONSE_SHA256)?.takeIf(::isSha256Hex))
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Removes the upload folder of [transferId] (`DELETE`). 2xx and 404 (already gone) are success.
+     * Best-effort cleanup: the caller bounds it in time and ignores its failure.
+     */
+    suspend fun abortChunkedUpload(transferId: String): Result<Unit> =
+        runCatching {
+            val url = chunkedTransferUrl(transferId)
+            val request =
+                Request
+                    .Builder()
+                    .url(url)
+                    .delete()
+                    .build()
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful && response.code != HTTP_NOT_FOUND) {
+                    throw WebDavHttpException(response.code, "Aborting the upload failed: HTTP ${response.code}")
+                }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * The uploads collection and the destination URL of `folderName/fileName` for a chunked upload,
+     * or `null` when the server URL is not a Nextcloud files URL or a segment is unsafe (the file
+     * then uses one `PUT`).
+     */
+    internal fun chunkedLocations(
+        folderName: String,
+        fileName: String,
+    ): ChunkedLocations? =
+        runCatching {
+            val collection = requireNotNull(nextcloudUploadsCollection(config.url))
+            ChunkedLocations(collection.toString(), buildPathUrl(remoteFileSegments(folderName, fileName)).toString())
+        }.getOrNull()
+
+    /** `<uploads collection>/<transferId>`; invalid ids or no uploads collection fail before any request. */
+    private fun chunkedTransferUrl(
+        transferId: String,
+        vararg more: String,
+    ): HttpUrl {
+        require(isValidTransferId(transferId)) { "Invalid transfer id" }
+        val collection = requireNotNull(nextcloudUploadsCollection(config.url)) { "No Nextcloud uploads collection" }
+        return collection
+            .newBuilder()
+            .addPathSegment(transferId)
+            .apply { more.forEach(::addPathSegment) }
+            .build()
+    }
+
+    /**
+     * The request of one chunked step to `<collection>/<transferId>[/<name>]`: `Destination` (the
+     * absolute target URL, built from validated segments) and `OC-Total-Length`, then the method and
+     * body set by [configure].
+     */
+    private fun chunkedRequest(
+        transferId: String,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+        name: String? = null,
+        configure: (Request.Builder) -> Unit,
+    ): Request {
+        val segments = remoteFileSegments(folderName, fileName)
+        val url = if (name == null) chunkedTransferUrl(transferId) else chunkedTransferUrl(transferId, name)
+        val builder =
+            Request
+                .Builder()
+                .url(url)
+                .header(HEADER_DESTINATION, buildPathUrl(segments).toString())
+                .header(HEADER_TOTAL_LENGTH, totalLength.toString())
+        configure(builder)
+        return builder.build()
+    }
+
     private fun remoteFileSegments(
         folderName: String,
         fileName: String,
@@ -350,14 +516,6 @@ class WebDavClient(
 
     private fun requireBaseHttpUrl(): HttpUrl = requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
-    private fun validatePathSegment(segment: String) {
-        require(segment.isNotBlank()) { "Invalid path segment: blank" }
-        require('/' !in segment) { "Invalid path segment: '$segment'" }
-        require(segment != "." && segment != "..") { "Invalid path segment: '$segment'" }
-        require('\\' !in segment) { "Invalid path segment: backslash" }
-        require(segment.none { it.isISOControl() }) { "Invalid path segment contains a control character" }
-    }
-
     /** Streams [input] once; [length] `-1` = unknown (chunked transfer). */
     @VisibleForTesting
     internal class InputStreamRequestBody(
@@ -386,7 +544,44 @@ class WebDavClient(
         }
     }
 
+    /**
+     * One-shot body of a chunk: copies exactly [chunkLength] bytes from the shared [input] and never
+     * closes it (the next chunk continues there). A stream that ends early fails with an [IOException].
+     */
+    @VisibleForTesting
+    internal class BoundedInputStreamRequestBody(
+        private val input: InputStream,
+        private val chunkLength: Long,
+    ) : RequestBody() {
+        override fun contentType(): MediaType = CHUNK_MEDIA_TYPE
+
+        override fun contentLength(): Long = chunkLength
+
+        override fun isOneShot(): Boolean = true
+
+        override fun writeTo(sink: BufferedSink) {
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var remaining = chunkLength
+            while (remaining > 0) {
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (read == -1) throw IOException("Stream ended before the chunk was complete")
+                sink.write(buffer, 0, read)
+                remaining -= read
+            }
+        }
+    }
+
     companion object {
+        /** Read timeout of [assemblyClient]: the server assembles the whole file before it answers. */
+        const val CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES = 30L
+
+        private val CHUNK_MEDIA_TYPE = "application/octet-stream".toMediaType()
+        private const val CHUNKED_ASSEMBLED_NAME = ".file"
+        private const val HEADER_DESTINATION = "Destination"
+        private const val HEADER_TOTAL_LENGTH = "OC-Total-Length"
+        private const val HTTP_METHOD_NOT_ALLOWED = 405
+        private const val HTTP_NOT_FOUND = 404
+
         /** Overall limit for [testConnection] (connect + TLS + request + response headers). */
         const val CONNECTION_TEST_TIMEOUT_MILLIS = 30_000L
 
@@ -404,6 +599,21 @@ class WebDavClient(
         private const val HTTP_CREATED = 201
         private const val HTTP_NO_CONTENT = 204
     }
+}
+
+/** Where a chunked upload collects its chunks and where the finished file lands (absolute URLs). */
+internal data class ChunkedLocations(
+    val collectionUrl: String,
+    val destinationUrl: String,
+)
+
+/** Outcome of creating the upload folder of a chunked transfer. */
+enum class ChunkedUploadCreation {
+    /** 201: a new upload folder. */
+    Created,
+
+    /** 405: the folder exists already (a resumed transfer). */
+    AlreadyExists,
 }
 
 /** What a successful `PUT` answered: the server-computed SHA-256 (64 hex chars), null when absent or malformed. */

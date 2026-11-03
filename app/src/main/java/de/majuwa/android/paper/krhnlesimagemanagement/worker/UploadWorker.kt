@@ -112,6 +112,22 @@ class UploadWorker internal constructor(
     @Volatile
     private var terminal = false
 
+    /**
+     * Seam for tests (the default values are the production ones): chunking threshold and chunk size,
+     * the wait between attempts and the bound of the abort `DELETE` ([ChunkedUploadSettings]). A
+     * property, not a constructor parameter, to keep the constructor within detekt's limit.
+     */
+    @VisibleForTesting
+    internal var chunking = ChunkedUploadSettings()
+
+    /** The chunked transfer open on the server right now (client and transfer id), for a user cancel. */
+    @Volatile
+    private var liveTransfer: Pair<WebDavClient, String>? = null
+
+    /** The uploads endpoint refused a new transfer: the rest of this run uploads with one `PUT` per file. */
+    @Volatile
+    private var chunkingUnavailable = false
+
     companion object {
         const val KEY_QUEUE_FILE = "queue_file"
         const val KEY_PROGRESS = "progress"
@@ -177,8 +193,11 @@ class UploadWorker internal constructor(
 
     private suspend fun finalizeOnCancel(queueFile: File) {
         val queue = liveQueue ?: return
-        // A chunked-upload session of the in-flight item is discarded here (best effort, before
-        // the claim) once the nextcloud-chunked-upload change exists; see docs/architecture.md.
+        // The chunked-upload folder of the in-flight file is removed on the server first (best effort:
+        // not cancellable, bounded, failures only logged), then the queue is claimed. Only a user
+        // cancel gets here; a system stop keeps the folder so the next run resumes it.
+        liveTransfer?.let { (client, transferId) -> client.abortQuietly(transferId, chunking.abortTimeoutMs) }
+        liveTransfer = null
         finalizeCancelledQueue(applicationContext, queueFile, queue, liveFailures.toSet(), uploadHistory)
     }
 
@@ -247,12 +266,13 @@ class UploadWorker internal constructor(
         val pending = queue.pendingIndices
         val remoteFolderPaths = List(total) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
         val client = clientFactory(config)
+        val abortOpen: suspend (UploadQueue) -> Unit = { abortOpenTransfers(client, it, remoteFolderPaths) }
 
         applicationContext.createUploadNotificationChannel()
         // A refused foreground service (time budget used up, background start) retries the run
         // later; the queue stays.
         if (!setForegroundOrFalse(buildForegroundInfo(total - pending.size, total))) {
-            return interrupted(UploadRun(queue, emptySet(), interrupted = true), queueFile, notificationTag)
+            return interrupted(UploadRun(queue, emptySet(), interrupted = true), queueFile, notificationTag, abortOpen)
         }
 
         // Nothing left (an earlier run finished every entry): no folder request, only the result.
@@ -280,7 +300,11 @@ class UploadWorker internal constructor(
         val verifier = verifierFor(config, readVerifyByDownload(credentialRepository.verifyByDownload), client)
         val upload = UploadContext(client, verifier, config, applicationContext.hasMediaLocationAccess())
         val run = uploadFiles(upload, queue, remoteFolderPaths, queueFile)
-        return if (run.interrupted) interrupted(run, queueFile, notificationTag) else finish(run, notificationTag)
+        return if (run.interrupted) {
+            interrupted(run, queueFile, notificationTag, abortOpen)
+        } else {
+            finish(run, notificationTag)
+        }
     }
 
     /**
@@ -288,11 +312,14 @@ class UploadWorker internal constructor(
      * refusals are used up; then it stops like a finished run with the remaining entries failed.
      * The refusal is counted in the queue file; if that write fails the run is retried only while
      * `runAttemptCount` is below [MAX_UPLOAD_RUN_ATTEMPTS], and never from [MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP].
+     * Giving up first runs [abortOpen] for the queue: the unfinished chunked transfers on the server
+     * are removed (the retry file starts them again).
      */
     private suspend fun interrupted(
         run: UploadRun,
         queueFile: File,
         notificationTag: String,
+        abortOpen: suspend (UploadQueue) -> Unit,
     ): UploadOutcome {
         // A user cancel is not an interruption: it is finalized by the caller of doWork, never
         // counted and never retried.
@@ -315,6 +342,7 @@ class UploadWorker internal constructor(
             }
         }
         Log.w(UPLOAD_WORKER_TAG, "Upload interrupted too often; giving up after $MAX_UPLOAD_RUN_ATTEMPTS interruptions")
+        abortOpen(run.queue)
         return finish(run, notificationTag, gaveUp = true)
     }
 
@@ -382,7 +410,13 @@ class UploadWorker internal constructor(
 
         for ((n, i) in pending.withIndex()) {
             val entry = queue.entries[i]
-            val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry)
+            val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry, EntrySlot(i, queueFile, finished, total))
+            // The progress of a chunked upload: kept when interrupted, cleared when finished or failed.
+            queue = queue.withChunked(i, outcome.chunked)
+            if (outcome.interrupted) {
+                liveQueue = queue
+                return UploadRun(queue, failures, interrupted = true)
+            }
             // A finished PUT is always booked, even if the user cancels right now: the item is
             // marked uploaded and never re-sent. The cancel surfaces at the next suspension point.
             queue = withContext(NonCancellable) { bookOutcome(upload, queue, i, outcome, queueFile) }
