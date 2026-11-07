@@ -207,7 +207,7 @@ class PinAwareTrustManagerTest {
     }
 
     @Test
-    fun `second client after pin removal fails although the first resumed`() {
+    fun `second client after pin removal fails like a client that never trusted the pin`() {
         val leaf = selfSigned("localhost")
         serve(leaf)
         assertEquals("ok", get(client(pinFor(leaf))))

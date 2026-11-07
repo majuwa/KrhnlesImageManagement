@@ -39,16 +39,33 @@ class NoTrustAllRegressionTest {
     }
 
     @Test
+    fun `no source suppresses a trust check other than the approved one`() {
+        val offenders =
+            mainDir
+                .walkTopDown()
+                .filter { it.isFile && it.extension == "kt" }
+                .flatMap { file ->
+                    TlsSourceScanner
+                        .forbiddenSuppressions(file.readText(), file.name)
+                        .map { "${file.name}: $it" }
+                }.toList()
+        assertTrue("Forbidden suppressions: $offenders", offenders.isEmpty())
+    }
+
+    @Test
     fun `lint configuration never mentions the trust manager checks`() {
         val ids = listOf("TrustAllX509TrustManager", "BadHostnameVerifier", "CustomX509TrustManager")
-        val configs =
-            listOf("build.gradle.kts", "lint.xml", "lint-baseline.xml").map { File(moduleDir, it) }
+        val rootDir = moduleDir.parentFile
+        val names =
+            listOf("build.gradle.kts", "lint.xml", "lint-baseline.xml", "gradle.properties", "settings.gradle.kts")
+        val configs = listOf(moduleDir, rootDir).flatMap { dir -> names.map { File(dir, it) } }
         val mentions =
             configs
                 .filter { it.isFile }
-                .flatMap { file -> ids.filter { it in file.readText() }.map { "${file.name}:$it" } }
+                .flatMap { file -> ids.filter { it in file.readText() }.map { "${file.path}:$it" } }
         assertTrue("Lint config mentions $mentions", mentions.isEmpty())
         assertFalse(File(moduleDir, "lint-baseline.xml").isFile)
+        assertFalse(File(rootDir, "lint-baseline.xml").isFile)
     }
 
     @Test
@@ -109,6 +126,39 @@ class NoTrustAllRegressionTest {
     }
 
     @Test
+    fun `scanner flags import aliases and type aliases of the client`() {
+        val outside = "app/Other.kt"
+        listOf(
+            "import okhttp3.OkHttpClient as Http\nval c = Http()",
+            "import okhttp3.OkHttpClient.Builder\nval b = Builder()",
+            "import okhttp3.*\nval c = OkHttpClient.Builder()",
+            "typealias Http = okhttp3.OkHttpClient",
+            "typealias Http = OkHttpClient",
+        ).forEach { sample ->
+            assertTrue("Not flagged: $sample", TlsSourceScanner.violations(sample, outside).isNotEmpty())
+        }
+        assertTrue(TlsSourceScanner.violations("import okhttp3.OkHttpClient\nval c: OkHttpClient", outside).isEmpty())
+    }
+
+    @Test
+    fun `forbidden suppressions are flagged anywhere but the approved class`() {
+        fun flagged(
+            source: String,
+            file: String = "Other.kt",
+        ) = TlsSourceScanner.forbiddenSuppressions(source, file).isNotEmpty()
+        assertTrue(flagged("@SuppressLint(\"TrustAllX509TrustManager\")\nclass A"))
+        assertTrue(flagged("@Suppress(\"BadHostnameVerifier\")\nclass A"))
+        assertTrue(flagged("@SuppressLint(\"CustomX509TrustManager\")\nclass A"))
+        assertTrue(flagged("@SuppressLint(\"TrustAllX509TrustManager\")", "PinAwareTrustManager.kt"))
+        assertTrue(flagged("@file:Suppress(\"ALL\")"))
+        assertTrue(flagged("@Suppress(\"unused\", \"all\")\nclass A"))
+        assertTrue(flagged("@SuppressWarnings(value = [\"BadHostnameVerifier\"])"))
+        assertFalse(flagged("@SuppressLint(\"CustomX509TrustManager\")\nclass A", "PinAwareTrustManager.kt"))
+        assertFalse(flagged("@Suppress(\"unused\")\nclass A"))
+        assertFalse(flagged("class A"))
+    }
+
+    @Test
     fun `suppression detector recognises the annotation variants`() {
         assertTrue(TlsSourceScanner.suppressesCustomTrustManager("@SuppressLint(\"CustomX509TrustManager\")\nclass A"))
         assertTrue(TlsSourceScanner.suppressesCustomTrustManager("@Suppress(\"CustomX509TrustManager\")"))
@@ -148,7 +198,15 @@ internal object TlsSourceScanner {
             "X509ExtendedTrustManager",
             "X509TrustManager",
             "HostnameVerifier",
+            // Aliases would hide the other patterns.
+            """importokhttp3\.OkHttpClient(?:as|\.Builder)""",
+            """importokhttp3\.\*""",
+            """typealias\w+=(?:okhttp3\.)?OkHttpClient""",
         ).map(::Regex)
+
+    private val forbiddenIds = listOf("TrustAllX509TrustManager", "BadHostnameVerifier", "CustomX509TrustManager")
+
+    private const val APPROVED_FILE = "PinAwareTrustManager.kt"
 
     private val suppression = Regex("""@(?:\w+:)?(?:[\w.]+\.)?Suppress(?:Lint|Warnings)?\(([^)]*)\)""")
 
@@ -179,4 +237,22 @@ internal object TlsSourceScanner {
 
     fun suppressesCustomTrustManager(source: String): Boolean =
         suppression.findAll(stripComments(source)).any { "\"CustomX509TrustManager\"" in it.groupValues[1] }
+
+    /**
+     * Suppressions that hide a trust check: the three trust lint ids anywhere except the single
+     * `CustomX509TrustManager` on [APPROVED_FILE], and an `all` suppression anywhere.
+     */
+    fun forbiddenSuppressions(
+        source: String,
+        fileName: String,
+    ): List<String> =
+        suppression
+            .findAll(stripComments(source))
+            .map { it.groupValues[1] }
+            .flatMap { args ->
+                val ids = forbiddenIds.filter { "\"$it\"" in args }
+                val allowed = fileName == APPROVED_FILE && ids == listOf("CustomX509TrustManager")
+                val all = Regex("\"all\"", RegexOption.IGNORE_CASE).containsMatchIn(args)
+                (if (allowed) emptyList() else ids) + listOfNotNull("all".takeIf { all })
+            }.toList()
 }

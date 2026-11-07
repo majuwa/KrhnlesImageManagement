@@ -38,7 +38,7 @@ internal const val TAG_STOP_TRUSTING = "stop_trusting"
 private fun warningRes(review: CertificateReview): Int =
     if (review.changed) R.string.certificate_review_changed_warning else R.string.certificate_review_warning
 
-private fun originText(certificate: ServerCertificate): String = "${certificate.origin.host}:${certificate.origin.port}"
+private fun originText(certificate: ServerCertificate): String = certificate.origin.serialize()
 
 /** Review of a captured certificate with the "Trust this certificate" action and its confirmation dialog. */
 @Composable
@@ -51,7 +51,9 @@ internal fun CertificateReviewCard(
     val certificate = review.certificate
     val dateFormat = remember { DateFormat.getDateInstance(DateFormat.MEDIUM) }
     val valid = certificate.isValidAt(System.currentTimeMillis())
-    var showDialog by rememberSaveable { mutableStateOf(false) }
+    val trustable = valid && certificate.hasStrongKey
+    // Keyed on the certificate: a dialog opened for one certificate never confirms another one.
+    var showDialog by rememberSaveable(certificate.sha256.hex()) { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().testTag(TAG_CERTIFICATE_REVIEW),
@@ -66,6 +68,14 @@ internal fun CertificateReviewCard(
             }
             LabeledValue(stringResource(R.string.certificate_review_subject), certificate.subject)
             LabeledValue(stringResource(R.string.certificate_review_issuer), certificate.issuer)
+            Text(
+                if (certificate.keyBits > 0) {
+                    stringResource(R.string.certificate_review_key, certificate.keyAlgorithm, certificate.keyBits)
+                } else {
+                    stringResource(R.string.certificate_review_key_unknown, certificate.keyAlgorithm)
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text(
                 stringResource(
                     R.string.certificate_review_validity,
@@ -93,6 +103,13 @@ internal fun CertificateReviewCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (valid && !certificate.hasStrongKey) {
+                Text(
+                    stringResource(R.string.certificate_review_weak_key),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             if (saveFailed) {
                 Text(
                     stringResource(R.string.certificate_trust_save_failed),
@@ -101,7 +118,7 @@ internal fun CertificateReviewCard(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            if (valid) {
+            if (trustable) {
                 Button(
                     onClick = { showDialog = true },
                     enabled = !trustInProgress,
@@ -111,18 +128,28 @@ internal fun CertificateReviewCard(
         }
     }
 
-    if (showDialog) {
+    if (showDialog && trustable) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
             title = { Text(stringResource(R.string.certificate_trust_dialog_title)) },
             text = {
                 Column {
+                    val previous = review.previousSha256
                     Text(
-                        stringResource(
-                            R.string.certificate_trust_dialog_body,
-                            certificate.sha256.groupedHex(),
-                            originText(certificate),
-                        ),
+                        if (previous != null) {
+                            stringResource(
+                                R.string.certificate_trust_dialog_changed_body,
+                                previous.groupedHex(),
+                                certificate.sha256.groupedHex(),
+                                originText(certificate),
+                            )
+                        } else {
+                            stringResource(
+                                R.string.certificate_trust_dialog_body,
+                                certificate.sha256.groupedHex(),
+                                originText(certificate),
+                            )
+                        },
                     )
                     Text(
                         stringResource(

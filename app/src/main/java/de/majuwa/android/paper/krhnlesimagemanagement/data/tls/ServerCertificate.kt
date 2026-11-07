@@ -3,8 +3,11 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data.tls
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.security.MessageDigest
+import java.security.PublicKey
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
+import java.security.interfaces.ECPublicKey
+import java.security.interfaces.RSAPublicKey
 import javax.security.auth.x500.X500Principal
 
 /** SHA-256 of the DER encoding, the value `openssl x509 -noout -fingerprint -sha256` prints. */
@@ -33,12 +36,35 @@ data class ServerCertificate(
     val issuer: String,
     val notBeforeMillis: Long,
     val notAfterMillis: Long,
+    /** Public key algorithm (`RSA`, `EC`, ...) and size in bits (0 = unknown); shown at review, not stored. */
+    val keyAlgorithm: String = "",
+    val keyBits: Int = 0,
 ) {
     fun isValidAt(nowMillis: Long): Boolean = nowMillis in notBeforeMillis..notAfterMillis
+
+    /** RSA of at least [MIN_RSA_BITS] or EC of at least [MIN_EC_BITS]; anything else may not be trusted. */
+    val hasStrongKey: Boolean
+        get() =
+            when (keyAlgorithm) {
+                "RSA" -> keyBits >= MIN_RSA_BITS
+                "EC" -> keyBits >= MIN_EC_BITS
+                else -> false
+            }
 
     companion object {
         /** Maximum length of the displayed subject / issuer text. */
         const val MAX_NAME_LENGTH = 256
+
+        const val MIN_RSA_BITS = 2048
+        const val MIN_EC_BITS = 256
+
+        /** Key size in bits: the RSA modulus or the EC group order; 0 for any other key. */
+        internal fun keyBitsOf(key: PublicKey): Int =
+            when (key) {
+                is RSAPublicKey -> key.modulus.bitLength()
+                is ECPublicKey -> key.params.order.bitLength()
+                else -> 0
+            }
 
         fun of(
             origin: ServerOrigin,
@@ -51,6 +77,8 @@ data class ServerCertificate(
                 issuer = sanitizeName(certificate.issuerX500Principal.getName(X500Principal.RFC2253)),
                 notBeforeMillis = certificate.notBefore.time,
                 notAfterMillis = certificate.notAfter.time,
+                keyAlgorithm = certificate.publicKey.algorithm,
+                keyBits = keyBitsOf(certificate.publicKey),
             )
 
         /** Removes control, format (incl. bidi) and line / paragraph separator characters and caps the length. */

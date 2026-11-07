@@ -82,11 +82,15 @@ When the connection test (or, if the login library accepts a client provided by 
 - **THEN** the test reports a certificate problem without offering a certificate for review
 
 ### Requirement: Certificate details are shown for review
-For a captured certificate, Settings SHALL show its SHA-256 fingerprint (full, as grouped hexadecimal), subject, issuer, start and end of validity (formatted locale-aware) and the origin it would be trusted for, together with a warning that trusting lets anyone holding this certificate's key read the connection. Subject and issuer SHALL be shown without control characters and length-limited, and SHALL NOT be logged.
+For a captured certificate, Settings SHALL show its SHA-256 fingerprint (full, as grouped hexadecimal), subject, issuer, start and end of validity (formatted locale-aware) and the origin it would be trusted for, its public key algorithm and size, together with a warning that trusting lets anyone holding this certificate's key read the connection. Subject and issuer SHALL be shown without control characters and length-limited, and SHALL NOT be logged.
 
 #### Scenario: Review card after a failed test
 - **WHEN** the connection test fails with an untrusted certificate
 - **THEN** Settings shows the fingerprint, subject, issuer, validity, origin, the warning and a "Trust this certificate" action
+
+#### Scenario: Weak public key
+- **WHEN** the captured certificate has an RSA key shorter than 2048 bits, an EC key shorter than 256 bits or a key of another type
+- **THEN** Settings shows its details including the key algorithm and size with an explanation and does not offer "Trust this certificate", and confirming it stores nothing
 
 #### Scenario: Certificate outside its validity period
 - **WHEN** the captured certificate has expired or is not yet valid
@@ -107,12 +111,20 @@ For a captured certificate, Settings SHALL show its SHA-256 fingerprint (full, a
 - **WHEN** the server URL is changed or the user logs out while the review or the dialog is shown
 - **THEN** the review is cleared and confirming stores nothing
 
+#### Scenario: A new test replaces the review
+- **WHEN** the user starts another connection test while a review or its confirmation dialog is shown
+- **THEN** the review is cleared at once, and confirming the earlier review (even from a still open dialog) stores nothing; only the certificate the user is confirming can be pinned
+
+#### Scenario: Confirming a changed certificate
+- **WHEN** the review is for a changed certificate and the user taps "Trust this certificate"
+- **THEN** the confirmation dialog itself shows the previously trusted and the new fingerprint, one below the other, and the interception warning
+
 #### Scenario: Saving the pin fails
 - **WHEN** storing the pin fails or does not finish in time
 - **THEN** Settings shows a localized error, nothing is trusted, and the user can try again
 
 ### Requirement: At most one pin is stored, for one origin
-The app SHALL store at most one pinned certificate, together with its origin (`https`, host, effective port), SHA-256 fingerprint and the details shown at review. Only `https` origins SHALL be pinnable. Trusting a certificate SHALL replace any previous pin. An unreadable or corrupt pin store SHALL be treated as having no pin.
+The app SHALL store at most one pinned certificate, together with its origin (`https`, host, effective port), SHA-256 fingerprint and the details shown at review. Only `https` origins SHALL be pinnable. Trusting a certificate SHALL replace any previous pin. An unreadable or corrupt pin store, including an I/O error while reading it, SHALL be treated as having no pin (system trust only).
 
 #### Scenario: Trusting replaces the old pin
 - **WHEN** a pin exists and the user trusts a new certificate after a "certificate changed" error
@@ -123,11 +135,15 @@ The app SHALL store at most one pinned certificate, together with its origin (`h
 - **THEN** no certificate is pinned and self-signed connections fail until the user trusts again
 
 ### Requirement: The pin is cleared on logout and on server change
-Logging out SHALL remove the pin. Saving credentials for a different origin SHALL remove a pin for another origin before the new credentials are written. Changing only the username, password or base folder on the same origin SHALL keep the pin. A failure to remove the pin SHALL be logged and SHALL NOT prevent the logout or the save.
+Logging out SHALL remove the pin. Saving credentials for a different origin SHALL remove a pin for another origin before the new credentials are written. Changing only the username, password or base folder on the same origin SHALL keep the pin. A failure to remove the pin SHALL be logged, SHALL be reported to the user with a localized message and SHALL NOT prevent the logout or the save; a pin left behind by a failed logout clear SHALL be removed by the next save of credentials (there is no previous configuration then).
 
 #### Scenario: Logout
 - **WHEN** the user logs out while a certificate is pinned
 - **THEN** the pin is removed, and logging in again to the same self-signed server requires trusting the certificate again
+
+#### Scenario: Removing the pin fails
+- **WHEN** logging out or switching servers cannot remove the pin
+- **THEN** the logout or save still happens and Settings shows that the trusted certificate could not be removed; the leftover pin is removed at the next sign-in
 
 #### Scenario: Switching servers
 - **WHEN** the user saves credentials for a server with a different host, port or scheme

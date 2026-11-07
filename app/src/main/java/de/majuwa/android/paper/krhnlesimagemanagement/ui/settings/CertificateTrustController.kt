@@ -33,12 +33,20 @@ class CertificateTrustController internal constructor(
     private var job: Job? = null
 
     /**
-     * Stores the reviewed certificate as the pin, but only if the review is still current, the certificate
-     * is valid and the configured server is still the reviewed origin; then the connection test runs again.
+     * Stores the reviewed certificate as the pin, but only if [review] is still the current one, the
+     * certificate is valid with a strong key (RSA >= 2048 / EC >= 256) and the configured server is still
+     * the reviewed origin; then the connection test runs again.
      */
-    fun confirm() {
-        val review = uiState.value.certificateReview ?: return
-        if (job?.isActive == true || !review.certificate.isValidAt(System.currentTimeMillis())) return
+    fun confirm(review: CertificateReview) {
+        // The review the user saw must still be the current one (a new test replaces it): never trust
+        // a certificate other than the one that was confirmed.
+        if (uiState.value.certificateReview !== review) return
+        val certificate = review.certificate
+        if (job?.isActive == true || !certificate.isValidAt(System.currentTimeMillis()) ||
+            !certificate.hasStrongKey
+        ) {
+            return
+        }
         launchGuarded {
             uiState.update { it.copy(trustInProgress = true, trustSaveFailed = false) }
             val stored = store(review)

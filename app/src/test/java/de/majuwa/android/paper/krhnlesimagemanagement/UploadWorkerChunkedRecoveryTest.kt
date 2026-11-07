@@ -5,6 +5,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ChunkedUploadHarness.Compa
 import de.majuwa.android.paper.krhnlesimagemanagement.ChunkedUploadHarness.Companion.chunkedOf
 import de.majuwa.android.paper.krhnlesimagemanagement.ChunkedUploadHarness.Companion.code
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateInfo
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.ChunkedUploadSettings
 import kotlinx.coroutines.CompletableDeferred
@@ -17,7 +24,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
+import okhttp3.Credentials
 import okhttp3.mockwebserver.MockResponse
+import okio.ByteString.Companion.decodeHex
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -29,6 +38,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -179,9 +189,64 @@ class UploadWorkerChunkedRecoveryTest {
         return chunkedOf(queue.readText())!!.getString("transferId")
     }
 
+    private val pin = PinnedCertificate(ServerOrigin("cloud.example", 8443), "ab".repeat(32).decodeHex())
+    private val seenPins = CopyOnWriteArrayList<PinnedCertificate?>()
+
+    /** An `https` origin with a stored pin; the clients still talk to the mock server, named after their pin. */
+    private fun withStoredPin(): FakeTrustedCertificateRepository {
+        val info =
+            TrustedCertificateInfo(
+                ServerCertificate(pin.origin, pin.sha256, "CN=a", "CN=b", 0L, Long.MAX_VALUE / 2),
+                1L,
+            )
+        h.credentialConfig = WebDavConfig("https://cloud.example:8443/remote.php/dav/files/u/", "u", "p", "")
+        h.clientFactory = { _, p ->
+            seenPins += p
+            WebDavClient(WebDavConfig(h.config().url, if (p == null) "nopin" else "withpin", "p", ""), p)
+        }
+        return FakeTrustedCertificateRepository(info).also { h.trusted = it }
+    }
+
+    @Test
+    fun pinRemovedAfterTheFirstEntry_theGiveUpAbortUsesTheClientWithoutThePin() {
+        val trusted = withStoredPin()
+        h.uploadedOverride =
+            object : UploadedPhotosRepositoryContract by h.uploaded {
+                override suspend fun markAsUploaded(photoIds: Set<Long>) {
+                    h.uploaded.markAsUploaded(photoIds)
+                    trusted.clear()
+                }
+            }
+        h.override = { if (it.method == "PUT" && it.name == "00001") code(503) else null }
+        // Entry 1 is one PUT; entry 2 starts a chunked transfer whose chunks fail transiently at the cap.
+        val queue = h.queueFile(h.video(1, bytes(10)), h.video(2, content, "clip2.mp4"), interruptions = 4)
+
+        val result = h.run(queue)
+
+        assertTrue(result.toString(), result is ListenableWorker.Result.Failure)
+        assertEquals(listOf<PinnedCertificate?>(pin, null), seenPins.toList())
+        val delete = h.of("DELETE").single()
+        assertEquals(Credentials.basic("nopin", "p"), delete.headers["Authorization"])
+    }
+
+    @Test
+    fun userCancelBeforeTheConfigIsKnown_theAborterReadsAndUsesThePin() =
+        assertCancelBeforeTheConfigIsKnown_deletesTheSavedTransfer(prepare = { withStoredPin() }) { repo, cancel ->
+            object : CredentialRepository by repo {
+                override val wifiOnly: Flow<Boolean> =
+                    flow {
+                        seenPins.clear()
+                        cancel()
+                        awaitCancellation()
+                    }
+            }
+        }.also { assertEquals(listOf<PinnedCertificate?>(pin), seenPins.toList()) }
+
     private fun assertCancelBeforeTheConfigIsKnown_deletesTheSavedTransfer(
+        prepare: () -> Unit = {},
         wrap: (CredentialRepository, suspend () -> Unit) -> CredentialRepository,
     ) {
+        prepare()
         val queue = singleVideoQueue()
         val savedId = savedTransfer(queue)
         h.userCancelled = { true }

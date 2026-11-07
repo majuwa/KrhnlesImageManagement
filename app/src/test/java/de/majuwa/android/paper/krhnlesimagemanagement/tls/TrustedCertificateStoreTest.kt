@@ -19,6 +19,7 @@ import okio.ByteString.Companion.decodeHex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -102,6 +103,24 @@ class TrustedCertificateStoreTest {
             val file = File(tmp.root, "corrupt.preferences_pb").apply { writeBytes(byteArrayOf(1, 2, 3, 4, 5)) }
             val store = TrustedCertificateStore(dataStore(backgroundScope, file))
             assertNull(store.trustedCertificate.first())
+        }
+
+    @Test
+    fun `an IO error while reading means no pin and other errors are not swallowed`() =
+        runTest(UnconfinedTestDispatcher()) {
+            fun failing(error: Throwable) =
+                object : DataStore<Preferences> {
+                    override val data = kotlinx.coroutines.flow.flow<Preferences> { throw error }
+
+                    override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
+                        throw UnsupportedOperationException()
+                }
+            assertNull(TrustedCertificateStore(failing(java.io.IOException("disk"))).trustedCertificate.first())
+            val unexpected =
+                runCatching {
+                    TrustedCertificateStore(failing(IllegalStateException("bug"))).trustedCertificate.first()
+                }.exceptionOrNull()
+            assertTrue(unexpected is IllegalStateException)
         }
 
     @Test

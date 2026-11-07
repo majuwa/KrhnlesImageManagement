@@ -258,7 +258,7 @@ private fun LoggedInContent(
             review = review,
             trustInProgress = uiState.trustInProgress,
             saveFailed = uiState.trustSaveFailed,
-            onTrust = viewModel.certificateTrust::confirm,
+            onTrust = { viewModel.certificateTrust.confirm(review) },
         )
     }
 

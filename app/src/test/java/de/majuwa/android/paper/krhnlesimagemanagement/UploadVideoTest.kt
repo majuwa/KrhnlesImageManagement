@@ -21,6 +21,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryReposito
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.withFakeTrustedCertificates
 import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
@@ -265,7 +266,7 @@ class UploadVideoTest {
                             uploaded,
                             VideoTestHistory(),
                             { false },
-                        )
+                        ).withFakeTrustedCertificates()
                     },
                 ).build()
                 .doWork()

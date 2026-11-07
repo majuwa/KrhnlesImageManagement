@@ -15,8 +15,8 @@ When the album list, an album's photos or a duplicate / blur scan cannot be load
 
 #### Scenario: Untrusted certificate
 - **WHEN** loading fails because the server certificate is neither system-trusted nor pinned
-- **THEN** the screen shows the localized untrusted-certificate message, which tells the user to review the certificate with the connection test in Settings, and offers Retry
+- **THEN** the screen shows the localized untrusted-certificate message, which states the problem neutrally (it does not invite the user to trust anything; the review stays reachable through the connection test in Settings), and offers Retry
 
 #### Scenario: Server certificate changed
 - **WHEN** loading fails because a certificate is pinned for the configured server and the server presented a different, untrusted certificate
-- **THEN** the screen shows the localized "server certificate changed" message, distinct from the untrusted-certificate message, and offers Retry
+- **THEN** the screen shows the localized "server certificate changed" message (neutral wording, no call to trust), distinct from the untrusted-certificate message, and offers Retry

@@ -344,7 +344,7 @@ class SettingsViewModel
             if (testConnectionJob?.isActive == true) return
             testConnectionJob =
                 viewModelScope.launch {
-                    _uiState.update { it.copy(isTesting = true, testResult = null) }
+                    _uiState.update { it.copy(isTesting = true, testResult = null, certificateReview = null) }
                     val result = runConnectionTest(credentialStore, trustedCertificates, connectionTester)
                     // A test cancelled by logout or a config change must never publish its stale result.
                     ensureActive()
@@ -376,12 +376,21 @@ class SettingsViewModel
                 // Verified records first: they make local photos removable. One failing clear never
                 // skips the others.
                 clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
-                clearLogged("trusted certificate") { trustedCertificates.clear() }
+                val pinCleared = clearLogged("trusted certificate") { trustedCertificates.clear() }
                 clearLogged("credentials") { credentialStore.clear() }
                 clearLogged("uploaded markers") { uploadedPhotosRepository.clear() }
-                _uiState.update { SettingsUiState() }
+                // A pin that could not be removed is reported; the next sign-in (no previous
+                // configuration) clears it again before saving.
+                _uiState.update { SettingsUiState(error = pinClearError(pinCleared)) }
             }
         }
+
+        private fun pinClearError(cleared: Boolean): String? =
+            if (cleared) {
+                null
+            } else {
+                getApplication<Application>().getString(R.string.error_trusted_certificate_clear_failed)
+            }
 
         /**
          * Saves credentials; on failure shows a user-facing error and returns false instead of crashing.
@@ -406,7 +415,9 @@ class SettingsViewModel
                 // before the new credentials are written; same-origin changes keep it.
                 val newOrigin = ServerOrigin.of(url)
                 if (previous == null || newOrigin == null || ServerOrigin.of(previous.url) != newOrigin) {
-                    clearLogged("trusted certificate") { trustedCertificates.clear() }
+                    if (!clearLogged("trusted certificate") { trustedCertificates.clear() }) {
+                        _uiState.update { it.copy(error = pinClearError(false)) }
+                    }
                 }
                 credentialStore.save(url, username, password)
                 true
@@ -473,12 +484,12 @@ private suspend fun runConnectionTest(
         failure.toConnectionTestResult()
     }
 
-/** Runs one clear step; a failure is logged by type only and never skips the next step. */
+/** Runs one clear step; a failure is logged by type only and never skips the next one. True = it succeeded. */
 private suspend fun clearLogged(
     what: String,
     clear: suspend () -> Unit,
-) {
+): Boolean =
     runCatching { clear() }
         .onFailure { if (it is CancellationException) throw it }
         .onFailure { Log.w(TAG, "Clearing $what failed: ${it.javaClass.simpleName}") }
-}
+        .isSuccess

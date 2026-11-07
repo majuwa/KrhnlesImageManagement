@@ -16,9 +16,11 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertifica
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
+import okio.ByteString
 import okio.ByteString.Companion.decodeHex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,19 +35,24 @@ class CertificateReviewUiTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    private fun certificate(notAfter: Long = Long.MAX_VALUE / 2) =
-        ServerCertificate(
-            ServerOrigin("cloud.example.com", 443),
-            "ab".repeat(32).decodeHex(),
-            "CN=a",
-            "CN=b",
-            0L,
-            notAfter,
-        )
+    private fun certificate(
+        notAfter: Long = Long.MAX_VALUE / 2,
+        keyBits: Int = 2048,
+    ) = ServerCertificate(
+        ServerOrigin("cloud.example.com", 443),
+        "ab".repeat(32).decodeHex(),
+        "CN=a",
+        "CN=b",
+        0L,
+        notAfter,
+        "RSA",
+        keyBits,
+    )
 
     private fun viewModel(
         trusted: FakeTrustedCertificateRepository,
         certificate: ServerCertificate?,
+        previous: ByteString? = null,
     ) = SettingsViewModel(
         application = RuntimeEnvironment.getApplication() as Application,
         credentialStore =
@@ -53,7 +60,9 @@ class CertificateReviewUiTest {
         trustedCertificates = trusted,
         connectionTester = { _, pin ->
             if (certificate != null && pin == null) {
-                Result.failure(CertificateReviewException(certificate, false, null, SSLHandshakeException("x")))
+                Result.failure(
+                    CertificateReviewException(certificate, previous != null, previous, SSLHandshakeException("x")),
+                )
             } else {
                 Result.success(Unit)
             }
@@ -82,6 +91,35 @@ class CertificateReviewUiTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("certificate_review").assertExists()
         composeTestRule.onNodeWithTag("trust_certificate").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a weak key is shown and offers no trust action`() {
+        val vm = viewModel(FakeTrustedCertificateRepository(), certificate(keyBits = 1024))
+        composeTestRule.setContent { SettingsScreen(viewModel = vm, onNavigateBack = {}) }
+        composeTestRule.onNodeWithText("Test Connection").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Public key: RSA, 1024-bit").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("trust_certificate").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the confirmation of a changed certificate shows the old and the new fingerprint`() {
+        val previous = "cd".repeat(32).decodeHex()
+        val vm = viewModel(FakeTrustedCertificateRepository(), certificate(), previous)
+        composeTestRule.setContent { SettingsScreen(viewModel = vm, onNavigateBack = {}) }
+        composeTestRule.onNodeWithText("Test Connection").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("trust_certificate").performScrollTo().performClick()
+        val dialog = composeTestRule.onNodeWithText("Previously trusted fingerprint:", substring = true)
+        dialog.assertIsDisplayed()
+        val text =
+            dialog
+                .fetchSemanticsNode()
+                .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+                .joinToString { it.text }
+        assertTrue(text.contains("CD:".repeat(31) + "CD"))
+        assertTrue(text.contains("New fingerprint:\n" + "AB:".repeat(31) + "AB"))
     }
 
     @Test

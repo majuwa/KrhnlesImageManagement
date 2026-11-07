@@ -143,6 +143,22 @@ class ServerClientsPinningTest {
         }
 
     @Test
+    fun `connection test redirected to another untrusted origin captures nothing and reaches nothing`() =
+        runBlocking {
+            val target = start()
+            val origin = SelfSignedServer(responses = 0).also(servers::add)
+            origin.server.enqueue(
+                okhttp3.mockwebserver
+                    .MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", target.url("/other")),
+            )
+            val failure = WebDavClient(config(origin), pin(origin)).testConnection().exceptionOrNull()
+            assertTrue(failure.toString(), failure is SSLException)
+            assertEquals(0, target.server.requestCount)
+        }
+
+    @Test
     fun `holder keeps the client for the same pin and evicts the pool for a new one`() {
         val server = start()
         var current: PinnedCertificate? = pin(server)

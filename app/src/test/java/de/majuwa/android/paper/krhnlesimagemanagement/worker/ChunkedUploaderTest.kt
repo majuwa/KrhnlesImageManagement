@@ -1,7 +1,9 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.worker
 
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateChangedException
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.tls.SelfSignedServer
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -9,6 +11,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -18,7 +21,11 @@ import org.robolectric.RobolectricTestRunner
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.security.cert.CertificateException
 import java.util.concurrent.CopyOnWriteArrayList
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 /**
  * [ChunkedUploader] on its own (review of #69): which requests a failing attempt sends for a saved
@@ -153,6 +160,58 @@ class ChunkedUploaderTest {
 
         assertTrue(result is ChunkedResult.Uploaded)
         assertEquals(listOf("MKCOL", "PUT", "PUT", "MOVE"), methods)
+    }
+
+    @Test
+    fun certificateFailures_areNotTransient_butAPlainSslResetIs() {
+        val changed = CertificateChangedException(CertificateException("x"))
+        assertFalse(SSLHandshakeException("x").apply { initCause(changed) }.isTransientChunkFailure())
+        assertFalse(changed.isTransientChunkFailure())
+        assertFalse(CertificateException("x").isTransientChunkFailure())
+        assertFalse(SSLHandshakeException("x").isTransientChunkFailure())
+        assertFalse(SSLPeerUnverifiedException("x").isTransientChunkFailure())
+        assertFalse(java.io.IOException("wrapped", changed).isTransientChunkFailure())
+        // A connection reset while reading is an SSLException too and must stay retryable.
+        assertTrue(SSLException("Connection reset").isTransientChunkFailure())
+        assertTrue(java.io.IOException("offline").isTransientChunkFailure())
+    }
+
+    @Test
+    fun untrustedServerCertificate_failsTheFileAtOnce_withoutRetriesOrAnInterruption() {
+        val tls = SelfSignedServer()
+        try {
+            val tlsClient =
+                WebDavClient(WebDavConfig(tls.url("/remote.php/dav/files/u/"), "u", "p", ""), null)
+            val locations = checkNotNull(tlsClient.chunkedLocations("Trip", "clip.mp4"))
+            val sleeps = mutableListOf<Long>()
+            val uploader =
+                ChunkedUploader(
+                    tlsClient,
+                    ChunkedUploadSettings(
+                        policy = ChunkedUploadPolicy(thresholdBytes = 20L, chunkBytes = 10L),
+                        sleep = { sleeps += it },
+                        abortTimeoutMs = 5_000L,
+                        cancelAbortTimeoutMs = 5_000L,
+                    ),
+                    ChunkedRequest("Trip", "clip.mp4", locations, requestServerHash = false),
+                    ChunkedCallbacks(
+                        open = { opened(ByteArrayInputStream(content)) },
+                        lengthOf = { content.size.toLong() },
+                        beginAttempt = {},
+                        persist = {},
+                        chunkConfirmed = { true },
+                    ),
+                    null,
+                )
+
+            val result = runBlocking { uploader.upload() }
+
+            assertTrue(result.toString(), result is ChunkedResult.Failed)
+            assertTrue(sleeps.isEmpty())
+            assertEquals(0, tls.server.requestCount)
+        } finally {
+            tls.shutdown()
+        }
     }
 
     /** Reads [bytes] normally for [okBytes] bytes, then throws [failure]. */

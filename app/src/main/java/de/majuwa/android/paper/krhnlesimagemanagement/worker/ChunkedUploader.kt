@@ -19,6 +19,9 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "ChunkedUploader"
@@ -498,8 +501,14 @@ private fun WebDavHttpException.isSizeOrStorageError(): Boolean =
  * cancellation), 408, 423, 429 or 5xx except 501 (no uploads endpoint) and 507 (the server is full).
  */
 internal fun Throwable.isTransientChunkFailure(): Boolean =
-    when (this) {
-        is WebDavHttpException -> {
+    when {
+        // A TLS / certificate failure (also wrapped) is never fixed by waiting: it must reach
+        // toUploadFailure() as a final failure (a changed certificate has its own reason), not be retried.
+        hasCertificateFailure() -> {
+            false
+        }
+
+        this is WebDavHttpException -> {
             code == HTTP_REQUEST_TIMEOUT ||
                 code == HTTP_LOCKED ||
                 code == HTTP_TOO_MANY_REQUESTS ||
@@ -509,13 +518,23 @@ internal fun Throwable.isTransientChunkFailure(): Boolean =
                 )
         }
 
-        is IOException -> {
+        this is IOException -> {
             true
         }
 
         else -> {
             false
         }
+    }
+
+private const val MAX_CAUSE_DEPTH = 10
+
+/** Trust failures only; a plain `SSLException` (e.g. a connection reset during a read) stays transient. */
+private fun Throwable.hasCertificateFailure(): Boolean =
+    generateSequence(this) { it.cause }.take(MAX_CAUSE_DEPTH).any {
+        it is CertificateException ||
+            it is SSLHandshakeException ||
+            it is SSLPeerUnverifiedException
     }
 
 /**

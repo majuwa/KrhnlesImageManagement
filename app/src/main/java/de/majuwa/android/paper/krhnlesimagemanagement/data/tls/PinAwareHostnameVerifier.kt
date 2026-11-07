@@ -9,6 +9,9 @@ import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSession
 
+/** OkHttp's default verifier, created once (an `OkHttpClient` per verifier would build a pool each time). */
+private val defaultHostnameVerifier: HostnameVerifier by lazy { OkHttpClient().hostnameVerifier }
+
 /**
  * OkHttp's standard host name verification, plus one exception: the exact pinned leaf, currently
  * valid, on exactly the pinned host and port is accepted even if its names do not cover the host
@@ -17,7 +20,7 @@ import javax.net.ssl.SSLSession
  */
 internal class PinAwareHostnameVerifier(
     private val pin: PinnedCertificate?,
-    private val base: HostnameVerifier = OkHttpClient().hostnameVerifier,
+    private val base: HostnameVerifier = defaultHostnameVerifier,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : HostnameVerifier {
     override fun verify(

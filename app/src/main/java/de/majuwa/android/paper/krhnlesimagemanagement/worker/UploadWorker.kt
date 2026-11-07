@@ -306,9 +306,9 @@ class UploadWorker internal constructor(
         val remoteFolderPaths = remoteFolderPathsOf(config, queue)
         val pin = trustedCertificates.pinFor(config.url)
         val client = clientFactory(config, pin)
-        val aborter = transferAborter(config, client, queue)
-        abortTransfers = aborter
-        val abortOpen: suspend (UploadQueue) -> Unit = { aborter(it, chunking.abortTimeoutMs) }
+        abortTransfers = transferAborter(config, client, queue)
+        // Always the aborter of the *current* client: a changed pin replaces it (see uploadFiles).
+        val abortOpen: suspend (UploadQueue) -> Unit = { abortTransfers?.invoke(it, chunking.abortTimeoutMs) }
 
         applicationContext.createUploadNotificationChannel()
         // A refused foreground service (time budget used up, background start) retries the run
@@ -465,7 +465,12 @@ class UploadWorker internal constructor(
             val entry = queue.entries[i]
             // A removed or replaced pin applies from the next entry on (a chunked transfer in
             // progress finishes with its snapshot).
-            upload = upload.withRefreshedPin(trustedCertificates, clientFactory)
+            val refreshed = upload.withRefreshedPin(trustedCertificates, clientFactory)
+            if (refreshed !== upload) {
+                // The aborters (cancel, give-up, end of run) must use the client of the pin now in effect.
+                abortTransfers = transferAborter(refreshed.config, refreshed.client, queue)
+            }
+            upload = refreshed
             val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry, EntrySlot(i, queueFile, finished, total))
             // The progress of a chunked upload: kept when interrupted, cleared when finished or failed.
             queue = queue.withChunked(i, liveQueue?.entries?.getOrNull(i)?.chunked)

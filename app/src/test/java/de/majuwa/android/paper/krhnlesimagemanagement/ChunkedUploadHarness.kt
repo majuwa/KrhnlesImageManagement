@@ -16,10 +16,14 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaStoreProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.withFakeTrustedCertificates
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.ChunkedUploadPolicy
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.ChunkedUploadSettings
@@ -112,6 +116,15 @@ class ChunkedUploadHarness {
     var credentials: (CredentialRepository) -> CredentialRepository = { it }
     var verifyByDownload = false
     var serverPath = "/remote.php/dav/files/u/"
+
+    /** The configuration the worker reads (default: the mock server); lets a test use an `https` origin to pin. */
+    var credentialConfig: WebDavConfig? = null
+
+    /** The worker's client factory; default builds the client for the given configuration and pin. */
+    var clientFactory: (WebDavConfig, PinnedCertificate?) -> WebDavClient = { config, pin -> WebDavClient(config, pin) }
+
+    /** The worker's pin store (in memory, never the process DataStore). */
+    var trusted: TrustedCertificateRepository = FakeTrustedCertificateRepository()
 
     /** Foreground calls from this index on are refused (0 = the call at the start of the run). */
     var foregroundFailsFrom: Int? = null
@@ -333,15 +346,18 @@ class ChunkedUploadHarness {
                     appContext,
                     workerParameters,
                     credentials(
-                        FakeCredentialRepository(initialConfig = config(), initialVerifyByDownload = verifyByDownload),
+                        FakeCredentialRepository(
+                            initialConfig = credentialConfig ?: config(),
+                            initialVerifyByDownload = verifyByDownload,
+                        ),
                     ),
-                    ::WebDavClient,
+                    { config, pin -> clientFactory(config, pin) },
                     uploadedOverride ?: uploaded,
                     history,
                     { false },
                     verifiedOverride ?: verified,
                     userCancelled,
-                )
+                ).withFakeTrustedCertificates(trusted)
         }
 
     /** Runs the worker to completion (no cancel); the foreground counter restarts per run. */

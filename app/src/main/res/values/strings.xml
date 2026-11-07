@@ -221,8 +221,8 @@
     <string name="albums_error_not_configured">You are not logged in. Log in under Settings to see your albums.</string>
     <string name="albums_error_invalid_url">The server address is not a valid URL. Check it in Settings and log in again.</string>
     <string name="albums_error_configuration_changed">Your server settings changed. Go back and open the album again.</string>
-    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted. Review it with Test Connection in Settings.</string>
-    <string name="albums_error_certificate_changed">The server\'s certificate changed. Review it with Test Connection in Settings before trying again.</string>
+    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted. You can check the connection with Test Connection in Settings.</string>
+    <string name="albums_error_certificate_changed">The server\'s certificate changed. You can check the connection with Test Connection in Settings.</string>
     <string name="albums_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
     <string name="albums_error_unreachable">Could not reach the server. Check your internet connection and that the server is online.</string>
     <string name="albums_error_timeout">The server did not respond in time. Please try again.</string>
@@ -342,7 +342,7 @@
     <string name="upload_error_not_configured">no server is configured. Open Settings and connect your server first.</string>
     <string name="upload_failure_too_large">A file is too large for the server.</string>
     <string name="upload_failure_verification">A file could not be verified on the server.</string>
-    <string name="upload_failure_certificate_changed">The server\'s certificate changed. Review it in Settings.</string>
+    <string name="upload_failure_certificate_changed">The server\'s certificate changed. You can check the connection with Test Connection in Settings.</string>
     <string name="upload_failure_storage_full">The server storage is full.</string>
     <string name="upload_failure_interrupted">The system stopped the upload repeatedly. Retry it later.</string>
     <!-- Result notification text: %1$s = counts (or a first reason), %2$s = the (next) failure reason. -->
@@ -370,10 +370,15 @@
     <string name="certificate_review_origin">Would be trusted only for %1$s</string>
     <string name="certificate_review_warning">Anyone who holds this certificate\'s private key can read everything you send to this server. Trust it only if the fingerprint matches the one on your server.</string>
     <string name="certificate_review_changed_warning">If you did not replace the server certificate yourself, someone may be intercepting the connection. Do not trust it unless you are sure.</string>
+    <string name="certificate_review_key">Public key: %1$s, %2$d-bit</string>
+    <string name="certificate_review_key_unknown">Public key: %1$s (unsupported type or size)</string>
+    <string name="certificate_review_weak_key">This certificate uses a weak public key (less than RSA 2048 or EC 256 bits), so it cannot be trusted.</string>
     <string name="certificate_review_not_valid">This certificate has expired or is not valid yet, so it cannot be trusted.</string>
     <string name="action_trust_certificate">Trust this certificate</string>
     <string name="certificate_trust_dialog_title">Trust this certificate?</string>
     <string name="certificate_trust_dialog_body">Fingerprint:\n%1$s\n\nServer: %2$s\n\nCompare the fingerprint with the one shown on your server, for example with: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="certificate_trust_dialog_changed_body">Previously trusted fingerprint:\n%1$s\n\nNew fingerprint:\n%2$s\n\nServer: %3$s\n\nCompare the new fingerprint with the one shown on your server, for example with: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="error_trusted_certificate_clear_failed">The trusted certificate could not be removed. It is removed the next time you sign in, or use Stop trusting.</string>
     <string name="certificate_trust_save_failed">The certificate could not be saved. Please try again.</string>
     <string name="certificate_trusted_title">Trusted certificate</string>
     <string name="certificate_trusted_until">SHA-256 %1$s, valid until %2$s</string>

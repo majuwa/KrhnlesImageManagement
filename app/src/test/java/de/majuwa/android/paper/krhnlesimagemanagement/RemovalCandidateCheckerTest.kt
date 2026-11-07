@@ -158,6 +158,36 @@ class RemovalCandidateCheckerTest {
         assertEquals(listOf<PinnedCertificate?>(info.pin), seen)
     }
 
+    @Test
+    fun `a pin read that does not finish in time falls back to system trust`() {
+        val httpsConfig = WebDavConfig("https://cloud.example/remote.php/dav/files/u/", "u", "p")
+        val info =
+            TrustedCertificateInfo(
+                ServerCertificate(
+                    ServerOrigin("cloud.example", 443),
+                    "ab".repeat(32).decodeHex(),
+                    "CN=a",
+                    "CN=b",
+                    0L,
+                    1L,
+                ),
+                1L,
+            )
+        val seen = mutableListOf<PinnedCertificate?>()
+        val checker =
+            DefaultRemovalCandidateChecker(
+                context.contentResolver,
+                ownPackage,
+                FakeTrustedCertificateRepository(info).apply { hangRead = true },
+                { cfg, pin ->
+                    seen += pin
+                    WebDavClient(cfg, pin)
+                },
+            )
+        runBlocking { checker.check(emptyList(), httpsConfig) { _, _ -> } }
+        assertEquals(listOf<PinnedCertificate?>(null), seen)
+    }
+
     // ── validatedMediaUri ───────────────────────────────────────────────────
 
     @Test

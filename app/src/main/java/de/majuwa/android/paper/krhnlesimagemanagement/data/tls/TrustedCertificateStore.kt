@@ -10,12 +10,14 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.decodeHex
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 
 internal const val TRUSTED_CERTIFICATES_DATASTORE_NAME = "trusted_certificates"
@@ -84,7 +86,14 @@ class TrustedCertificateStore internal constructor(
     constructor(context: Context) : this(context.applicationContext.trustedCertificatesDataStore)
 
     override val trustedCertificate: Flow<TrustedCertificateInfo?> =
-        dataStore.data.map { prefs -> prefs[KEY_RECORD]?.let(::parseTrustedCertificate) }
+        dataStore.data
+            .map { prefs -> prefs[KEY_RECORD]?.let(::parseTrustedCertificate) }
+            // An unreadable file means no pin (fail closed: system trust only).
+            .catch { e ->
+                if (e !is IOException) throw e
+                Log.w("TrustedCertificate", "Reading the pin failed: ${e.javaClass.simpleName}")
+                emit(null)
+            }
 
     override suspend fun trust(certificate: ServerCertificate) {
         val record = TrustedCertificateInfo(certificate, System.currentTimeMillis())

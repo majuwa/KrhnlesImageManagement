@@ -24,6 +24,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryReposito
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.withFakeTrustedCertificates
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
@@ -231,7 +232,7 @@ class UploadWorkerRunTest {
                         uploadedPhotos,
                         history,
                         { networkMetered },
-                    )
+                    ).withFakeTrustedCertificates()
                 },
             ).build()
     }

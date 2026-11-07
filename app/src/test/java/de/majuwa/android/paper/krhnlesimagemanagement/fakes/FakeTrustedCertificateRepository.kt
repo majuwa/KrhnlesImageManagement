@@ -31,9 +31,13 @@ class FakeTrustedCertificateRepository(
     var clearCalls = 0
         private set
 
+    var trustCalls = 0
+        private set
+
     val current: TrustedCertificateInfo? get() = state.value
 
     override suspend fun trust(certificate: ServerCertificate) {
+        trustCalls++
         failure?.let { throw it }
         if (hang) kotlinx.coroutines.awaitCancellation()
         state.value = TrustedCertificateInfo(certificate, 1L)
@@ -45,3 +49,8 @@ class FakeTrustedCertificateRepository(
         state.value = null
     }
 }
+
+/** Gives a test worker an in-memory pin store (no pin) instead of the process-wide DataStore. */
+fun de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker.withFakeTrustedCertificates(
+    trusted: TrustedCertificateRepository = FakeTrustedCertificateRepository(),
+) = apply { trustedCertificates = trusted }
