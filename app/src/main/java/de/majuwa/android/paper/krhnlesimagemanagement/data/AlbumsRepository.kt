@@ -3,6 +3,9 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerTrust
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -53,15 +56,16 @@ internal const val ALBUMS_READ_TIMEOUT_MS: Long = 60_000
 
 class AlbumsRepository internal constructor(
     private val config: WebDavConfig,
+    private val pin: PinnedCertificate?,
     private val limits: PropfindListingLimits,
     private val maxThumbnailBytes: Long = MAX_THUMBNAIL_BYTES,
     readTimeoutMillis: Long = ALBUMS_READ_TIMEOUT_MS,
     private val memoriesCheckTimeoutMs: Long = MEMORIES_CHECK_TIMEOUT_MS,
     private val memoriesRetryBackoffMs: Long = MEMORIES_RETRY_BACKOFF_MS,
 ) : AlbumsRepositoryContract {
-    constructor(config: WebDavConfig) : this(config, PropfindListingLimits())
+    constructor(config: WebDavConfig, pin: PinnedCertificate?) : this(config, pin, PropfindListingLimits())
 
-    private val webDavClient = WebDavClient(config)
+    private val webDavClient = WebDavClient(config, pin)
     private val baseHttpUrl: HttpUrl =
         requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
 
@@ -80,8 +84,7 @@ class AlbumsRepository internal constructor(
             }.build()
 
     private val client: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        serverHttpClientBuilder(ServerTrust(pin))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
             .addInterceptor { chain ->

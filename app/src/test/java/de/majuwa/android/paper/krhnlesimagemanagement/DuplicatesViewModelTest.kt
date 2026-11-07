@@ -12,6 +12,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySourc
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.RecordingPhotoDeletionLauncher
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -164,7 +165,8 @@ class DuplicatesViewModelTest {
             val invalidUrl =
                 AlbumsRepositoryProvider(
                     FakeCredentialRepository(WebDavConfig(url = "not a url", username = "u", password = "p")),
-                ) { throw IllegalArgumentException("Invalid WebDAV URL") }
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             viewModel.scan(source = invalidUrl)
             advanceUntilIdle()
@@ -175,7 +177,11 @@ class DuplicatesViewModelTest {
     @Test
     fun `missing credentials are a typed error`() =
         runTest(testDispatcher) {
-            val loggedOut = AlbumsRepositoryProvider(FakeCredentialRepository(WebDavConfig())) { fakeRepo }
+            val loggedOut =
+                AlbumsRepositoryProvider(
+                    FakeCredentialRepository(WebDavConfig()),
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> fakeRepo }
 
             viewModel.scan(source = loggedOut)
             advanceUntilIdle()

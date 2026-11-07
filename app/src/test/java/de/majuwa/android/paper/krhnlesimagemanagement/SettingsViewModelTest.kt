@@ -6,6 +6,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveExcepti
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
@@ -72,6 +73,7 @@ class SettingsViewModelTest {
                 credentialStore = fakeCredentials,
                 uploadedPhotosRepository = fakeUploadedPhotos,
                 verifiedUploadsRepository = fakeVerifiedUploads,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             )
     }
 
@@ -197,7 +199,8 @@ class SettingsViewModelTest {
     ) = SettingsViewModel(
         application = RuntimeEnvironment.getApplication() as Application,
         credentialStore = credentials,
-        connectionTester = tester,
+        connectionTester = { config, _ -> tester(config) },
+        trustedCertificates = FakeTrustedCertificateRepository(),
     )
 
     @Test
@@ -327,7 +330,8 @@ class SettingsViewModelTest {
             credentialStore = fakeCredentials,
             uploadedPhotosRepository = fakeUploadedPhotos,
             verifiedUploadsRepository = fakeVerifiedUploads,
-            connectionTester = tester,
+            connectionTester = { config, _ -> tester(config) },
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     @Test
@@ -730,6 +734,7 @@ class SettingsViewModelTest {
                     credentialStore = lagging,
                     uploadedPhotosRepository = fakeUploadedPhotos,
                     verifiedUploadsRepository = fakeVerifiedUploads,
+                    trustedCertificates = FakeTrustedCertificateRepository(),
                 )
             advanceUntilIdle()
             assertEquals(CredentialCorruption.KEY_INVALIDATED, vm.uiState.value.credentialProblem)

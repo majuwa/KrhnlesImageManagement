@@ -11,6 +11,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialCipher
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.credentialDataStore
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.SoftwareKeyProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
@@ -394,7 +395,12 @@ class CredentialStoreTest {
             Dispatchers.setMain(UnconfinedTestDispatcher())
             try {
                 store.save("https://cloud.example.com/dav/", "user", "secret")
-                val viewModel = SettingsViewModel(ApplicationProvider.getApplicationContext(), store)
+                val viewModel =
+                    SettingsViewModel(
+                        ApplicationProvider.getApplicationContext(),
+                        store,
+                        trustedCertificates = FakeTrustedCertificateRepository(),
+                    )
                 withContext(Dispatchers.Default) {
                     withTimeout(AWAIT_TIMEOUT_MS) { while (!viewModel.uiState.value.isLoggedIn) delay(10) }
                 }

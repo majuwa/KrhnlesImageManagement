@@ -15,6 +15,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadedPhotosStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateInfo
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
@@ -28,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import okio.ByteString
 import kotlin.coroutines.cancellation.CancellationException
 
 data class SettingsUiState(
@@ -56,6 +64,24 @@ data class SettingsUiState(
     val verifyByDownload: Boolean = false,
     /** Non-null when credentials are stored but cannot be decrypted; the UI explains why the user must log in again. */
     val credentialProblem: CredentialCorruption? = null,
+    /** The trusted (pinned) certificate of the configured origin, if any. */
+    val trustedCertificate: TrustedCertificateInfo? = null,
+    /** A captured certificate awaiting the user's decision (from the connection test). */
+    val certificateReview: CertificateReview? = null,
+    /** True while confirming the trust or stopping it. */
+    val trustInProgress: Boolean = false,
+    /** True when storing or removing the pin failed or timed out. */
+    val trustSaveFailed: Boolean = false,
+)
+
+/**
+ * A certificate captured by the connection test. [changed] = a different certificate is pinned for
+ * the origin; [previousSha256] is that pin. Compared by identity to tell whether a review is still current.
+ */
+class CertificateReview(
+    val certificate: ServerCertificate,
+    val changed: Boolean,
+    val previousSha256: ByteString?,
 )
 
 private const val TAG = "SettingsViewModel"
@@ -74,14 +100,30 @@ class SettingsViewModel
             UploadedPhotosStore(application),
         private val verifiedUploadsRepository: VerifiedUploadsRepositoryContract =
             VerifiedUploadsStore(application),
-        private val connectionTester: suspend (WebDavConfig) -> Result<Unit> = { config ->
-            WebDavClient(config).testConnection()
+        private val trustedCertificates: TrustedCertificateRepository =
+            TrustedCertificateStore(application),
+        private val connectionTester: suspend (WebDavConfig, PinnedCertificate?) -> Result<Unit> = { config, pin ->
+            WebDavClient(config, pin).testConnection()
         },
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
         private var pendingBlurSaves = 0
+
+        /** Review confirmation and "Stop trusting" (guarded one-shots). */
+        val certificateTrust: CertificateTrustController =
+            CertificateTrustController(
+                scope = viewModelScope,
+                uiState = _uiState,
+                credentialStore = credentialStore,
+                trustedCertificates = trustedCertificates,
+                onTrusted = { testConnection() },
+            )
+
+        // Raw stored certificate and configured URL; the state shows the certificate only for the configured origin.
+        private var storedCertificate: TrustedCertificateInfo? = null
+        private var configuredUrl: String = ""
 
         private val _openBrowserEvent = MutableStateFlow<String?>(null)
         val openBrowserEvent: StateFlow<String?> = _openBrowserEvent.asStateFlow()
@@ -90,6 +132,7 @@ class SettingsViewModel
             viewModelScope.launch {
                 var lastConnection: Triple<String, String, String>? = null
                 credentialStore.webDavConfig.collect { config ->
+                    configuredUrl = config.url
                     val connection = Triple(config.url, config.username, config.password)
                     // A result (or a running test) for other credentials/server must not survive the change.
                     if (lastConnection != null && connection != lastConnection) cancelConnectionTest()
@@ -100,8 +143,15 @@ class SettingsViewModel
                             username = config.username,
                             baseFolder = config.baseFolder,
                             isLoggedIn = config.isValid,
+                            trustedCertificate = storedCertificate.pinnedFor(config.url),
                         )
                     }
+                }
+            }
+            viewModelScope.launch {
+                trustedCertificates.trustedCertificate.collect { stored ->
+                    storedCertificate = stored
+                    _uiState.update { it.copy(trustedCertificate = stored.pinnedFor(configuredUrl)) }
                 }
             }
             viewModelScope.launch {
@@ -184,17 +234,12 @@ class SettingsViewModel
                 } finally {
                     pendingBlurSaves--
                 }
-                if (failed && pendingBlurSaves == 0) restorePersistedBlurSensitivity()
-            }
-        }
-
-        private suspend fun restorePersistedBlurSensitivity() {
-            val persisted =
-                runCatching { withTimeoutOrNull(BLUR_RESTORE_TIMEOUT_MS) { credentialStore.blurSensitivity.first() } }
-                    .onFailure { if (it is CancellationException) throw it }
-                    .getOrNull()
-            _uiState.update {
-                it.copy(blurSensitivity = persisted ?: it.blurSensitivity, blurSensitivitySaveFailed = true)
+                if (failed && pendingBlurSaves == 0) {
+                    val persisted = readPersistedBlurSensitivity(credentialStore)
+                    _uiState.update {
+                        it.copy(blurSensitivity = persisted ?: it.blurSensitivity, blurSensitivitySaveFailed = true)
+                    }
+                }
             }
         }
 
@@ -300,10 +345,18 @@ class SettingsViewModel
             testConnectionJob =
                 viewModelScope.launch {
                     _uiState.update { it.copy(isTesting = true, testResult = null) }
-                    val result = runConnectionTest(credentialStore, connectionTester)
+                    val result = runConnectionTest(credentialStore, trustedCertificates, connectionTester)
                     // A test cancelled by logout or a config change must never publish its stale result.
                     ensureActive()
-                    _uiState.update { it.copy(isTesting = false, testResult = result) }
+                    val review = result.toReview()
+                    _uiState.update {
+                        it.copy(
+                            isTesting = false,
+                            testResult = result,
+                            certificateReview = review,
+                            trustSaveFailed = false,
+                        )
+                    }
                 }
         }
 
@@ -311,7 +364,10 @@ class SettingsViewModel
         private fun cancelConnectionTest() {
             testConnectionJob?.cancel()
             testConnectionJob = null
-            _uiState.update { it.copy(isTesting = false, testResult = null) }
+            certificateTrust.cancel()
+            _uiState.update {
+                it.copy(isTesting = false, testResult = null, certificateReview = null, trustInProgress = false)
+            }
         }
 
         fun logout() {
@@ -320,6 +376,7 @@ class SettingsViewModel
                 // Verified records first: they make local photos removable. One failing clear never
                 // skips the others.
                 clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
+                clearLogged("trusted certificate") { trustedCertificates.clear() }
                 clearLogged("credentials") { credentialStore.clear() }
                 clearLogged("uploaded markers") { uploadedPhotosRepository.clear() }
                 _uiState.update { SettingsUiState() }
@@ -345,6 +402,12 @@ class SettingsViewModel
                 if (previous == null || previous.url != url || previous.username != username) {
                     clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
                 }
+                // A pin belongs to one origin: another server (or an unreadable previous config) drops it
+                // before the new credentials are written; same-origin changes keep it.
+                val newOrigin = ServerOrigin.of(url)
+                if (previous == null || newOrigin == null || ServerOrigin.of(previous.url) != newOrigin) {
+                    clearLogged("trusted certificate") { trustedCertificates.clear() }
+                }
                 credentialStore.save(url, username, password)
                 true
             } catch (e: CredentialSaveException) {
@@ -354,6 +417,32 @@ class SettingsViewModel
                 }
                 false
             }
+    }
+
+private suspend fun readPersistedBlurSensitivity(credentialStore: CredentialRepository): BlurSensitivity? =
+    runCatching { withTimeoutOrNull(BLUR_RESTORE_TIMEOUT_MS) { credentialStore.blurSensitivity.first() } }
+        .onFailure { if (it is CancellationException) throw it }
+        .getOrNull()
+
+private fun TrustedCertificateInfo?.pinnedFor(serverUrl: String): TrustedCertificateInfo? =
+    this?.takeIf {
+        pinFor(serverUrl) !=
+            null
+    }
+
+private fun ConnectionTestResult.toReview(): CertificateReview? =
+    when (this) {
+        is ConnectionTestResult.UntrustedCertificate -> {
+            CertificateReview(certificate, changed = false, previousSha256 = null)
+        }
+
+        is ConnectionTestResult.CertificateChanged -> {
+            certificate?.let { CertificateReview(it, changed = true, previousSha256 = previousSha256) }
+        }
+
+        else -> {
+            null
+        }
     }
 
 private fun normalizeUrl(url: String): String {
@@ -366,14 +455,15 @@ private fun isExplicitHttp(url: String): Boolean = url.trim().lowercase().starts
 /** Runs the check; returns a result for every outcome and only throws on cancellation. */
 private suspend fun runConnectionTest(
     credentialStore: CredentialRepository,
-    connectionTester: suspend (WebDavConfig) -> Result<Unit>,
+    trustedCertificates: TrustedCertificateRepository,
+    connectionTester: suspend (WebDavConfig, PinnedCertificate?) -> Result<Unit>,
 ): ConnectionTestResult =
     runCatching {
         val config = credentialStore.webDavConfig.first()
         if (!config.isValid) {
             ConnectionTestResult.NotConfigured
         } else {
-            connectionTester(config).getOrThrow()
+            connectionTester(config, trustedCertificates.pinFor(config.url)).getOrThrow()
             ConnectionTestResult.Success
         }
     }.getOrElse { failure ->

@@ -53,7 +53,7 @@ class ChunkedUploaderTest {
                 }
             }
         server.start()
-        client = WebDavClient(WebDavConfig(server.url("/remote.php/dav/files/u/").toString(), "u", "p", ""))
+        client = WebDavClient(WebDavConfig(server.url("/remote.php/dav/files/u/").toString(), "u", "p", ""), null)
         val locations = checkNotNull(client.chunkedLocations("Trip", "clip.mp4"))
         request = ChunkedRequest("Trip", "clip.mp4", locations, requestServerHash = false)
         binding = chunkedBinding(locations.collectionUrl, locations.destinationUrl)

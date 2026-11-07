@@ -52,6 +52,7 @@ class WebDavClientTest {
                     username = "testuser",
                     password = "testpass",
                 ),
+                null,
             )
     }
 

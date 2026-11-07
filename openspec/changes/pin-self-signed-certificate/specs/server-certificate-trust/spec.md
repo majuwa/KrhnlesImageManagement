@@ -49,7 +49,7 @@ A pinned certificate SHALL be accepted only when the connection uses `https` to 
 - **THEN** the connection fails
 
 ### Requirement: All server connections apply the same trust rules
-The WebDAV operations (listing, folder creation, upload, rename, deletion, size checks, verification downloads), album thumbnails and previews, the image loader, the upload worker, the uploaded-photo removal check and the Nextcloud login flow SHALL all apply the same trust rules. A connection SHALL never reuse a TLS session or pooled connection established under a pin that has since been removed or replaced.
+The WebDAV operations (listing, folder creation, upload incl. chunked upload, chunk assembly and abort, rename, deletion, size checks, verification downloads), album thumbnails and previews, the image loader, the upload worker and the uploaded-photo removal check SHALL all apply the same trust rules. The Nextcloud login flow SHALL apply them only if its library accepts a client provided by the app; otherwise it SHALL rely on the system trust store only and SHALL never use a pin.
 
 #### Scenario: Background upload to a pinned server
 - **WHEN** an upload runs in the background against a configured server whose certificate is pinned
@@ -59,12 +59,19 @@ The WebDAV operations (listing, folder creation, upload, rename, deletion, size 
 - **WHEN** the user trusts the server certificate and then opens an album
 - **THEN** the album list and its thumbnails load from the pinned server
 
+### Requirement: A removed or replaced pin takes effect without stale trust
+A connection SHALL never reuse a TLS session or pooled connection established under a pin that has since been removed or replaced. A running background upload SHALL apply a removed or replaced pin no later than from its next photo on.
+
 #### Scenario: Pin removed while connections are open
 - **WHEN** the pin is removed (stop trusting, logout or server change) after connections to the server were made
 - **THEN** the next request performs a full certificate check and fails for the self-signed server
 
+#### Scenario: Pin removed during a background upload
+- **WHEN** the user stops trusting the certificate while a background upload of several photos to the self-signed server is running
+- **THEN** the photos that start after the removal are not uploaded over the formerly pinned connection and fail with a certificate problem
+
 ### Requirement: Untrusted certificates are captured without trusting them
-When the connection test or the Nextcloud login fails because the server certificate is not trusted, the app SHALL record the leaf certificate presented by the tested origin and still fail the connection. Certificates presented by any other host (for example after a redirect) SHALL NOT be offered for review. Capturing SHALL NOT send credentials or request data over the untrusted connection.
+When the connection test (or, if the login library accepts a client provided by the app, the Nextcloud login) fails because the server certificate is not trusted, the app SHALL record the leaf certificate presented by the tested origin and still fail the connection. Certificates presented by any other host (for example after a redirect) SHALL NOT be offered for review. Capturing SHALL NOT send credentials or request data over the untrusted connection.
 
 #### Scenario: Connection test against a self-signed server
 - **WHEN** the user runs the connection test against a configured `https` server with a self-signed certificate
@@ -149,7 +156,7 @@ When a pin exists for the connection's origin and the server presents a differen
 
 #### Scenario: Connection test after the server certificate was replaced
 - **WHEN** the configured server presents a new self-signed certificate while the old one is pinned
-- **THEN** the test reports "certificate changed" with the new certificate's details for review, and the old pin stays in place until the user trusts the new one
+- **THEN** the test reports "certificate changed" with the new certificate's details and the previously trusted fingerprint for review, together with a warning that an unexpected change can mean the connection is being intercepted, and the old pin stays in place until the user trusts the new one
 
 #### Scenario: Album list after the certificate changed
 - **WHEN** the album list is loaded while the server presents a certificate other than the pinned one
@@ -163,8 +170,19 @@ When a pin exists for the connection's origin and the server presents a differen
 - **WHEN** a pin exists and the server now presents a certificate the system trust store accepts for its host name
 - **THEN** the connection succeeds
 
-### Requirement: The Nextcloud login can trust a self-signed server
-When the Nextcloud login fails because the entered server's certificate is untrusted, Settings SHALL offer the same review and confirmation. A confirmed certificate SHALL be used for the rest of that login attempt and SHALL be persisted only if the credentials are saved for that same origin.
+### Requirement: The Nextcloud login never weakens trust
+While the login library does not accept a client provided by the app, the Nextcloud login SHALL use the system trust store only: it SHALL NOT use or store a pin, SHALL NOT offer a certificate review, and a self-signed server SHALL fail the login. Manual configuration followed by the connection test SHALL remain the way to trust a self-signed server.
+
+#### Scenario: Login against a self-signed server without library support
+- **WHEN** the user starts the Nextcloud login for a server with a self-signed certificate and the login library uses its own client
+- **THEN** the login fails, no certificate is offered for review and no pin is stored
+
+#### Scenario: Login with an existing pin without library support
+- **WHEN** a certificate is pinned for the configured self-signed server and the user starts the Nextcloud login for that server
+- **THEN** the login does not use the pin and fails, and the existing pin is left unchanged
+
+### Requirement: The Nextcloud login can trust a self-signed server (only with library support)
+This requirement applies only once the login library accepts a client provided by the app. When the Nextcloud login fails because the entered server's certificate is untrusted, Settings SHALL offer the same review and confirmation. A confirmed certificate SHALL be used for the rest of that login attempt and SHALL be persisted only after the credentials were saved successfully for that same origin.
 
 #### Scenario: Login against a self-signed server
 - **WHEN** the user starts the Nextcloud login for a self-signed server, trusts the certificate after review and completes the login in the browser

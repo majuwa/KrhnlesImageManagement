@@ -16,6 +16,8 @@
     <string name="connection_test_success">Connection successful!</string>
     <string name="connection_test_not_configured">Not configured.</string>
     <string name="connection_test_error_certificate">Secure connection failed: the server\'s certificate is not trusted (it may be self-signed or expired).</string>
+    <string name="connection_test_error_certificate_untrusted">The server\'s certificate is not trusted (it may be self-signed or expired). Review it below to decide whether to trust it.</string>
+    <string name="connection_test_error_certificate_changed">The server\'s certificate changed since you trusted it. Review it below.</string>
     <string name="connection_test_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
     <string name="connection_test_error_unreachable">Could not reach the server. Check the address and that the server is online.</string>
     <string name="connection_test_error_timeout">The server did not respond in time. Please try again.</string>
@@ -219,7 +221,8 @@
     <string name="albums_error_not_configured">You are not logged in. Log in under Settings to see your albums.</string>
     <string name="albums_error_invalid_url">The server address is not a valid URL. Check it in Settings and log in again.</string>
     <string name="albums_error_configuration_changed">Your server settings changed. Go back and open the album again.</string>
-    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted (it may be self-signed or expired).</string>
+    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted. Review it with Test Connection in Settings.</string>
+    <string name="albums_error_certificate_changed">The server\'s certificate changed. Review it with Test Connection in Settings before trying again.</string>
     <string name="albums_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
     <string name="albums_error_unreachable">Could not reach the server. Check your internet connection and that the server is online.</string>
     <string name="albums_error_timeout">The server did not respond in time. Please try again.</string>
@@ -339,6 +342,7 @@
     <string name="upload_error_not_configured">no server is configured. Open Settings and connect your server first.</string>
     <string name="upload_failure_too_large">A file is too large for the server.</string>
     <string name="upload_failure_verification">A file could not be verified on the server.</string>
+    <string name="upload_failure_certificate_changed">The server\'s certificate changed. Review it in Settings.</string>
     <string name="upload_failure_storage_full">The server storage is full.</string>
     <string name="upload_failure_interrupted">The system stopped the upload repeatedly. Retry it later.</string>
     <!-- Result notification text: %1$s = counts (or a first reason), %2$s = the (next) failure reason. -->
@@ -357,4 +361,21 @@
     <string name="onboarding_overview_body">Pick the photos you want to keep, give them an occasion name and upload them to your own Nextcloud or WebDAV server. Uploads continue in the background.</string>
     <string name="onboarding_connect_title">Connect your server</string>
     <string name="onboarding_connect_body">Open Settings and log in with your Nextcloud account, or enter your WebDAV address and app password. You can skip this and set it up later.</string>
+    <string name="certificate_review_title">Server certificate</string>
+    <string name="certificate_review_fingerprint">SHA-256 fingerprint</string>
+    <string name="certificate_review_previous_fingerprint">Previously trusted fingerprint</string>
+    <string name="certificate_review_subject">Subject</string>
+    <string name="certificate_review_issuer">Issuer</string>
+    <string name="certificate_review_validity">Valid from %1$s until %2$s</string>
+    <string name="certificate_review_origin">Would be trusted only for %1$s</string>
+    <string name="certificate_review_warning">Anyone who holds this certificate\'s private key can read everything you send to this server. Trust it only if the fingerprint matches the one on your server.</string>
+    <string name="certificate_review_changed_warning">If you did not replace the server certificate yourself, someone may be intercepting the connection. Do not trust it unless you are sure.</string>
+    <string name="certificate_review_not_valid">This certificate has expired or is not valid yet, so it cannot be trusted.</string>
+    <string name="action_trust_certificate">Trust this certificate</string>
+    <string name="certificate_trust_dialog_title">Trust this certificate?</string>
+    <string name="certificate_trust_dialog_body">Fingerprint:\n%1$s\n\nServer: %2$s\n\nCompare the fingerprint with the one shown on your server, for example with: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="certificate_trust_save_failed">The certificate could not be saved. Please try again.</string>
+    <string name="certificate_trusted_title">Trusted certificate</string>
+    <string name="certificate_trusted_until">SHA-256 %1$s, valid until %2$s</string>
+    <string name="action_stop_trusting">Stop trusting</string>
 </resources>

@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -60,6 +61,7 @@ class SettingsViewModelVerifiedUploadsTest {
                 credentialStore = fakeCredentials,
                 uploadedPhotosRepository = fakeUploadedPhotos,
                 verifiedUploadsRepository = fakeVerifiedUploads,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             )
     }
 

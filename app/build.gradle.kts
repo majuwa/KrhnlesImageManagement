@@ -112,6 +112,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     testImplementation(libs.turbine)
     testImplementation(libs.robolectric)
     testImplementation(libs.workmanager.testing)

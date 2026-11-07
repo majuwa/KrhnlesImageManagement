@@ -4,6 +4,9 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.util.Log
 import androidx.core.net.toUri
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.model.mediaItemId
@@ -126,7 +129,8 @@ private class ServerUnreachableAbort : Exception("Server unreachable")
 class DefaultRemovalCandidateChecker(
     private val resolver: ContentResolver,
     private val ownPackage: String,
-    private val clientFactory: (WebDavConfig) -> WebDavClient = ::WebDavClient,
+    private val trustedCertificates: TrustedCertificateRepository,
+    private val clientFactory: (WebDavConfig, PinnedCertificate?) -> WebDavClient = ::WebDavClient,
     private val serverCallTimeoutMs: Long = REMOVAL_SERVER_CALL_TIMEOUT_MS,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : RemovalCandidateChecker {
@@ -135,7 +139,7 @@ class DefaultRemovalCandidateChecker(
         config: WebDavConfig,
         onProgress: (done: Int, total: Int) -> Unit,
     ): RemovalCheck {
-        val client = clientFactory(config)
+        val client = clientFactory(config, trustedCertificates.pinFor(config.url))
         val done = AtomicInteger(0)
         val consecutiveFailures = AtomicInteger(0)
         val permits = Semaphore(REMOVAL_CHECK_PARALLELISM)

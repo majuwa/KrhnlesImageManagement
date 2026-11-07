@@ -20,6 +20,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.chunkForTrash
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -107,7 +108,11 @@ class UploadedRemovalViewModel
         private val verifiedUploads: VerifiedUploadsRepositoryContract = VerifiedUploadsStore(application),
         private val credentials: CredentialRepository = CredentialStore(application),
         private val checker: RemovalCandidateChecker =
-            DefaultRemovalCandidateChecker(application.contentResolver, application.packageName),
+            DefaultRemovalCandidateChecker(
+                application.contentResolver,
+                application.packageName,
+                TrustedCertificateStore(application),
+            ),
         private val trasher: LocalMediaTrasher = MediaStoreTrasher(application.contentResolver),
         /** Matches trashed uris against the records off the main thread; tests pass a deterministic one. */
         private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,

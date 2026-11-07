@@ -1,5 +1,8 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -52,11 +55,13 @@ class AlbumsRepositoryUnavailableException(
  */
 class AlbumsRepositoryProvider(
     private val credentialRepo: CredentialRepository,
+    private val trustedCertificates: TrustedCertificateRepository,
     private val lockTimeoutMs: Long = DEFAULT_LOCK_TIMEOUT_MS,
-    private val repoFactory: (WebDavConfig) -> AlbumsRepositoryContract,
+    private val repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract,
 ) : AlbumsRepositorySource {
     private class Cached(
         val config: WebDavConfig,
+        val pin: PinnedCertificate?,
         val generation: Long,
         val repository: AlbumsRepositoryContract,
     )
@@ -83,10 +88,15 @@ class AlbumsRepositoryProvider(
             } catch (e: Exception) {
                 return Result.failure(e)
             }
+        // Read next to the config (bounded, fallback: system trust only) so a removed or replaced
+        // pin rebuilds the repository like a configuration change.
+        val pin = if (config.isValid) trustedCertificates.pinFor(config.url) else null
         cached.get()?.let { entry ->
-            if (entry.generation == buildGeneration && entry.config == config) return Result.success(entry.repository)
+            if (entry.generation == buildGeneration && entry.config == config && entry.pin == pin) {
+                return Result.success(entry.repository)
+            }
         }
-        // outdated configuration: never hand out (or leave running) the old repository
+        // outdated configuration or pin: never hand out (or leave running) the old repository
         cached.getAndSet(null)?.repository?.close()
         if (!config.isValid) {
             return Result.failure(
@@ -95,7 +105,7 @@ class AlbumsRepositoryProvider(
         }
         val repository =
             try {
-                repoFactory(config)
+                repoFactory(config, pin)
             } catch (e: IllegalArgumentException) {
                 return Result.failure(
                     AlbumsRepositoryUnavailableException(
@@ -104,7 +114,7 @@ class AlbumsRepositoryProvider(
                     ),
                 )
             }
-        if (generation.get() == buildGeneration) cached.set(Cached(config, buildGeneration, repository))
+        if (generation.get() == buildGeneration) cached.set(Cached(config, pin, buildGeneration, repository))
         return Result.success(repository)
     }
 

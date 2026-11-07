@@ -6,8 +6,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.DefaultRemovalCandida
 import de.majuwa.android.paper.krhnlesimagemanagement.data.RemovalCandidate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateInfo
 import de.majuwa.android.paper.krhnlesimagemanagement.data.validatedMediaUri
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaStoreProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CancellationException
@@ -21,6 +26,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
+import okio.ByteString.Companion.decodeHex
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -108,13 +114,49 @@ class RemovalCandidateCheckerTest {
     }
 
     private fun checker(timeoutMs: Long = 30_000L) =
-        DefaultRemovalCandidateChecker(context.contentResolver, ownPackage, ::WebDavClient, timeoutMs)
+        DefaultRemovalCandidateChecker(
+            context.contentResolver,
+            ownPackage,
+            FakeTrustedCertificateRepository(),
+            ::WebDavClient,
+            timeoutMs,
+        )
 
     private fun check(
         vararg records: VerifiedUpload,
         timeoutMs: Long = 30_000L,
     ): List<RemovalCandidate> =
         runBlocking { checker(timeoutMs).check(records.toList(), config) { _, _ -> } }.candidates
+
+    @Test
+    fun `the check reads the pin of the configured origin once and hands it to the client factory`() {
+        val httpsConfig = WebDavConfig("https://cloud.example/remote.php/dav/files/u/", "u", "p")
+        val info =
+            TrustedCertificateInfo(
+                ServerCertificate(
+                    ServerOrigin("cloud.example", 443),
+                    "ab".repeat(32).decodeHex(),
+                    "CN=a",
+                    "CN=b",
+                    0L,
+                    Long.MAX_VALUE / 2,
+                ),
+                1L,
+            )
+        val seen = mutableListOf<PinnedCertificate?>()
+        val checker =
+            DefaultRemovalCandidateChecker(
+                context.contentResolver,
+                ownPackage,
+                FakeTrustedCertificateRepository(info),
+                { cfg, pin ->
+                    seen += pin
+                    WebDavClient(cfg, pin)
+                },
+            )
+        runBlocking { checker.check(emptyList(), httpsConfig) { _, _ -> } }
+        assertEquals(listOf<PinnedCertificate?>(info.pin), seen)
+    }
 
     // ── validatedMediaUri ───────────────────────────────────────────────────
 

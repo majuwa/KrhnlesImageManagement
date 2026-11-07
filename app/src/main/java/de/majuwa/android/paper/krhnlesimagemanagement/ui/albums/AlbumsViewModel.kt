@@ -9,6 +9,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContr
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
@@ -52,10 +55,12 @@ class AlbumsViewModel
         application: Application,
         credentialRepo: CredentialRepository =
             CredentialStore(application),
-        repoFactory: (WebDavConfig) -> AlbumsRepositoryContract =
-            { config -> AlbumsRepository(config) },
+        trustedCertificates: TrustedCertificateRepository =
+            TrustedCertificateStore(application),
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract =
+            { config, pin -> AlbumsRepository(config, pin) },
     ) : AndroidViewModel(application) {
-        private val repos = AlbumsRepositoryProvider(credentialRepo, repoFactory = repoFactory)
+        private val repos = AlbumsRepositoryProvider(credentialRepo, trustedCertificates, repoFactory = repoFactory)
 
         override fun onCleared() {
             repos.close()

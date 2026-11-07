@@ -81,6 +81,7 @@ class AlbumsRepositoryTest {
                 password = "testpass",
                 baseFolder = baseFolder,
             ),
+            null,
         )
     }
 

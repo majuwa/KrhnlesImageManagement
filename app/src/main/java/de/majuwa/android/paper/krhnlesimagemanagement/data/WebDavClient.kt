@@ -2,6 +2,14 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateCapture
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateChangedException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateReviewException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerTrust
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.withServerTrust
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -22,18 +30,20 @@ import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class WebDavClient(
     private val config: WebDavConfig,
+    /** The pinned certificate for the configured origin (already filtered), or `null` for system trust only. */
+    private val pin: PinnedCertificate?,
 ) {
     private val userAgent = "Kroehnles-Image-Management/1.0 (Android; ${Build.MANUFACTURER} ${Build.MODEL})"
 
     private val client: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        serverHttpClientBuilder(ServerTrust(pin))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
@@ -114,11 +124,20 @@ class WebDavClient(
                     .method("PROPFIND", null)
                     .header("Depth", "0")
                     .build()
-            val call = client.newCall(request)
+            // A capturing trust snapshot for this one call: an untrusted certificate of the tested
+            // origin is recorded for review, the handshake still fails before any request is sent.
+            val capture = ServerOrigin.of(baseUrl)?.let(::CertificateCapture)
+            val testClient = if (capture != null) client.withServerTrust(ServerTrust(pin, capture)) else client
+            val call = testClient.newCall(request)
             call.timeout().timeout(timeoutMillis, TimeUnit.MILLISECONDS)
-            val (code, message) = call.awaitStatus()
-            if (code !in HTTP_SUCCESS_CODES) {
-                throw WebDavHttpException(code, "Connection failed: HTTP $code $message")
+            try {
+                val (code, message) = call.awaitStatus()
+                if (code !in HTTP_SUCCESS_CODES) {
+                    throw WebDavHttpException(code, "Connection failed: HTTP $code $message")
+                }
+            } catch (e: SSLException) {
+                val captured = capture?.value ?: throw e
+                throw CertificateReviewException(captured.certificate, captured.changed, captured.previousSha256, e)
             }
         }.onFailure { if (it is CancellationException) throw it }
 
@@ -614,6 +633,9 @@ enum class UploadFailure {
     /** The server copy differs from the local file, or the check could not finish. */
     Verification,
 
+    /** A certificate is pinned for the server but it presented a different, untrusted one. */
+    CertificateChanged,
+
     /** Any other failure (network, other status, unreadable file). */
     Other,
 }
@@ -623,11 +645,25 @@ private const val HTTP_INSUFFICIENT_STORAGE = 507
 
 /** Branches on [WebDavHttpException.code] only, never on the message. */
 fun Throwable.toUploadFailure(): UploadFailure =
-    when ((this as? WebDavHttpException)?.code) {
-        HTTP_PAYLOAD_TOO_LARGE -> UploadFailure.TooLarge
-        HTTP_INSUFFICIENT_STORAGE -> UploadFailure.StorageFull
-        else -> UploadFailure.Other
+    when {
+        (this as? WebDavHttpException)?.code == HTTP_PAYLOAD_TOO_LARGE -> {
+            UploadFailure.TooLarge
+        }
+
+        (this as? WebDavHttpException)?.code == HTTP_INSUFFICIENT_STORAGE -> {
+            UploadFailure.StorageFull
+        }
+
+        generateSequence(this) { it.cause }.take(MAX_UPLOAD_CAUSE_DEPTH).any { it is CertificateChangedException } -> {
+            UploadFailure.CertificateChanged
+        }
+
+        else -> {
+            UploadFailure.Other
+        }
     }
+
+private const val MAX_UPLOAD_CAUSE_DEPTH = 10
 
 private fun digestOf(stream: InputStream): RemoteDigest {
     val digest = MessageDigest.getInstance("SHA-256")

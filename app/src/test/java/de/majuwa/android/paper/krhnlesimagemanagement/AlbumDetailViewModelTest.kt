@@ -8,8 +8,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.cash.turbine.test
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailState
@@ -70,13 +72,15 @@ class AlbumDetailViewModelTest {
         viewModel = createViewModel()
     }
 
-    private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract = { fakeRepo }) =
-        AlbumDetailViewModel(
-            application = RuntimeEnvironment.getApplication() as Application,
-            credentialRepo = credentials,
-            repoFactory = repoFactory,
-            backgroundDispatcher = testDispatcher,
-        )
+    private fun createViewModel(
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract = { _, _ -> fakeRepo },
+    ) = AlbumDetailViewModel(
+        application = RuntimeEnvironment.getApplication() as Application,
+        credentialRepo = credentials,
+        repoFactory = repoFactory,
+        backgroundDispatcher = testDispatcher,
+        trustedCertificates = FakeTrustedCertificateRepository(),
+    )
 
     @After
     fun tearDown() {
@@ -140,7 +144,7 @@ class AlbumDetailViewModelTest {
     fun `loadAlbum with a repository factory throwing IllegalArgumentException shows an error instead of crashing`() =
         runTest {
             // e.g. a restored album detail entry whose stored server URL is no longer valid
-            viewModel = createViewModel { throw IllegalArgumentException("Invalid WebDAV URL") }
+            viewModel = createViewModel { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             viewModel.loadAlbum("/Summer/")
             advanceUntilIdle()

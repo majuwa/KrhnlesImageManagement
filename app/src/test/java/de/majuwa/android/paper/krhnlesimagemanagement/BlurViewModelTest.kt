@@ -12,6 +12,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySourc
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.RecordingPhotoDeletionLauncher
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
@@ -168,7 +169,11 @@ class BlurViewModelTest {
     fun `Retry reads the level at its start`() =
         runTest(testDispatcher) {
             scores = listOf(2_000.0, 4_000.0)
-            val loggedOut = AlbumsRepositoryProvider(FakeCredentialRepository(WebDavConfig())) { fakeRepo }
+            val loggedOut =
+                AlbumsRepositoryProvider(
+                    FakeCredentialRepository(WebDavConfig()),
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> fakeRepo }
             viewModel.scan(source = loggedOut)
             advanceUntilIdle()
             assertTrue(viewModel.blurState.value is BlurState.Error)
@@ -330,7 +335,8 @@ class BlurViewModelTest {
             val invalidUrl =
                 AlbumsRepositoryProvider(
                     FakeCredentialRepository(WebDavConfig(url = "not a url", username = "u", password = "p")),
-                ) { throw IllegalArgumentException("Invalid WebDAV URL") }
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             viewModel.scan(source = invalidUrl)
             advanceUntilIdle()
@@ -370,7 +376,11 @@ class BlurViewModelTest {
     @Test
     fun `a new scan request is ignored after an error but Retry starts one`() =
         runTest(testDispatcher) {
-            val loggedOut = AlbumsRepositoryProvider(FakeCredentialRepository(WebDavConfig())) { fakeRepo }
+            val loggedOut =
+                AlbumsRepositoryProvider(
+                    FakeCredentialRepository(WebDavConfig()),
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> fakeRepo }
             viewModel.scan(source = loggedOut)
             advanceUntilIdle()
             assertEquals(BlurState.Error(AlbumsError.NotConfigured), viewModel.blurState.value)

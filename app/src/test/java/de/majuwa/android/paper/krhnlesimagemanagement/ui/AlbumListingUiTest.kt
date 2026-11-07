@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithText
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -59,7 +60,8 @@ class AlbumListingUiTest {
                 FakeCredentialRepository(
                     WebDavConfig(url = "https://cloud.example.com/dav/", username = "user", password = "pass"),
                 ),
-            repoFactory = { fakeRepo },
+            repoFactory = { _, _ -> fakeRepo },
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     private fun showAlbum(viewModel: AlbumDetailViewModel) {

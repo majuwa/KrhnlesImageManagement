@@ -6,6 +6,7 @@ import app.cash.turbine.test
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
@@ -61,7 +62,8 @@ class AlbumsViewModelTest {
             AlbumsViewModel(
                 application = app,
                 credentialRepo = fakeCredentials,
-                repoFactory = { fakeRepo },
+                repoFactory = { _, _ -> fakeRepo },
+                trustedCertificates = FakeTrustedCertificateRepository(),
             )
     }
 
@@ -130,7 +132,8 @@ class AlbumsViewModelTest {
                 AlbumsViewModel(
                     application = RuntimeEnvironment.getApplication() as Application,
                     credentialRepo = fakeCredentials,
-                    repoFactory = { throw IllegalArgumentException("Invalid WebDAV URL") },
+                    repoFactory = { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") },
+                    trustedCertificates = FakeTrustedCertificateRepository(),
                 )
 
             viewModel.loadAlbums()
@@ -377,10 +380,11 @@ class AlbumsViewModelTest {
                 AlbumsViewModel(
                     application = RuntimeEnvironment.getApplication() as Application,
                     credentialRepo = fakeCredentials,
-                    repoFactory = { config ->
+                    repoFactory = { config, _ ->
                         created += config
                         fakeRepo
                     },
+                    trustedCertificates = FakeTrustedCertificateRepository(),
                 )
 
             viewModel.loadAlbums()

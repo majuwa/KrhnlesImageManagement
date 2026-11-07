@@ -70,6 +70,7 @@ class AlbumsRepositoryStreamingTest {
                 username = "testuser",
                 password = "testpass",
             ),
+            null,
             limits,
             maxThumbnailBytes,
             readTimeoutMillis,

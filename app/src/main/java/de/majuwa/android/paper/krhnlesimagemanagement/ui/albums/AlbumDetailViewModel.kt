@@ -12,6 +12,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoDeletionResult
 import de.majuwa.android.paper.krhnlesimagemanagement.data.deletePhotosIndividually
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CoroutineDispatcher
@@ -97,13 +100,15 @@ class AlbumDetailViewModel
         application: Application,
         credentialRepo: CredentialRepository =
             CredentialStore(application),
-        repoFactory: (WebDavConfig) -> AlbumsRepositoryContract =
-            { config -> AlbumsRepository(config) },
+        trustedCertificates: TrustedCertificateRepository =
+            TrustedCertificateStore(application),
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract =
+            { config, pin -> AlbumsRepository(config, pin) },
         /** Resolves the thumbnail URLs of a loaded listing (up to 20,000 photos) off the main thread. */
         private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
     ) : AndroidViewModel(application),
         PhotoDeletionLauncher {
-        private val repos = AlbumsRepositoryProvider(credentialRepo, repoFactory = repoFactory)
+        private val repos = AlbumsRepositoryProvider(credentialRepo, trustedCertificates, repoFactory = repoFactory)
 
         override fun onCleared() {
             repos.close()

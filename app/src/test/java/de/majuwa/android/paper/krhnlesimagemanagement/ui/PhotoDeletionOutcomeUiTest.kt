@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performTouchInput
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -76,9 +77,10 @@ class PhotoDeletionOutcomeUiTest {
         AlbumDetailViewModel(
             application = RuntimeEnvironment.getApplication() as Application,
             credentialRepo = credentials(),
-            repoFactory = { fakeRepo },
+            repoFactory = { _, _ -> fakeRepo },
             // Thumbnail URLs resolved inline: several tests wait for the load before any content is set.
             backgroundDispatcher = Dispatchers.Unconfined,
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     /**
@@ -335,8 +337,9 @@ class PhotoDeletionOutcomeUiTest {
             AlbumDetailViewModel(
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialRepo = credentials,
-                repoFactory = { fakeRepo },
+                repoFactory = { _, _ -> fakeRepo },
                 backgroundDispatcher = Dispatchers.Unconfined,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             )
         val duplicatesViewModel = createDuplicatesViewModel()
         composeTestRule.runOnIdle { viewModel.loadAlbum("/Album/") }

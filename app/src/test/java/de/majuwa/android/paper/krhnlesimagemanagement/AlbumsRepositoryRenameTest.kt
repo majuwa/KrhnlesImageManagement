@@ -47,6 +47,7 @@ class AlbumsRepositoryRenameTest {
                 password = "testpass",
                 baseFolder = baseFolder,
             ),
+            null,
         )
     }
 

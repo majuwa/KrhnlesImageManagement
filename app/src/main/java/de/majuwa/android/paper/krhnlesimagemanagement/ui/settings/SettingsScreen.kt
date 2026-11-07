@@ -252,6 +252,25 @@ private fun LoggedInContent(
         )
     }
 
+    uiState.certificateReview?.let { review ->
+        Spacer(modifier = Modifier.height(8.dp))
+        CertificateReviewCard(
+            review = review,
+            trustInProgress = uiState.trustInProgress,
+            saveFailed = uiState.trustSaveFailed,
+            onTrust = viewModel.certificateTrust::confirm,
+        )
+    }
+
+    uiState.trustedCertificate?.let { info ->
+        Spacer(modifier = Modifier.height(8.dp))
+        TrustedCertificateRow(
+            info,
+            enabled = !uiState.trustInProgress,
+            onStopTrusting = viewModel.certificateTrust::stop,
+        )
+    }
+
     Spacer(modifier = Modifier.height(24.dp))
 
     OutlinedButton(
@@ -554,15 +573,57 @@ private fun WarningBanner(message: String) {
 @Composable
 private fun connectionTestMessage(result: ConnectionTestResult): String =
     when (result) {
-        ConnectionTestResult.Success -> stringResource(R.string.connection_test_success)
-        ConnectionTestResult.NotConfigured -> stringResource(R.string.connection_test_not_configured)
-        ConnectionTestResult.CertificateError -> stringResource(R.string.connection_test_error_certificate)
-        ConnectionTestResult.UnknownHost -> stringResource(R.string.connection_test_error_unknown_host)
-        ConnectionTestResult.ServerUnreachable -> stringResource(R.string.connection_test_error_unreachable)
-        ConnectionTestResult.Timeout -> stringResource(R.string.connection_test_error_timeout)
-        ConnectionTestResult.AuthFailed -> stringResource(R.string.connection_test_error_auth)
-        ConnectionTestResult.NotFound -> stringResource(R.string.connection_test_error_not_found)
-        is ConnectionTestResult.HttpError -> stringResource(R.string.connection_test_error_http, result.code)
-        ConnectionTestResult.InvalidUrl -> stringResource(R.string.connection_test_error_invalid_url)
-        ConnectionTestResult.UnknownError -> stringResource(R.string.connection_test_error_unknown)
+        ConnectionTestResult.Success -> {
+            stringResource(R.string.connection_test_success)
+        }
+
+        ConnectionTestResult.NotConfigured -> {
+            stringResource(R.string.connection_test_not_configured)
+        }
+
+        ConnectionTestResult.CertificateError -> {
+            stringResource(R.string.connection_test_error_certificate)
+        }
+
+        is ConnectionTestResult.UntrustedCertificate -> {
+            stringResource(
+                R.string.connection_test_error_certificate_untrusted,
+            )
+        }
+
+        is ConnectionTestResult.CertificateChanged -> {
+            stringResource(R.string.connection_test_error_certificate_changed)
+        }
+
+        ConnectionTestResult.UnknownHost -> {
+            stringResource(R.string.connection_test_error_unknown_host)
+        }
+
+        ConnectionTestResult.ServerUnreachable -> {
+            stringResource(R.string.connection_test_error_unreachable)
+        }
+
+        ConnectionTestResult.Timeout -> {
+            stringResource(R.string.connection_test_error_timeout)
+        }
+
+        ConnectionTestResult.AuthFailed -> {
+            stringResource(R.string.connection_test_error_auth)
+        }
+
+        ConnectionTestResult.NotFound -> {
+            stringResource(R.string.connection_test_error_not_found)
+        }
+
+        is ConnectionTestResult.HttpError -> {
+            stringResource(R.string.connection_test_error_http, result.code)
+        }
+
+        ConnectionTestResult.InvalidUrl -> {
+            stringResource(R.string.connection_test_error_invalid_url)
+        }
+
+        ConnectionTestResult.UnknownError -> {
+            stringResource(R.string.connection_test_error_unknown)
+        }
     }

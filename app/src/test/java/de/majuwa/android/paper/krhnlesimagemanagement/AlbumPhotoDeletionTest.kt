@@ -2,8 +2,10 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
@@ -71,19 +73,22 @@ class AlbumPhotoDeletionTest(
             ),
         )
 
-    private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract): AlbumDetailViewModel =
+    private fun createViewModel(
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract,
+    ): AlbumDetailViewModel =
         AlbumDetailViewModel(
             application = app,
             credentialRepo = credentials,
             repoFactory = repoFactory,
             backgroundDispatcher = testDispatcher,
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeRepo = FakeAlbumsRepository().apply { photos = Result.success(allPhotos) }
-        viewModel = createViewModel { fakeRepo }
+        viewModel = createViewModel { _, _ -> fakeRepo }
         duplicatesViewModel = DuplicatesViewModel(analysisDispatcher = testDispatcher)
         blurViewModel = BlurViewModel(analysisDispatcher = testDispatcher)
     }
@@ -260,7 +265,7 @@ class AlbumPhotoDeletionTest(
     @Test
     fun `failure to create the repository reports every photo as failed instead of crashing`() =
         runTest(testDispatcher) {
-            viewModel = createViewModel { throw IllegalArgumentException("Invalid WebDAV URL") }
+            viewModel = createViewModel { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             delete(listOf(photoA, photoB))
             advanceUntilIdle()

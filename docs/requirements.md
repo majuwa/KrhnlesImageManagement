@@ -34,7 +34,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | U-001 | Uploads must use `WorkManager` so they survive app closure or process death.                    | Implemented |
 | U-002 | Photos are uploaded to a WebDAV server (Nextcloud-compatible).                                  | Implemented |
 | U-003 | The upload destination folder is derived from the occasion name provided by the user.           | Implemented |
-| U-004 | Self-signed TLS certificates must be handled gracefully with a clear user-facing error message. | Implemented |
+| U-004 | Untrusted or changed TLS certificates must be handled gracefully with a clear user-facing error message and, for the configured server, an explicit review (S-005). | Implemented |
 | U-005 | A retry mechanism must be available when an upload fails.                                       | Implemented |
 | U-006 | A running upload can be cancelled and resumed later (Cancel in the notification and in the app; uploaded items stay uploaded, the rest is resumed with "Retry Failed"). | Implemented |
 | U-007 | Large files on Nextcloud (at least 50 MiB) are uploaded in resumable 10 MiB chunks: an interrupted file continues after its last confirmed chunk, server body-size limits do not apply, the progress shows the file percentage (issue #69). | Implemented |
@@ -82,6 +82,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | S-002 | Users can configure the base folder on the server.                                              | Implemented |
 | S-003 | Credentials are stored encrypted using `androidx.security:security-crypto`.                    | Implemented |
 | S-004 | Nextcloud Login Flow v2 is supported as an alternative to manual credential entry.              | Implemented |
+| S-005 | Users can trust one self-signed server certificate for the configured server after reviewing and confirming its SHA-256 fingerprint; the trust is scoped to that host and port, can be withdrawn ("Stop trusting"), is removed on logout or server change and is never backed up. | Implemented |
 
 ---
 

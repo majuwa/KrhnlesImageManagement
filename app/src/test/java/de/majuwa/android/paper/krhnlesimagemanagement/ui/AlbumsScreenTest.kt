@@ -19,6 +19,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
@@ -50,7 +51,8 @@ class AlbumsScreenTest {
         return AlbumsViewModel(
             application = app,
             credentialRepo = FakeCredentialRepository(validConfig),
-            repoFactory = { fakeRepo },
+            repoFactory = { _, _ -> fakeRepo },
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
     }
 

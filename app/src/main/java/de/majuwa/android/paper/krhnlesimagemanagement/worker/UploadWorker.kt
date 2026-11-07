@@ -33,6 +33,10 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.data.toUploadFailure
 import de.majuwa.android.paper.krhnlesimagemanagement.data.verifierFor
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
@@ -60,7 +64,7 @@ class UploadWorker internal constructor(
     context: Context,
     params: WorkerParameters,
     private val credentialRepository: CredentialRepository,
-    private val clientFactory: (WebDavConfig) -> WebDavClient,
+    private val clientFactory: (WebDavConfig, PinnedCertificate?) -> WebDavClient,
     private val uploadedPhotos: UploadedPhotosRepositoryContract = UploadedPhotosStore(context.applicationContext),
     private val uploadHistory: UploadHistoryRepository = UploadHistoryStore(context.applicationContext),
     private val isActiveNetworkMetered: () -> Boolean = { isActiveNetworkMetered(context.applicationContext) },
@@ -121,6 +125,10 @@ class UploadWorker internal constructor(
      */
     @VisibleForTesting
     internal var chunking = ChunkedUploadSettings()
+
+    /** The pinned-certificate store; a property (not a constructor parameter) like [chunking], for the detekt limit. */
+    @VisibleForTesting
+    internal var trustedCertificates: TrustedCertificateRepository = TrustedCertificateStore(context.applicationContext)
 
     /**
      * Aborts the chunked transfers saved in a queue with this run's client and folders (each `DELETE`
@@ -226,7 +234,10 @@ class UploadWorker internal constructor(
                 }.onFailure { if (it is CancellationException) throw it }
                     .getOrNull()
             }
-        return config?.takeIf { it.isValid }?.let { transferAborter(it, clientFactory(it), queue) }
+        if (config == null || !config.isValid) return null
+        // Read next to the config re-read, inside NonCancellable (bounded, fallback: system trust only).
+        val pin = withContext(NonCancellable) { trustedCertificates.pinFor(config.url) }
+        return transferAborter(config, clientFactory(config, pin), queue)
     }
 
     private suspend fun runUpload(
@@ -293,7 +304,8 @@ class UploadWorker internal constructor(
         val total = queue.entries.size
         val pending = queue.pendingIndices
         val remoteFolderPaths = remoteFolderPathsOf(config, queue)
-        val client = clientFactory(config)
+        val pin = trustedCertificates.pinFor(config.url)
+        val client = clientFactory(config, pin)
         val aborter = transferAborter(config, client, queue)
         abortTransfers = aborter
         val abortOpen: suspend (UploadQueue) -> Unit = { aborter(it, chunking.abortTimeoutMs) }
@@ -329,8 +341,10 @@ class UploadWorker internal constructor(
         }
 
         // Read once per run; an unreadable setting means no extra downloads.
-        val verifier = verifierFor(config, readVerifyByDownload(credentialRepository.verifyByDownload), client)
-        val upload = UploadContext(client, verifier, config, applicationContext.hasMediaLocationAccess())
+        val downloadEnabled = readVerifyByDownload(credentialRepository.verifyByDownload)
+        val verifier = verifierFor(config, downloadEnabled, client)
+        val upload =
+            UploadContext(client, verifier, config, applicationContext.hasMediaLocationAccess(), pin, downloadEnabled)
         val run = uploadFiles(upload, queue, remoteFolderPaths, queueFile)
         return if (run.interrupted) {
             interrupted(run, queueFile, notificationTag, abortOpen)
@@ -435,11 +449,12 @@ class UploadWorker internal constructor(
      * foreground update interrupts the run, except after the last entry (the batch is complete).
      */
     private suspend fun uploadFiles(
-        upload: UploadContext,
+        initialUpload: UploadContext,
         initialQueue: UploadQueue,
         remoteFolderPaths: List<String>,
         queueFile: File,
     ): UploadRun {
+        var upload = initialUpload
         var queue = initialQueue
         val pending = queue.pendingIndices
         val total = queue.entries.size
@@ -448,6 +463,9 @@ class UploadWorker internal constructor(
 
         for ((n, i) in pending.withIndex()) {
             val entry = queue.entries[i]
+            // A removed or replaced pin applies from the next entry on (a chunked transfer in
+            // progress finishes with its snapshot).
+            upload = upload.withRefreshedPin(trustedCertificates, clientFactory)
             val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry, EntrySlot(i, queueFile, finished, total))
             // The progress of a chunked upload: kept when interrupted, cleared when finished or failed.
             queue = queue.withChunked(i, liveQueue?.entries?.getOrNull(i)?.chunked)
@@ -679,7 +697,24 @@ private class UploadContext(
     val verifier: UploadVerifier,
     val config: WebDavConfig,
     val originalAccess: Boolean,
+    val pin: PinnedCertificate?,
+    val downloadEnabled: Boolean,
 )
+
+/**
+ * Re-reads the pin (bounded, fallback: system trust only); when it differs from the one the client was
+ * built with, a new client and verifier replace them for the remaining entries.
+ */
+private suspend fun UploadContext.withRefreshedPin(
+    trustedCertificates: TrustedCertificateRepository,
+    clientFactory: (WebDavConfig, PinnedCertificate?) -> WebDavClient,
+): UploadContext {
+    val current = trustedCertificates.pinFor(config.url)
+    if (current == pin) return this
+    val newClient = clientFactory(config, current)
+    val newVerifier = verifierFor(config, downloadEnabled, newClient)
+    return UploadContext(newClient, newVerifier, config, originalAccess, current, downloadEnabled)
+}
 
 /**
  * [failure] null = uploaded; [target] is where the upload wrote (null: nothing was sent); [record]

@@ -49,7 +49,7 @@ class WebDavClientChunkedTest {
     }
 
     private fun clientFor(path: String) =
-        WebDavClient(WebDavConfig(url = server.url(path).toString(), username = "alice", password = "pw"))
+        WebDavClient(WebDavConfig(url = server.url(path).toString(), username = "alice", password = "pw"), null)
 
     @Test
     fun `mkcol creates the upload folder with destination and total length`() =

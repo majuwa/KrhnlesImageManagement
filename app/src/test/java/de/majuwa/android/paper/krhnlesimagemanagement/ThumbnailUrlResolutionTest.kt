@@ -68,6 +68,7 @@ class ThumbnailUrlResolutionTest {
             password = "p",
             baseFolder = "",
         ),
+        null,
         PropfindListingLimits(),
         memoriesCheckTimeoutMs = checkTimeoutMs,
         memoriesRetryBackoffMs = backoffMs,
