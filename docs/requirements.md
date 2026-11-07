@@ -51,6 +51,8 @@ implemented behaviour, user feedback, and explicit feature requests.
 | A-003 | Users can long-press to enter selection mode and delete selected photos from the server.        | Implemented |
 | A-004 | A duplicate-finder scan is available per album.                                                 | Implemented |
 | A-005 | A blur-detection scan is available per album.                                                   | Implemented |
+| A-006 | The album list can be searched by name (case- and accent-insensitive); the query survives rotation, tab switches and refresh. | Implemented |
+| A-007 | The album list can be sorted by name (A–Z default, Z–A) or last modified (newest / oldest first, undated last); the choice is remembered and reset on logout. | Implemented |
 
 ---
 

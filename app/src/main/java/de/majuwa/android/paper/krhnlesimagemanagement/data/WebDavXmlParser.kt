@@ -17,6 +17,8 @@ internal data class WebDavEntry(
     val isDirectory: Boolean,
     val contentType: String,
     val fileId: String?,
+    /** Raw `d:getlastmodified` (trimmed), `null` when absent or blank; see [parseWebDavDate]. */
+    val lastModified: String? = null,
 )
 
 /** One `d:response` of a PROPFIND multistatus, as yielded by [PropfindEntryReader]. */
@@ -40,7 +42,10 @@ internal data class PropfindEntryLimits(
     val maxElementsPerEntry: Int = 256,
     /** Nesting levels below `d:response`. */
     val maxEntryDepth: Int = 16,
-    /** Characters of one captured value (`d:href`, `d:displayname`, `d:getcontenttype`, `oc:fileid`). */
+    /**
+     * Characters of one captured value (`d:href`, `d:displayname`, `d:getcontenttype`, `oc:fileid`,
+     * `d:getlastmodified`).
+     */
     val maxTextLength: Int = 8 * 1024,
     /** Document bound: absolute element depth (`d:multistatus` is 1). */
     val maxDocumentDepth: Int = 32,
@@ -258,6 +263,7 @@ private enum class EntryField(
     DISPLAY_NAME(DAV_NS, "displayname"),
     CONTENT_TYPE(DAV_NS, "getcontenttype"),
     FILE_ID(OC_NS, "fileid"),
+    LAST_MODIFIED(DAV_NS, "getlastmodified"),
 }
 
 /** Collects one `d:response` while enforcing [PropfindEntryLimits]. */
@@ -321,6 +327,7 @@ private class ResponseCollector(
                 isDirectory = isDirectory,
                 contentType = values[EntryField.CONTENT_TYPE] ?: "",
                 fileId = fileId,
+                lastModified = values[EntryField.LAST_MODIFIED],
             ),
         )
     }

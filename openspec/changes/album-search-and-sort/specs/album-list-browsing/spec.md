@@ -7,7 +7,7 @@ Lets users find an album in a long Albums tab quickly by searching its name and 
 ## ADDED Requirements
 
 ### Requirement: Albums can be searched by name
-The Albums tab SHALL offer a search field that filters the shown albums by display name while the user types. An album SHALL match when its folded name contains the folded, trimmed query; folding ignores letter case and diacritics. A blank query SHALL show all albums. The query SHALL accept at most 255 characters.
+The Albums tab SHALL offer a search field that filters the shown albums by display name while the user types. An album SHALL match when its folded name contains the folded, trimmed query; folding ignores letter case and diacritics. A blank query SHALL show all albums. The query SHALL accept at most 255 characters. After the user changes the query, the list SHALL be shown from its first matching album.
 
 #### Scenario: Case-insensitive match
 - **WHEN** the albums are "Summer 2025", "Winter" and "SUMMER camp" and the user types "summer"
@@ -16,6 +16,10 @@ The Albums tab SHALL offer a search field that filters the shown albums by displ
 #### Scenario: Diacritics are ignored
 - **WHEN** the albums are "Café Paris", "Straße" and "Zürich" and the user types "cafe", "strasse" or "zur" respectively
 - **THEN** "Café Paris", "Straße" or "Zürich" respectively is shown
+
+#### Scenario: Capital sharp s
+- **WHEN** an album is named "STRAẞE" and the user types "strasse"
+- **THEN** the album is shown
 
 #### Scenario: Blank query
 - **WHEN** the query is empty or consists only of spaces
@@ -28,6 +32,10 @@ The Albums tab SHALL offer a search field that filters the shown albums by displ
 #### Scenario: Overlong input
 - **WHEN** the user pastes 300 characters into the search field
 - **THEN** the field keeps only the first 255 characters
+
+#### Scenario: Typing while scrolled down
+- **WHEN** the user has scrolled down the album list and changes the query
+- **THEN** the filtered list is shown from its first album
 
 ### Requirement: A search without matches is explained
 When albums are loaded but none matches a non-blank query, the Albums tab SHALL show a localized message that no album matches the query, instead of the empty-albums message, and SHALL keep the search field visible so the query can be changed or cleared.
@@ -56,7 +64,7 @@ The search query SHALL survive screen recreation (rotation), process death, swit
 - **THEN** the same query and filtered list are shown
 
 ### Requirement: Albums can be sorted
-The Albums tab SHALL offer a sort menu with the options Name A–Z, Name Z–A, Last modified (newest first) and Last modified (oldest first). Name A–Z SHALL be the default. The chosen option SHALL apply to the filtered list and to every newly loaded list.
+The Albums tab SHALL offer a sort menu with the options Name A–Z, Name Z–A, Last modified (newest first) and Last modified (oldest first). Name A–Z SHALL be the default. The chosen option SHALL apply to the filtered list and to every newly loaded list. After the user selects another option, the list SHALL be shown from its first album.
 
 #### Scenario: Default order
 - **WHEN** the sort was never changed and the server lists "b", "C", "a"
@@ -69,6 +77,10 @@ The Albums tab SHALL offer a sort menu with the options Name A–Z, Name Z–A, 
 #### Scenario: Sort and filter combine
 - **WHEN** Name Z–A is selected and the query is "summer"
 - **THEN** only matching albums are shown, in Z–A order
+
+#### Scenario: Changing the sort while scrolled down
+- **WHEN** the user has scrolled down the album list and selects another sort option
+- **THEN** the newly ordered list is shown from its first album
 
 ### Requirement: Name order is case- and diacritic-insensitive and deterministic
 Name sorting SHALL compare folded names (case and diacritics ignored), independent of the device language. Albums with equal folded names SHALL be ordered by their exact name and then by their address, so the order never depends on the server's listing order.
@@ -108,7 +120,7 @@ The album listing SHALL request each folder's last-modified date and accept it o
 - **THEN** that entry is skipped and the other albums are listed
 
 ### Requirement: The chosen sort is remembered
-The chosen sort option SHALL take effect immediately and SHALL be stored so that it is used again after the app is restarted. If storing fails, the choice SHALL still apply for the rest of the session and no error text from the storage SHALL be shown.
+The chosen sort option SHALL take effect immediately and SHALL be stored so that it is used again after the app is restarted. If storing fails, the choice SHALL still apply for the rest of the session and no error text from the storage SHALL be shown. After a logout the Albums tab SHALL use Name A–Z, also when it stayed open in the background during the logout.
 
 #### Scenario: Restart
 - **WHEN** the user selects Last modified (newest first) and restarts the app
@@ -117,6 +129,10 @@ The chosen sort option SHALL take effect immediately and SHALL be stored so that
 #### Scenario: Storage failure
 - **WHEN** storing the sort option fails
 - **THEN** the list stays sorted by the selected option and the app does not crash
+
+#### Scenario: Logout while the Albums tab is kept
+- **WHEN** the user selected Last modified (newest first), switches to the Photos tab, logs out in Settings and returns to the Albums tab
+- **THEN** the Albums tab uses Name A–Z
 
 ### Requirement: Album management is unchanged by search and sort
 Search and sort SHALL only change which loaded albums are shown and in which order. Opening, renaming and deleting an album, the loading, error and busy states, and Refresh (still ignored while a rename runs) SHALL behave as before and SHALL act on the album the user picked.
@@ -131,10 +147,10 @@ Search and sort SHALL only change which loaded albums are shown and in which ord
 
 #### Scenario: Busy states hide the list
 - **WHEN** the album list is loading, an album is being renamed or deleted
-- **THEN** the progress indicator is shown instead of the list and the search field, as before
+- **THEN** the progress indicator is shown instead of the list and the search field, and the query is kept for when the list is shown again
 
 ### Requirement: Search field and sort menu are accessible
-The search field SHALL have a visible localized label and, while it contains text, a clear button with a localized description. The sort button SHALL have a localized description and announce the current option. Each sort option SHALL be exposed as a radio button with its selected state. All texts SHALL come from string resources; decorative icons SHALL have no description.
+The search field SHALL have a visible localized label and, while it contains text, a clear button with a localized description. The sort button SHALL have a localized description and announce the current option. Each sort option SHALL be exposed as a radio button with its selected state. The no-match message SHALL be announced by screen readers when it appears. All texts SHALL come from string resources; decorative icons SHALL have no description.
 
 #### Scenario: Screen reader on the sort menu
 - **WHEN** a screen reader user opens the sort menu
@@ -143,3 +159,7 @@ The search field SHALL have a visible localized label and, while it contains tex
 #### Scenario: Clearing the query
 - **WHEN** the field contains text and the user activates "Clear search"
 - **THEN** the query is empty and all albums are shown
+
+#### Scenario: No match is announced
+- **WHEN** a screen reader user types a query that no album matches
+- **THEN** the "no albums match" message is announced without moving focus away from the search field

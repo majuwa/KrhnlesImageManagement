@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.graphics.Bitmap
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
@@ -25,6 +26,9 @@ interface CredentialRepository {
     /** Chosen blur sensitivity; Medium while unset or when the stored value is unreadable. */
     val blurSensitivity: Flow<BlurSensitivity>
 
+    /** Chosen album sort; Name A-Z while unset or when the stored value is unreadable. */
+    val albumSort: Flow<AlbumSort>
+
     fun password(): String?
 
     fun isLoggedIn(): Boolean
@@ -45,6 +49,8 @@ interface CredentialRepository {
     suspend fun saveVerifyByDownload(enabled: Boolean)
 
     suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity)
+
+    suspend fun saveAlbumSort(sort: AlbumSort)
 
     suspend fun clear()
 }

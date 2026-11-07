@@ -127,11 +127,17 @@ class AlbumsRepository internal constructor(
         resultOf {
             // Post-processing (href resolution of every entry) stays off the caller's (main) thread.
             withContext(Dispatchers.IO) {
-                executePropfind(baseFolderUrl) { stream, job -> readEntries(stream, job, limits) }
+                executePropfind(baseFolderUrl, ALBUMS_PROPFIND_BODY) { stream, job -> readEntries(stream, job, limits) }
                     .drop(1) // first entry is the directory itself
                     .filter { it.isDirectory }
                     .withSafeHrefsBelow(baseFolderUrl)
-                    .map { RemoteAlbum(displayName = it.displayName, href = it.href) }
+                    .map {
+                        RemoteAlbum(
+                            displayName = it.displayName,
+                            href = it.href,
+                            lastModified = parseWebDavDate(it.lastModified),
+                        )
+                    }
             }
         }
 
@@ -147,7 +153,10 @@ class AlbumsRepository internal constructor(
             val albumUrl = requireSafeHref(albumHref).withoutTrailingSlash()
             coroutineScope {
                 launch { memories.ensureChecked() }
-                executePropfind(albumUrl) { stream, job -> readPhotoListing(stream, albumUrl, job, limits, onProgress) }
+                executePropfind(
+                    albumUrl,
+                    PROPFIND_BODY,
+                ) { stream, job -> readPhotoListing(stream, albumUrl, job, limits, onProgress) }
             }
         }
 
@@ -163,7 +172,7 @@ class AlbumsRepository internal constructor(
                 val oldSegments = albumRelativeSegments(album)
                 val newSegments = oldSegments.dropLast(1) + trimmedName
                 webDavClient.renameDirectory(oldSegments, newSegments).getOrThrow()
-                RemoteAlbum(
+                album.copy(
                     displayName = trimmedName,
                     href = buildAlbumHref(newSegments),
                 )
@@ -320,9 +329,10 @@ class AlbumsRepository internal constructor(
      */
     private suspend fun <T> executePropfind(
         url: HttpUrl,
+        propfindBody: String,
         read: (InputStream, Job) -> T,
     ): T {
-        val body = PROPFIND_BODY.toRequestBody("application/xml; charset=utf-8".toMediaType())
+        val body = propfindBody.toRequestBody("application/xml; charset=utf-8".toMediaType())
         val request =
             Request
                 .Builder()
@@ -419,6 +429,21 @@ class AlbumsRepository internal constructor(
                 <d:displayname/>
                 <d:resourcetype/>
                 <d:getcontenttype/>
+                <oc:fileid/>
+              </d:prop>
+            </d:propfind>
+            """.trimIndent()
+
+        /** Album-folder listing only: [PROPFIND_BODY] plus `d:getlastmodified` (the photo listing stays unchanged). */
+        val ALBUMS_PROPFIND_BODY =
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+              <d:prop>
+                <d:displayname/>
+                <d:resourcetype/>
+                <d:getcontenttype/>
+                <d:getlastmodified/>
                 <oc:fileid/>
               </d:prop>
             </d:propfind>

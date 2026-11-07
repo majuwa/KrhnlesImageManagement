@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialCipher
@@ -13,6 +14,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.credentialDataStore
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.SoftwareKeyProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
@@ -320,6 +322,43 @@ class CredentialStoreTest {
             assertEquals(BlurSensitivity.MEDIUM, store.blurSensitivity.first())
         }
 
+    // ── Album sort ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `album sort defaults to name ascending and round-trips every option`() =
+        runTest {
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+            AlbumSort.entries.forEach { sort ->
+                store.saveAlbumSort(sort)
+                assertEquals(sort, store.albumSort.first())
+            }
+        }
+
+    @Test
+    fun `unknown and wrong-typed stored album sort fall back to name ascending`() =
+        runTest {
+            context.credentialDataStore.edit { it[stringPreferencesKey("album_sort")] = "NEWEST" }
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+
+            context.credentialDataStore.edit { it.remove(stringPreferencesKey("album_sort")) }
+            context.credentialDataStore.edit { it[intPreferencesKey("album_sort")] = 3 }
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+        }
+
+    @Test
+    fun `logout resets the album sort and saving it leaves the credentials version alone`() =
+        runTest {
+            store.save("https://cloud.example.com/dav/", "user", "secret")
+            val versionKey = longPreferencesKey("credentials_version")
+            val before = context.credentialDataStore.data.first()[versionKey]
+
+            store.saveAlbumSort(AlbumSort.MODIFIED_OLDEST)
+
+            assertEquals(before, context.credentialDataStore.data.first()[versionKey])
+            store.clear()
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+        }
+
     @Test
     fun `auto date folders default to off, round trip and are reset by clear`() =
         runTest {
@@ -380,6 +419,7 @@ class CredentialStoreTest {
             store.saveWifiOnly(true)
             store.saveAutoDateFolders(true)
             store.saveVerifyByDownload(true)
+            store.saveAlbumSort(AlbumSort.MODIFIED_NEWEST)
             // Fence: a credentials write is observed (and emitted) only after the earlier writes.
             store.saveBaseFolder("Photos")
             withContext(Dispatchers.Default) { delay(SETTLE_MS) }

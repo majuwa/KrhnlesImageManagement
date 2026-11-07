@@ -12,14 +12,20 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -53,7 +59,7 @@ class AlbumsViewModel
     @JvmOverloads
     constructor(
         application: Application,
-        credentialRepo: CredentialRepository =
+        private val credentialRepo: CredentialRepository =
             CredentialStore(application),
         trustedCertificates: TrustedCertificateRepository =
             TrustedCertificateStore(application),
@@ -68,6 +74,40 @@ class AlbumsViewModel
 
         private val _albumsState = MutableStateFlow(AlbumsState())
         val albumsState: StateFlow<AlbumsState> = _albumsState.asStateFlow()
+
+        /** The stored sort; a failing DataStore read falls back to the default instead of crashing the scope. */
+        private val storedSort: Flow<AlbumSort> =
+            credentialRepo.albumSort.catch { t ->
+                if (t is CancellationException) throw t
+                Log.w(TAG, "Failed to read album sort: ${t.javaClass.simpleName}")
+                emit(AlbumSort.DEFAULT)
+            }
+
+        /** The user's choice of this session until the store confirms it (or while a save keeps failing). */
+        private val sortOverride = MutableStateFlow<AlbumSort?>(null)
+
+        /** Current album sort: the session choice if any, else the stored value (Name A-Z while unset). */
+        val albumSort: StateFlow<AlbumSort> =
+            combine(storedSort, sortOverride) { stored, chosen -> chosen ?: stored }
+                .stateIn(viewModelScope, SharingStarted.Eagerly, AlbumSort.DEFAULT)
+
+        init {
+            // Once the store confirms the choice, later store changes (e.g. the reset by a logout) win again.
+            viewModelScope.launch {
+                storedSort.collect { stored -> sortOverride.update { if (it == stored) null else it } }
+            }
+        }
+
+        /** Applies [sort] at once and persists it; a failed save keeps the choice for this session. */
+        fun setAlbumSort(sort: AlbumSort) {
+            sortOverride.value = sort
+            viewModelScope.launch {
+                runCatching { credentialRepo.saveAlbumSort(sort) }.onFailure { t ->
+                    if (t is CancellationException) throw t
+                    Log.w(TAG, "Failed to save album sort: ${t.javaClass.simpleName}")
+                }
+            }
+        }
 
         private val _renameOutcome = MutableStateFlow<RenameOutcome?>(null)
 

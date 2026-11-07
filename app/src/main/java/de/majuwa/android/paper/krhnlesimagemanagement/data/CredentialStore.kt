@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
@@ -67,6 +68,7 @@ class CredentialStore internal constructor(
         val KEY_BASE_FOLDER = stringPreferencesKey("base_folder")
         val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val KEY_BLUR_SENSITIVITY = stringPreferencesKey("blur_sensitivity")
+        val KEY_ALBUM_SORT = stringPreferencesKey("album_sort")
         val KEY_VERIFY_BY_DOWNLOAD = booleanPreferencesKey("verify_by_download")
 
         /**
@@ -131,6 +133,11 @@ class CredentialStore internal constructor(
     override val blurSensitivity: Flow<BlurSensitivity> =
         context.credentialDataStore.data.map {
             BlurSensitivity.fromStored(it.asMap()[KEY_BLUR_SENSITIVITY] as? String)
+        }
+
+    override val albumSort: Flow<AlbumSort> =
+        context.credentialDataStore.data.map {
+            AlbumSort.fromStored(it.asMap()[KEY_ALBUM_SORT] as? String)
         }
 
     override val isConfigured: Flow<Boolean> =
@@ -202,6 +209,10 @@ class CredentialStore internal constructor(
 
     override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) {
         context.credentialDataStore.edit { it[KEY_BLUR_SENSITIVITY] = sensitivity.name }
+    }
+
+    override suspend fun saveAlbumSort(sort: AlbumSort) {
+        context.credentialDataStore.edit { it[KEY_ALBUM_SORT] = sort.name }
     }
 
     override suspend fun saveAutoDateFolders(enabled: Boolean) {

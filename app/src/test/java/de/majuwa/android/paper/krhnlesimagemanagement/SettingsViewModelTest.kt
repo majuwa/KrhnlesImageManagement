@@ -9,6 +9,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialReposi
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
@@ -804,6 +805,8 @@ class SettingsViewModelTest {
 
         override val blurSensitivity: Flow<BlurSensitivity> = flow { emit(BlurSensitivity.MEDIUM) }
 
+        override val albumSort: Flow<AlbumSort> = flow { emit(AlbumSort.DEFAULT) }
+
         override val isConfigured: Flow<Boolean> =
             flow {
                 emit(false)
@@ -833,6 +836,8 @@ class SettingsViewModelTest {
         override suspend fun saveVerifyByDownload(enabled: Boolean) = Unit
 
         override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) = Unit
+
+        override suspend fun saveAlbumSort(sort: AlbumSort) = Unit
 
         override suspend fun clear() = Unit
     }

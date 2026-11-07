@@ -3,10 +3,12 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
+import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
@@ -18,6 +20,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -394,5 +399,101 @@ class AlbumsViewModelTest {
             advanceUntilIdle()
 
             assertEquals(listOf(validConfig.url, "https://other.example.com/dav/"), created.map { it.url })
+        }
+
+    // ── album sort ──────────────────────────────────────────────────────────
+
+    private fun newViewModel(credentials: CredentialRepository) =
+        AlbumsViewModel(
+            application = RuntimeEnvironment.getApplication() as Application,
+            credentialRepo = credentials,
+            repoFactory = { _, _ -> fakeRepo },
+            trustedCertificates = FakeTrustedCertificateRepository(),
+        )
+
+    @Test
+    fun `album sort starts with the stored value`() =
+        runTest {
+            fakeCredentials.saveAlbumSort(AlbumSort.MODIFIED_OLDEST)
+            val vm = newViewModel(fakeCredentials)
+            advanceUntilIdle()
+
+            assertEquals(AlbumSort.MODIFIED_OLDEST, vm.albumSort.value)
+        }
+
+    @Test
+    fun `setAlbumSort applies and is saved`() =
+        runTest {
+            advanceUntilIdle()
+            viewModel.setAlbumSort(AlbumSort.NAME_DESC)
+
+            advanceUntilIdle()
+            assertEquals(AlbumSort.NAME_DESC, fakeCredentials.albumSort.first())
+            assertEquals(AlbumSort.NAME_DESC, viewModel.albumSort.value)
+        }
+
+    @Test
+    fun `a failing save keeps the selection without crashing`() =
+        runTest {
+            fakeCredentials.albumSortSaveFailure = java.io.IOException("disk full")
+            advanceUntilIdle()
+
+            viewModel.setAlbumSort(AlbumSort.MODIFIED_NEWEST)
+            advanceUntilIdle()
+
+            assertEquals(AlbumSort.MODIFIED_NEWEST, viewModel.albumSort.value)
+            assertEquals(AlbumSort.NAME_ASC, fakeCredentials.albumSort.first())
+        }
+
+    @Test
+    fun `logout after a confirmed save resets the sort in the same view model`() =
+        runTest {
+            advanceUntilIdle()
+            viewModel.setAlbumSort(AlbumSort.MODIFIED_NEWEST)
+            advanceUntilIdle()
+
+            fakeCredentials.clear()
+            advanceUntilIdle()
+
+            assertEquals(AlbumSort.NAME_ASC, viewModel.albumSort.value)
+        }
+
+    @Test
+    fun `a later stored change wins once the choice was confirmed`() =
+        runTest {
+            advanceUntilIdle()
+            viewModel.setAlbumSort(AlbumSort.NAME_DESC)
+            advanceUntilIdle()
+
+            fakeCredentials.emitStoredAlbumSort(AlbumSort.MODIFIED_OLDEST)
+            advanceUntilIdle()
+
+            assertEquals(AlbumSort.MODIFIED_OLDEST, viewModel.albumSort.value)
+        }
+
+    @Test
+    fun `a failing stored flow yields name ascending without crashing`() =
+        runTest {
+            val failing =
+                object : CredentialRepository by fakeCredentials {
+                    override val albumSort: Flow<AlbumSort> = flow { throw java.io.IOException("read") }
+                }
+            val vm = newViewModel(failing)
+            advanceUntilIdle()
+
+            assertEquals(AlbumSort.NAME_ASC, vm.albumSort.value)
+        }
+
+    @Test
+    fun `album list stays in server order whatever the sort`() =
+        runTest {
+            val albums = listOf(RemoteAlbum("B", "/B/"), RemoteAlbum("A", "/A/"))
+            fakeRepo.albums = Result.success(albums)
+            viewModel.setAlbumSort(AlbumSort.NAME_ASC)
+
+            viewModel.loadAlbums()
+            advanceUntilIdle()
+
+            assertEquals(albums, viewModel.albumsState.value.albums)
         }
 }

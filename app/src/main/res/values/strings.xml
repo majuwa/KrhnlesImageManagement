@@ -205,6 +205,14 @@
 
     <!-- Albums -->
     <string name="empty_albums">No albums found.</string>
+    <string name="album_search_label">Search albums</string>
+    <string name="cd_clear_album_search">Clear search</string>
+    <string name="albums_no_match">No albums match “%1$s”</string>
+    <string name="cd_sort_albums">Sort albums</string>
+    <string name="album_sort_name_asc">Name A–Z</string>
+    <string name="album_sort_name_desc">Name Z–A</string>
+    <string name="album_sort_modified_newest">Last modified (newest first)</string>
+    <string name="album_sort_modified_oldest">Last modified (oldest first)</string>
     <string name="empty_upload_history">No upload history yet.</string>
     <string name="dialog_delete_album_title">Delete album?</string>
     <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos from the server? This cannot be undone.</string>

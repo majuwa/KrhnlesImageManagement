@@ -15,7 +15,7 @@ On success the renamed album SHALL replace the old entry in the loaded album lis
 
 #### Scenario: Last-modified date is kept
 - **WHEN** an album with a known last-modified date is renamed while Last modified (newest first) is selected
-- **THEN** the renamed album keeps that date and its place among the dated albums until the next Refresh
+- **THEN** the renamed album keeps that date and its place among the dated albums until the album list is reloaded
 
 #### Scenario: Renamed album no longer matches the query
 - **WHEN** the query is "summer" and the album "Summer" is renamed to "Holiday"

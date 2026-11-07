@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -32,6 +33,26 @@ class FakeCredentialRepository(
     override suspend fun saveVerifyByDownload(enabled: Boolean) {
         verifyByDownloadSaveFailure?.let { throw it }
         verifyByDownloadState.value = enabled
+    }
+
+    private val albumSortState = MutableStateFlow(AlbumSort.DEFAULT)
+
+    override val albumSort: Flow<AlbumSort> = albumSortState
+
+    /** Test helper to read the current album sort synchronously. */
+    fun albumSortValue(): AlbumSort = albumSortState.value
+
+    /** When non-null, [saveAlbumSort] throws this instead of storing anything. */
+    var albumSortSaveFailure: Throwable? = null
+
+    override suspend fun saveAlbumSort(sort: AlbumSort) {
+        albumSortSaveFailure?.let { throw it }
+        albumSortState.value = sort
+    }
+
+    /** Test helper: emits a stored sort without a save (e.g. a change from another screen). */
+    fun emitStoredAlbumSort(sort: AlbumSort) {
+        albumSortState.value = sort
     }
 
     private val blurSensitivityState = MutableStateFlow(initialBlurSensitivity)
@@ -130,6 +151,7 @@ class FakeCredentialRepository(
         autoDateFoldersState.value = false
         verifyByDownloadState.value = false
         blurSensitivityState.value = BlurSensitivity.MEDIUM
+        albumSortState.value = AlbumSort.DEFAULT
     }
 
     /** Test helper: replaces the stored configuration (e.g. a change on another screen). */
