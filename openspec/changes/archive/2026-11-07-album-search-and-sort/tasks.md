@@ -45,3 +45,5 @@
 - [x] 6.2 Run `./gradlew spotlessCheck`, `./gradlew detekt` (no new issues, or ask the user) and `./gradlew lintDebug` (zero issues, no baseline, no suppressions) and verify each passes.
 - [x] 6.3 Run `./gradlew jacocoTestReport` and verify `AlbumListOrdering.kt`, `AlbumSort.kt` and `parseWebDavDate` are fully covered in the report.
 - [ ] 6.4 Manually (also verify that TalkBack announces the "no albums match" message when typing a query without matches, as the live region has no automated check)  Manually (emulator against a Nextcloud test account with ≥ 10 albums incl. accented names and auto date year folders) verify search, all four sort options, sort persistence across restart, reset after logout, TalkBack announcements of the search field and sort menu, and that rename / delete / Refresh behave as before.
+
+> Archive note: manual task 6.4 is intentionally left unticked. It still has to be run on an emulator / device against a Nextcloud test account, including a TalkBack check that the "no albums match" live region is announced.

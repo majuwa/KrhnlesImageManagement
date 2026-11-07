@@ -73,11 +73,23 @@ When the server answers `412 Precondition Failed`, the existing album SHALL stay
 - **THEN** a "server rejected the name or no permission" message is shown
 
 ### Requirement: The album list updates in place
-On success the renamed album SHALL replace the old entry (same position, new name and href) without reloading the album list. While the rename runs the grid is replaced by a progress indicator. Photos inside the album are not reloaded or re-keyed.
+On success the renamed album SHALL replace the old entry in the loaded album list (same position in the loaded list, new name and href, unchanged last-modified date) without reloading the album list. The Albums tab SHALL display it at the position the current sort option and search query give it, and SHALL hide it if its new name does not match the query. While the rename runs the grid is replaced by a progress indicator. Photos inside the album are not reloaded or re-keyed.
 
 #### Scenario: Entry replaced
 - **WHEN** a rename succeeds
 - **THEN** `AlbumsState.albums` contains the new name and href at the old position and no additional album listing was requested
+
+#### Scenario: Renamed album moves to its sorted position
+- **WHEN** Name A–Z is selected, the albums are "Apples", "Berries", "Cherries" and "Apples" is renamed to "Dates"
+- **THEN** the albums are shown as "Berries", "Cherries", "Dates" without an additional album listing
+
+#### Scenario: Last-modified date is kept
+- **WHEN** an album with a known last-modified date is renamed while Last modified (newest first) is selected
+- **THEN** the renamed album keeps that date and its place among the dated albums until the album list is reloaded
+
+#### Scenario: Renamed album no longer matches the query
+- **WHEN** the query is "summer" and the album "Summer" is renamed to "Holiday"
+- **THEN** the renamed album is not shown until the query is changed or cleared, and it is shown under its new name then
 
 ### Requirement: Rename is a guarded one-shot
 At most one rename SHALL run at a time (re-entry ignored while active, no second request). It SHALL be bounded by a 30 s `withTimeoutOrNull` around a cancellable call, convert every failure into a result, and always release its busy state. After a timeout the message SHALL say the rename may still have completed and the album list SHALL be reloaded automatically. Refresh SHALL be ignored while a rename runs. A cancelled rename SHALL NOT publish a result.
