@@ -1,5 +1,7 @@
 # Tasks
 
+> Archive note: tasks 1.1, 1.2, 7.1 and 7.2 (optional Nextcloud login library extension, waiting for the library change by the user) and the manual checks 8.1 / 8.2 stay unticked. 8.1: test, spotlessCheck and detekt are green; lintDebug reports only the 3 unrelated NewerVersionAvailable / AndroidGradlePluginVersion findings (Gradle 9.9.0, AGP 9.5.1, spotless 8.11.0). Task 9.7 lists known limits.
+
 ## 0. Decisions before implementation
 
 - [x] 0.1 Ask the user whether `PinAwareTrustManager` may carry exactly one `@SuppressLint("CustomX509TrustManager")` (design D10; lint 32.5 flags every custom `X509TrustManager`, `warningsAsErrors = true`); confirm with a throw-away local spike (not committed) that `./gradlew lintDebug` reports `CustomX509TrustManager` for a minimal `X509ExtendedTrustManager` subclass that delegates; verify the answer is recorded in the change (design Open Questions) before starting 2.3 — on refusal stop and re-plan
