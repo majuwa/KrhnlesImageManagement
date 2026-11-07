@@ -4,6 +4,7 @@ import android.net.Uri
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.MAX_OCCASION_SUGGESTIONS
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.MAX_REMOTE_OCCASION_NAMES
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.filterOccasionSuggestions
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.mergeOccasionCandidates
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.recentOccasionNames
@@ -71,6 +72,28 @@ class OccasionSuggestionsTest {
     fun merge_remoteAppendedAlphabeticallyAndDeduped() {
         val result = mergeOccasionCandidates(listOf("Zed"), listOf("beta", "Alpha", "ALPHA", "zed"))
         assertEquals(listOf("zed", "ALPHA", "beta"), result)
+    }
+
+    @Test
+    fun merge_excludesFourDigitRemoteYearFoldersOnly() {
+        val result = mergeOccasionCandidates(listOf("2026"), listOf("2025", "2026", "12345", "202", "Trip 2026"))
+        assertEquals(listOf("2026", "12345", "202", "Trip 2026"), result)
+    }
+
+    @Test
+    fun merge_capsRemoteNamesAfterOrdering() {
+        val remote = (1..2_000).map { "N%05d".format(it) }.reversed()
+        val result = mergeOccasionCandidates(emptyList(), remote)
+        assertEquals(MAX_REMOTE_OCCASION_NAMES, result.size)
+        assertEquals("N00001", result.first())
+        assertEquals("N01000", result.last())
+    }
+
+    @Test
+    fun filter_usesPrecomputedKeys() {
+        val c = listOf("Summer Trip", "Trip to Rome")
+        val keys = c.map { it.lowercase() }
+        assertEquals(listOf("Trip to Rome", "Summer Trip"), filterOccasionSuggestions(c, "TRIP", keys = keys))
     }
 
     @Test

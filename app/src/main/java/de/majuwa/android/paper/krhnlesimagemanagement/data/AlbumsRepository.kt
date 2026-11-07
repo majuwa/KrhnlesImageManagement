@@ -11,6 +11,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.exceedsAlbumNameLimit
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidRemoteFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -340,7 +341,13 @@ class AlbumsRepository internal constructor(
     override fun folderNameOf(album: RemoteAlbum): String? =
         runCatching { albumRelativeSegments(album).last() }
             .getOrNull()
-            ?.takeIf { isValidOccasionName(it) && !exceedsAlbumNameLimit(it) && it == it.trim() }
+            ?.takeIf {
+                isValidOccasionName(it) &&
+                    isValidRemoteFileName(it) &&
+                    '\uFFFD' !in it &&
+                    !exceedsAlbumNameLimit(it) &&
+                    it == it.trim()
+            }
 
     /**
      * Segments of an album's collection relative to the configured WebDAV URL (as expected by
@@ -631,7 +638,7 @@ internal fun isAsciiAlphanumeric(c: Char): Boolean = c in '0'..'9' || c in 'a'..
 private fun List<WebDavEntry>.withSafeHrefsBelow(root: HttpUrl): List<WebDavEntry> {
     val safe = filter { resolveWebDavHref(root, it.href) != null }
     if (safe.size != size) {
-        Log.w("AlbumsRepository", "Skipped ${size - safe.size} PROPFIND entries with an unsafe href")
+        Log.w(AlbumsRepository.TAG, "Skipped ${size - safe.size} PROPFIND entries with an unsafe href")
     }
     return safe
 }

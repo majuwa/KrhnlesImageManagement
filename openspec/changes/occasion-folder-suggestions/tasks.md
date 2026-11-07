@@ -31,12 +31,19 @@
 - [x] 5.3 Add a non-blocking test: with a fake listing that never completes, the grid and the share dialog can be confirmed and cancelled immediately; verify it passes.
 - [x] 5.4 Update `README.md` (Usage step 5 and "Sharing photos from other apps": suggestions from recent occasions and existing albums, tap fills the name, server albums best-effort, history of a previous server may appear), `docs/requirements.md` (new row `P-005` "The occasion dialog suggests recent occasions and existing remote albums", Implemented) and `docs/architecture.md` (Data Flow step 3, Share Target Flow, D6 dialog behaviour in the suggestions section); verify the text matches the implemented behaviour and the Markdown tables render.
 
+## 5a. Review follow-up
+
+- [x] 5a.1 `folderNameOf` rejects FORMAT / SURROGATE / separator characters and U+FFFD (tests for `%E2%80%8B`, `%E2%80%AE`, `%E2%80%A8`, `%FF`).
+- [x] 5a.2 Exclude four-digit remote names, cap remote names at 1,000, precompute lowercase keys (tests).
+- [x] 5a.3 Read the history on `backgroundDispatcher`; strengthen the weak ViewModel tests; add ListingTooLarge and "not shown while copying" tests.
+- [x] 5a.4 Remove the unneeded `@OptIn(ExperimentalLayoutApi::class)`; use `TAG` in `withSafeHrefsBelow`; README sentence on server contact.
+
 ## 6. Verification
 
 - [x] 6.1 Run `./gradlew test` and verify all tests pass.
 - [x] 6.2 Run `./gradlew spotlessCheck` and `./gradlew detekt` and verify no new issues (ask the user before accepting any detekt finding).
-- [ ] 6.3 Run `./gradlew lintDebug` and verify zero issues without suppressions or baseline.
-- [ ] 6.4 Run `./gradlew jacocoTestReport` and verify the new files are covered in the HTML report.
+- [x] 6.3 Run `./gradlew lintDebug` and verify zero issues without suppressions or baseline. (lintDebug reports exactly 3 unrelated "newer version available" errors: Gradle 9.9.0, AGP 9.5.1, spotless 8.11.0; no other finding, intentionally not bumped.)
+- [x] 6.4 Run `./gradlew jacocoTestReport` and verify the new files are covered in the HTML report.
 - [ ] 6.5 Manually (or in an emulator) open the grid and share dialogs with a reachable and an unreachable server and verify suggestions appear without delaying the dialog and without any error message.
 
 ## Workflow follow-up

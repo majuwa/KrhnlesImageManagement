@@ -710,40 +710,4 @@ class AlbumsRepositoryTest {
             val photo = RemotePhoto("img.jpg", "@attacker.example/img.jpg", "42", "image/jpeg")
             assertEquals("", repo.fullImageUrl(photo))
         }
-
-    // ── folderNameOf ────────────────────────────────────────────────────────
-
-    private fun folderNameOf(href: String) = createRepo().folderNameOf(RemoteAlbum("ignored", href))
-
-    @Test
-    fun `folderNameOf decodes the last href segment`() {
-        assertEquals("Summer 2026", folderNameOf("/remote.php/dav/files/user/Summer%202026/"))
-    }
-
-    @Test
-    fun `folderNameOf accepts an href without trailing slash`() {
-        assertEquals("Trip", folderNameOf("/remote.php/dav/files/user/Trip"))
-    }
-
-    @Test
-    fun `folderNameOf is null for an entry two levels deep`() {
-        assertNull(folderNameOf("/remote.php/dav/files/user/Trip/Day1/"))
-    }
-
-    @Test
-    fun `folderNameOf is null for foreign origin and traversal hrefs`() {
-        assertNull(folderNameOf("https://evil.example/remote.php/dav/files/user/Trip/"))
-        assertNull(folderNameOf("/remote.php/dav/files/user/../Trip/"))
-        assertNull(folderNameOf("/remote.php/dav/files/user/a%2Fb/"))
-    }
-
-    @Test
-    fun `folderNameOf is null for a decoded backslash`() {
-        assertNull(folderNameOf("/remote.php/dav/files/user/a%5Cb/"))
-    }
-
-    @Test
-    fun `folderNameOf is null for leading or trailing whitespace`() {
-        assertNull(folderNameOf("/remote.php/dav/files/user/%20Trip%20/"))
-    }
 }

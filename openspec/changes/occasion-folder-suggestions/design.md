@@ -44,6 +44,12 @@ Non-suspending, side-effect free. `AlbumsRepository` implements it as `runCatchi
 - *Alternative B:* decode the href in the ViewModel. Rejected: duplicates href/depth validation that already exists in the repository (CLAUDE.md: `resolveWebDavHref` rules live in the data layer).
 - *Alternative C:* add a `folderName` to `RemoteAlbum`. Rejected: widens a model shared with album screens and the sibling `album-search-and-sort` change.
 
+### D3a — Hardening of remote names (review follow-up)
+
+- `folderNameOf` additionally requires `isValidRemoteFileName` (no Unicode FORMAT such as zero-width / bidi overrides U+202E / U+2066-2069, no SURROGATE, no LINE / PARAGRAPH SEPARATOR) and no U+FFFD (the decoding of an invalid percent-encoded byte such as `%FF`). A separate re-encode round trip is not needed: an undecodable sequence always yields U+FFFD. Typed names (`isValidOccasionName`) are unchanged.
+- `mergeOccasionCandidates` drops remote names matching `[0-9]{4}` (auto-date year folders; recent names are not filtered), caps them at `MAX_REMOTE_OCCASION_NAMES` = 1,000 after the alphabetical ordering. The dialog computes the lowercase keys of the candidates once per list (`remember(suggestions)`) and passes them to `filterOccasionSuggestions(keys = ...)`.
+- The history is read inside `withContext(backgroundDispatcher)`.
+
 ### D4 — `OccasionSuggestionsViewModel` (`ui/share/`)
 `AndroidViewModel` with `@JvmOverloads constructor(application, credentialRepo: CredentialRepository = CredentialStore(application), trustedCertificates: TrustedCertificateRepository = TrustedCertificateStore(application), history: UploadHistoryRepository = UploadHistoryStore(application), repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract = { config, pin -> AlbumsRepository(config, pin) }, backgroundDispatcher = Dispatchers.Default, clock: () -> Long = SystemClock::elapsedRealtime, timeouts: OccasionSuggestionTimeouts = OccasionSuggestionTimeouts())` (same pin-aware shape as `AlbumsViewModel`; the three durations — history 3 s, remote 10 s, max age 60 s — are one `data class` so the constructor stays below detekt's `constructorThreshold` of 10). It owns `private val repos = AlbumsRepositoryProvider(credentialRepo, trustedCertificates, repoFactory = repoFactory)` and calls `repos.close()` in `onCleared()`. Added to `ViewModelFactoryRegressionTest`.
 

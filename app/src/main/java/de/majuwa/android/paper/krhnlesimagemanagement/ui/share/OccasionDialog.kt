@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,7 +51,9 @@ fun OccasionDialog(
     // Saveable: the typed name survives rotation and process recreation of the dialog's host.
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
     val occasionName = field.text
-    val shown = remember(suggestions, occasionName) { filterOccasionSuggestions(suggestions, occasionName) }
+    val keys = remember(suggestions) { suggestions.map { it.suggestionKey() } }
+    val shown =
+        remember(suggestions, occasionName) { filterOccasionSuggestions(suggestions, occasionName, keys = keys) }
     val invalid = occasionName.isNotBlank() && !isValidOccasionName(occasionName)
 
     AlertDialog(
@@ -99,7 +100,6 @@ fun OccasionDialog(
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SuggestionList(
     names: List<String>,

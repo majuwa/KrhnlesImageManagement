@@ -308,6 +308,21 @@ class ShareReceiverScreenTest {
     }
 
     @Test
+    fun suggestions_areNotShownWhileCopying() {
+        history.setEntries(listOf(recentEntry("Summer 2026")))
+        val (gated, gate) = harness.gatedImage("2")
+        show(harness.image("1"), gated)
+        awaitText("Summer 2026")
+        typeAndUpload()
+        assertTrue(gate.started.await(5, TimeUnit.SECONDS))
+        awaitText(string(R.string.share_preparing_title))
+
+        rule.onNodeWithText("Summer 2026").assertDoesNotExist()
+        gate.release()
+        awaitCondition { finished.isNotEmpty() }
+    }
+
+    @Test
     fun cancelDuringCopy_enqueuesNothing_andLeavesNoFiles() {
         val (gated, gate) = harness.gatedImage("2")
         show(harness.image("1"), gated)

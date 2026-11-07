@@ -272,7 +272,7 @@ The occasion dialog (grid and share target) shows up to 5 tappable suggestions b
 
 - **D1 recent names:** from `UploadHistoryStore` newest first, deduplicated case-insensitively. Auto-date (per-photo) labels are excluded without a history field because every label contains `/` and is no valid occasion name; blank and over-long names are dropped likewise (regression test on `resolveAutoDateUploadBatch`).
 - **D2 ranking:** pure functions in `OccasionSuggestions.kt`: remote spelling replaces a case-variant recent name only if the server has no exact match; other server names are appended alphabetically; filter puts prefix matches first and hides an exact match.
-- **D3 folder names:** `AlbumsRepositoryContract.folderNameOf()` (decoded safe href segment) is the only source; `displayName` is never used.
+- **D3 folder names:** `AlbumsRepositoryContract.folderNameOf()` (decoded safe href segment) is the only source; `displayName` is never used. `folderNameOf` also rejects FORMAT / SURROGATE / separator characters and U+FFFD (`isValidRemoteFileName`); the merge drops four-digit year folders from remote names and caps them at 1,000.
 - **D4 loading:** `OccasionSuggestionsViewModel` with its own `AlbumsRepositoryProvider`, one-shot history read (3 s), listing under 10 s, repository-identity checks, 60 s reuse, config observer clearing remote names; failures are silent.
 - **D5 triggering:** grid `LaunchedEffect` inside the dialog branch; share `LaunchedEffect(isReady)`.
 - **D6 dialog:** `TextFieldValue` saveable state, heading plus `FlowRow` of buttons (one labelled click action, `Role.Button`), scrollable content.

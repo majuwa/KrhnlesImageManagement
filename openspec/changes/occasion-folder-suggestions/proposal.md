@@ -14,11 +14,12 @@ Every upload into a mistyped or differently-cased folder name creates a new remo
 - Suggestions come from two sources, merged into one ranked list:
   - **Recent occasions** from the local upload history: newest first, deduplicated case-insensitively, without auto-date (per-photo) batch labels, blank names or names that are not valid occasion names.
   - **Existing remote albums** (folders directly below the configured base folder), loaded best-effort from the configured server with the existing bounded album listing, under an overall timeout; any failure or timeout is silently ignored and never blocks, delays or errors the dialog. When a recent name and a remote album differ only in case, the remote folder's exact spelling is suggested.
+- Remote names that are exactly four digits (auto-date year folders such as `2026`) are not suggested (recent names are not affected); at most 1,000 remote names are considered after ordering.
 - Typing filters suggestions case-insensitively (prefix matches before substring matches); a suggestion identical to the typed text is not shown.
 - Tapping a suggestion fills the name field (cursor at the end). It does not confirm the upload; occasion validation, trimming and the Upload button behaviour are unchanged.
 - Each suggestion is an accessible button whose text is the folder name, with a localized click label; all new strings live in `strings.xml`.
 - A new default-factory-creatable `OccasionSuggestionsViewModel` owns the suggestion loading (its own pin-aware `AlbumsRepositoryProvider`, cleared on a server / account / base-folder change); the dialog itself stays stateless with respect to data and receives the candidates as a parameter. No other ViewModel references it.
-- `AlbumsRepositoryContract` gains a side-effect-free `folderNameOf(album)` that returns the decoded folder segment of a listed album (exactly one level below the base folder, a valid occasion name without surrounding whitespace) or `null`, so suggestions use the real path segment rather than the server-supplied display name.
+- `AlbumsRepositoryContract` gains a side-effect-free `folderNameOf(album)` that returns the decoded folder segment of a listed album (exactly one level below the base folder, a valid occasion name without surrounding whitespace) or `null` (also `null` for names with invisible / bidi-control / separator / surrogate characters or an undecodable byte, via `isValidRemoteFileName` and U+FFFD), so suggestions use the real path segment rather than the server-supplied display name.
 - No change to the upload-history data format, the upload queue, the worker or album screens.
 
 ## Capabilities

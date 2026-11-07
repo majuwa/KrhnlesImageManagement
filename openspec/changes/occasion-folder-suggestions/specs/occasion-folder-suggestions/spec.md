@@ -101,6 +101,22 @@ Remote suggestions SHALL only be shown for the server, account and base folder c
 - **WHEN** the listing contains an entry that is not exactly one level below the base folder or whose name is not a valid occasion name
 - **THEN** that entry is not suggested
 
+### Requirement: Hostile and year-folder names are not suggested
+
+Remote folder names containing invisible formatting characters (zero-width, bidi controls), line / paragraph separators, surrogates or the replacement character (undecodable bytes) SHALL NOT be suggested. Remote folder names consisting of exactly four digits (auto-date year folders) SHALL NOT be suggested; recent occasion names are not subject to the year rule. At most 1,000 remote names SHALL be considered.
+
+#### Scenario: Invisible or bidi characters
+- **WHEN** a listed folder is named `Trip%E2%80%AE`, `%E2%80%8B`, `%E2%80%A8` or `%FF`
+- **THEN** `folderNameOf` returns `null` and nothing is suggested for it
+
+#### Scenario: Year folder
+- **WHEN** the server has folders `2026` and `Trip 2026`
+- **THEN** only `Trip 2026` is suggested from the server
+
+#### Scenario: Very many folders
+- **WHEN** the server lists more than 1,000 folder names
+- **THEN** only the first 1,000 in alphabetical order are considered
+
 ### Requirement: Remote spelling wins for case variants
 When a recent occasion and a remote album differ only in letter case, and the server has no album with the recent occasion's exact spelling, the app SHALL suggest one entry at the recent occasion's rank with the remote album's exact spelling. When the server has an album with exactly the recent spelling, that spelling SHALL be kept. Suggestions SHALL be deduplicated case-insensitively across both sources.
 

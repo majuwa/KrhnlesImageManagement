@@ -115,7 +115,9 @@ class OccasionSuggestionsViewModel
 
         private suspend fun readHistory(): List<UploadHistoryEntry> =
             try {
-                withTimeoutOrNull(timeouts.historyReadMs) { history.entries.first() }
+                withTimeoutOrNull(timeouts.historyReadMs) {
+                    withContext(backgroundDispatcher) { history.entries.first() }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import de.majuwa.android.paper.krhnlesimagemanagement.data.PropfindResponseTooLargeException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerCertificate
@@ -158,24 +159,45 @@ class OccasionSuggestionsViewModelTest {
     @Test
     fun `a failing listing yields recent only`() =
         runTest {
-            val model = vm()
+            val failingRepo =
+                FakeAlbumsRepository().also { it.albums = Result.failure(WebDavHttpException(500, "x")) }
             val failing =
                 OccasionSuggestionsViewModel(
                     application = RuntimeEnvironment.getApplication() as Application,
                     credentialRepo = credentials,
                     trustedCertificates = trusted,
                     history = history,
-                    repoFactory = { _, _ ->
-                        FakeAlbumsRepository().also { it.albums = Result.failure(WebDavHttpException(500, "x")) }
-                    },
+                    repoFactory = { _, _ -> failingRepo },
                     backgroundDispatcher = testDispatcher,
                     clock = { now },
                 )
             runCurrent()
             failing.load()
             advanceUntilIdle()
+            assertEquals(1, failingRepo.listAlbumsCalls)
             assertEquals(listOf("Recent"), failing.candidates.value)
-            assertTrue(model.candidates.value.isEmpty())
+        }
+
+    @Test
+    fun `a listing over the size limit yields recent only`() =
+        runTest {
+            val tooLarge =
+                FakeAlbumsRepository().also { it.albums = Result.failure(PropfindResponseTooLargeException()) }
+            val model =
+                OccasionSuggestionsViewModel(
+                    application = RuntimeEnvironment.getApplication() as Application,
+                    credentialRepo = credentials,
+                    trustedCertificates = trusted,
+                    history = history,
+                    repoFactory = { _, _ -> tooLarge },
+                    backgroundDispatcher = testDispatcher,
+                    clock = { now },
+                )
+            runCurrent()
+            model.load()
+            advanceUntilIdle()
+            assertEquals(1, tooLarge.listAlbumsCalls)
+            assertEquals(listOf("Recent"), model.candidates.value)
         }
 
     @Test
@@ -212,14 +234,21 @@ class OccasionSuggestionsViewModelTest {
     @Test
     fun `a config change with no load cancels a running load`() =
         runTest {
-            val g = gate()
-            listHook = { g.await() }
+            var cancelled = false
+            listHook = {
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled = true
+                }
+            }
             val model = vm()
             model.load()
             runCurrent()
+            assertFalse(cancelled)
             credentials.saveBaseFolder("Other")
             runCurrent()
-            g.complete(Unit)
+            assertTrue(cancelled)
             advanceUntilIdle()
             assertEquals(listOf("Recent"), model.candidates.value)
             listHook = {}
@@ -334,6 +363,9 @@ class OccasionSuggestionsViewModelTest {
             failing.load()
             advanceUntilIdle()
             assertEquals(0, history.writes)
-            assertFalse(ShadowLog.getLogs().any { it.msg.contains("SecretAlbum") || it.msg.contains("server text") })
+            val logs = ShadowLog.getLogs()
+            assertTrue(logs.any { it.msg == "Album listing failed: IllegalStateException" })
+            assertTrue(logs.all { it.throwable == null })
+            assertFalse(logs.any { it.msg.contains("SecretAlbum") || it.msg.contains("server text") })
         }
 }
