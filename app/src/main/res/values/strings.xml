@@ -154,6 +154,8 @@
     <!-- Upload dialog -->
     <string name="dialog_upload_title">Upload Photos</string>
     <string name="dialog_upload_message">Enter the occasion or folder name for the upload:</string>
+    <string name="occasion_suggestions_heading">Suggestions</string>
+    <string name="occasion_suggestion_use_label">Use as folder name</string>
     <string name="label_occasion_name">Occasion / Folder Name</string>
     <string name="dialog_clear_upload_history_title">Clear upload history?</string>
     <string name="dialog_clear_upload_history_message">This removes all upload history entries.</string>

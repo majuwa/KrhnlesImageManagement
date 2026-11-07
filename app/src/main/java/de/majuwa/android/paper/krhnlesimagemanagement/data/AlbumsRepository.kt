@@ -270,15 +270,6 @@ class AlbumsRepository internal constructor(
             throw UnsafeHrefException()
         }
 
-    /** Drops entries whose href is not strictly below [root] (see [resolveWebDavHref]). */
-    private fun List<WebDavEntry>.withSafeHrefsBelow(root: HttpUrl): List<WebDavEntry> {
-        val safe = filter { resolveWebDavHref(root, it.href) != null }
-        if (safe.size != size) {
-            Log.w(TAG, "Skipped ${size - safe.size} PROPFIND entries with an unsafe href")
-        }
-        return safe
-    }
-
     private fun HttpUrl.withoutTrailingSlash(): HttpUrl =
         if (pathSegments.size > 1 && pathSegments.last().isEmpty()) {
             newBuilder().removePathSegment(pathSegments.size - 1).build()
@@ -345,6 +336,11 @@ class AlbumsRepository internal constructor(
             read(LimitedInputStream(response.body.byteStream(), limits.maxResponseBytes), job)
         }
     }
+
+    override fun folderNameOf(album: RemoteAlbum): String? =
+        runCatching { albumRelativeSegments(album).last() }
+            .getOrNull()
+            ?.takeIf { isValidOccasionName(it) && !exceedsAlbumNameLimit(it) && it == it.trim() }
 
     /**
      * Segments of an album's collection relative to the configured WebDAV URL (as expected by
@@ -630,3 +626,12 @@ internal fun checkPixelLimit(
 
 /** ASCII letters and digits only ([Char.isLetterOrDigit] also accepts e.g. Arabic-Indic digits). */
 internal fun isAsciiAlphanumeric(c: Char): Boolean = c in '0'..'9' || c in 'a'..'z' || c in 'A'..'Z'
+
+/** Drops entries whose href is not strictly below [root] (see [resolveWebDavHref]). */
+private fun List<WebDavEntry>.withSafeHrefsBelow(root: HttpUrl): List<WebDavEntry> {
+    val safe = filter { resolveWebDavHref(root, it.href) != null }
+    if (safe.size != size) {
+        Log.w("AlbumsRepository", "Skipped ${size - safe.size} PROPFIND entries with an unsafe href")
+    }
+    return safe
+}

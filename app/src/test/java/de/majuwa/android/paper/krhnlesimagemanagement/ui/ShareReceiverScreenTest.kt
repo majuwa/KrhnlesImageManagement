@@ -9,8 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -20,17 +22,25 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeShareProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadHistoryRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.ProviderGate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.ShareTestHarness
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.ShareTestHarness.Companion.share
+import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
+import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionSuggestionsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareFinish
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareRoute
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.util.MAX_SHARED_PHOTOS
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -58,6 +68,8 @@ class ShareReceiverScreenTest {
     private val finished = mutableListOf<ShareFinish>()
     private var openedApp = 0
     private val created = AtomicInteger()
+    private val history = FakeUploadHistoryRepository()
+    private val albums = FakeAlbumsRepository()
 
     @Before
     fun setUp() {
@@ -87,7 +99,29 @@ class ShareReceiverScreenTest {
             )
         LaunchedEffect(vm) { vm.start(intent) }
         KrhnlesImageManagementTheme {
-            ShareRoute(viewModel = vm, onFinished = { finished += it }, onOpenApp = { openedApp++ })
+            val suggestions: OccasionSuggestionsViewModel =
+                viewModel(
+                    key = "suggestions",
+                    factory =
+                        viewModelFactory {
+                            initializer {
+                                OccasionSuggestionsViewModel(
+                                    application = app,
+                                    credentialRepo = repo,
+                                    trustedCertificates = FakeTrustedCertificateRepository(),
+                                    history = history,
+                                    repoFactory = { _, _ -> albums },
+                                    backgroundDispatcher = Dispatchers.Unconfined,
+                                )
+                            }
+                        },
+                )
+            ShareRoute(
+                viewModel = vm,
+                onFinished = { finished += it },
+                onOpenApp = { openedApp++ },
+                suggestionsViewModel = suggestions,
+            )
         }
     }
 
@@ -123,6 +157,76 @@ class ShareReceiverScreenTest {
     private fun typeAndUpload(name: String = "Trip") {
         rule.onNode(hasSetTextAction()).performTextInput(name)
         rule.onNodeWithText(string(R.string.action_upload)).performClick()
+    }
+
+    private fun recentEntry(name: String) = UploadHistoryEntry(1, name, 100, 1, 0)
+
+    @Test
+    fun suggestions_areShownInReady_andTapThenUploadConfirmsTheName() {
+        history.setEntries(listOf(recentEntry("Summer 2026")))
+        albums.albums = Result.success(listOf(RemoteAlbum("Wedding", "/remote.php/dav/files/user/Wedding/")))
+        albums.folderNameMapper = { it.displayName }
+        show(harness.image("1"))
+        awaitText(plural(R.plurals.share_upload_message, 1, 1))
+        awaitText("Wedding")
+
+        rule.onNode(hasClickAction() and hasText("Summer 2026")).assertExists()
+        rule.onNode(hasClickAction() and hasText("Summer 2026")).performClick()
+        rule.onNodeWithText(string(R.string.action_upload)).performClick()
+        awaitCondition { finished.isNotEmpty() }
+
+        assertEquals("Summer 2026", (harness.enqueued.single() as UploadBatch.Occasion).folderName)
+    }
+
+    @Test
+    fun suggestions_areNotShownBeforeReady() {
+        history.setEntries(listOf(recentEntry("Summer 2026")))
+        val gate = ProviderGate(honoursCancel = false)
+        FakeShareProvider.items["slow"] = FakeShareProvider.Item(name = "slow.jpg", queryGate = gate)
+        try {
+            show(FakeShareProvider.uri("slow"))
+            assertTrue(gate.started.await(5, TimeUnit.SECONDS))
+            awaitText(string(R.string.share_reading_title))
+
+            rule.onNodeWithText("Summer 2026").assertDoesNotExist()
+            assertEquals(0, albums.listAlbumsCalls)
+        } finally {
+            gate.release()
+        }
+    }
+
+    @Test
+    fun suggestions_areNotShownWhenNotConfigured() {
+        history.setEntries(listOf(recentEntry("Summer 2026")))
+        show(harness.image("1"), repo = FakeCredentialRepository())
+        awaitText(string(R.string.share_not_configured_message))
+
+        rule.onNodeWithText("Summer 2026").assertDoesNotExist()
+    }
+
+    @Test
+    fun hangingListing_neverBlocksConfirmOrCancel() {
+        albums.onListAlbums = { awaitCancellation() }
+        history.setEntries(listOf(recentEntry("Summer 2026")))
+        show(harness.image("1"))
+        awaitText("Summer 2026")
+
+        typeAndUpload("Trip")
+        awaitCondition { finished.isNotEmpty() }
+
+        assertEquals("Trip", (harness.enqueued.single() as UploadBatch.Occasion).folderName)
+    }
+
+    @Test
+    fun hangingListing_cancelStillWorks() {
+        albums.onListAlbums = { awaitCancellation() }
+        show(harness.image("1"))
+        awaitText(plural(R.plurals.share_upload_message, 1, 1))
+
+        rule.onNodeWithText(string(R.string.action_cancel)).performClick()
+        awaitCondition { finished.isNotEmpty() }
+
+        assertTrue(harness.enqueued.isEmpty())
     }
 
     @Test

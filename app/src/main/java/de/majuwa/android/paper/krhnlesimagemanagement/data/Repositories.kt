@@ -90,6 +90,14 @@ interface AlbumsRepositoryContract {
 
     suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit>
 
+    /**
+     * The decoded folder name of [album] if it can be typed as an occasion name (exactly one level
+     * below the base folder, valid occasion name, within the name limit, no leading / trailing
+     * whitespace), else `null`. The only source of a remote folder name for uploads;
+     * [RemoteAlbum.displayName] is never used as one.
+     */
+    fun folderNameOf(album: RemoteAlbum): String?
+
     /** Releases background work (e.g. retries) of a repository that is dropped; no-op by default. */
     fun close() {}
 }

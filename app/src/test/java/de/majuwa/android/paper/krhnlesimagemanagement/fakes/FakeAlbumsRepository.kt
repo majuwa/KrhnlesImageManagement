@@ -5,6 +5,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContr
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoListing
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.util.exceedsAlbumNameLimit
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
 
 class FakeAlbumsRepository : AlbumsRepositoryContract {
     var albums: Result<List<RemoteAlbum>> = Result.success(emptyList())
@@ -39,10 +41,23 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
     var listAlbumsCalls = 0
         private set
 
+    /** Invoked (and may suspend or throw) on every [listAlbums] call before the result is returned. */
+    var onListAlbums: suspend () -> Unit = {}
+
     override suspend fun listAlbums(): Result<List<RemoteAlbum>> {
         listAlbumsCalls++
+        onListAlbums()
         return albums
     }
+
+    /** Maps an album to its folder name; the default passes [RemoteAlbum.displayName] through the validity checks. */
+    var folderNameMapper: (RemoteAlbum) -> String? = { album ->
+        album.displayName.takeIf {
+            isValidOccasionName(it) && !exceedsAlbumNameLimit(it) && it == it.trim()
+        }
+    }
+
+    override fun folderNameOf(album: RemoteAlbum): String? = folderNameMapper(album)
 
     /** Invoked (and may suspend or throw) on every [renameAlbum] call before the result is returned. */
     var onRenameAlbum: suspend () -> Unit = {}

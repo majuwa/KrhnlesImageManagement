@@ -11,6 +11,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.StartupViewM
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.UploadedRemovalViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionSuggestionsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -40,6 +41,7 @@ class ViewModelFactoryRegressionTest(
                 arrayOf(StartupViewModel::class.java),
                 arrayOf(ShareViewModel::class.java),
                 arrayOf(UploadedRemovalViewModel::class.java),
+                arrayOf(OccasionSuggestionsViewModel::class.java),
             )
     }
 

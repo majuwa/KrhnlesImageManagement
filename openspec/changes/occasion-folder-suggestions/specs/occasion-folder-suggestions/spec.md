@@ -85,6 +85,14 @@ Remote suggestions SHALL only be shown for the server, account and base folder c
 - **WHEN** the configuration changes while the remote listing is running
 - **THEN** the listing result is discarded
 
+#### Scenario: Server changed while the suggestions are kept
+- **WHEN** remote suggestions were loaded for server A and the user switches to server B in Settings without leaving the app
+- **THEN** the album names of server A are dropped right away, before the occasion dialog is opened again
+
+#### Scenario: Folder name with surrounding whitespace
+- **WHEN** the server lists an album folder " Trip " (leading or trailing whitespace)
+- **THEN** it is not suggested, because the confirmed name is trimmed and would address a different folder
+
 #### Scenario: Encoded folder name
 - **WHEN** the server lists an album whose href ends in "Summer%202026/"
 - **THEN** the suggestion reads "Summer 2026"
@@ -94,14 +102,22 @@ Remote suggestions SHALL only be shown for the server, account and base folder c
 - **THEN** that entry is not suggested
 
 ### Requirement: Remote spelling wins for case variants
-When a recent occasion and a remote album differ only in letter case, the app SHALL suggest one entry at the recent occasion's rank with the remote album's exact spelling. Suggestions SHALL be deduplicated case-insensitively across both sources.
+When a recent occasion and a remote album differ only in letter case, and the server has no album with the recent occasion's exact spelling, the app SHALL suggest one entry at the recent occasion's rank with the remote album's exact spelling. When the server has an album with exactly the recent spelling, that spelling SHALL be kept. Suggestions SHALL be deduplicated case-insensitively across both sources.
 
 #### Scenario: Case variant
 - **WHEN** the recent occasion is "summer 2026" and the server has the album "Summer 2026"
 - **THEN** exactly one suggestion "Summer 2026" is shown at the recent occasion's position
 
+#### Scenario: Exact spelling exists next to a case variant
+- **WHEN** the recent occasion is "trip" and the server has both albums "Trip" and "trip"
+- **THEN** exactly one suggestion "trip" is shown at the recent occasion's position
+
 ### Requirement: Typing filters suggestions
-While the field contains text, the app SHALL show only suggestions containing the trimmed text case-insensitively, names starting with it before other matches, otherwise in the ranked order. A suggestion exactly equal to the trimmed text SHALL NOT be shown; at most 5 suggestions are shown.
+While the trimmed field text is not empty, the app SHALL show only suggestions containing it case-insensitively, names starting with it before other matches, otherwise in the ranked order. A suggestion exactly equal to the trimmed text SHALL NOT be shown; at most 5 suggestions are shown. A field containing only whitespace SHALL behave like an empty field.
+
+#### Scenario: Whitespace only
+- **WHEN** the user typed only spaces
+- **THEN** the same suggestions as for an empty field are shown
 
 #### Scenario: Case-insensitive filter
 - **WHEN** the suggestions are "Trip", "Summer 2026" and "Birthday" and the user types "SUM"
@@ -135,7 +151,7 @@ Tapping a suggestion SHALL replace the field's text with the suggestion and plac
 - **THEN** the field still contains the suggestion
 
 ### Requirement: Suggestions are accessible
-Each suggestion SHALL be exposed to accessibility services as a button whose text is the folder name and whose click action has a localized label. The suggestion area SHALL have a localized heading. All suggestion texts other than folder names SHALL come from string resources, and no icon inside a suggestion carries a content description.
+Each suggestion SHALL be exposed to accessibility services as a button whose text is the folder name and whose click action has a localized label. The suggestion area SHALL have a localized heading that is exposed to accessibility services as a heading. All suggestion texts other than folder names SHALL come from string resources, and no icon inside a suggestion carries a content description.
 
 #### Scenario: TalkBack semantics
 - **WHEN** a suggestion "Trip" is inspected with accessibility semantics

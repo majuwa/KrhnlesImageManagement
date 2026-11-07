@@ -24,6 +24,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | P-002 | Users can select one or more photos for upload.                                                 | Implemented |
 | P-003 | Users must tag selected photos with an occasion name before uploading.                          | Implemented |
 | P-004 | The grid must use `LazyVerticalGrid` for high-performance scrolling.                            | Implemented |
+| P-005 | The occasion dialog suggests recent occasions and existing remote albums.                       | Implemented |
 
 ---
 
