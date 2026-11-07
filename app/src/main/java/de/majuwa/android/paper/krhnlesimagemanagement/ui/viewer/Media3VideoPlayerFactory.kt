@@ -11,7 +11,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
@@ -25,21 +27,41 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.RepositoryClosedExcep
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UnsafeVideoUrlException
 import okhttp3.Call
 import java.io.IOException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLException
 
 /**
  * True for a load failure that must not be retried: a bad HTTP status (a 401 would otherwise send
  * several failed logins and trip Nextcloud's brute-force throttling; a redirect would be requested
- * again) or one of the video client's own guard refusals anywhere in the cause chain. Transient
+ * again), one of the video client's own guard refusals or a TLS / certificate failure (a pinned or
+ * untrusted certificate does not become trusted by retrying) anywhere in the cause chain. Transient
  * network errors (timeouts, resets) keep the default retries.
  */
 internal fun isFinalVideoLoadError(error: IOException): Boolean =
     generateSequence<Throwable>(error) { it.cause }.take(MAX_LOAD_ERROR_CAUSES).any {
         it is HttpDataSource.InvalidResponseCodeException ||
             it is UnsafeVideoUrlException ||
-            it is RepositoryClosedException
+            it is RepositoryClosedException ||
+            it is SSLException ||
+            it is CertificateException
     }
 
 private const val MAX_LOAD_ERROR_CAUSES = 16
+
+/** Upper bound of the read-ahead buffer of one player; the device-derived default can be far larger. */
+internal const val VIDEO_TARGET_BUFFER_BYTES = 32 * 1024 * 1024
+
+/**
+ * A byte cap that wins over the time thresholds: a server that ignores `Range` or a high-bitrate
+ * file can then never make the player buffer more than [VIDEO_TARGET_BUFFER_BYTES].
+ */
+@OptIn(UnstableApi::class)
+internal fun videoLoadControl(): LoadControl =
+    DefaultLoadControl
+        .Builder()
+        .setTargetBufferBytes(VIDEO_TARGET_BUFFER_BYTES)
+        .setPrioritizeTimeOverSizeThresholds(false)
+        .build()
 
 /**
  * The only place that builds a Media3 player. Never the one-argument `ExoPlayer.Builder(context)`,
@@ -84,6 +106,7 @@ class Media3VideoPlayerFactory(
         val player =
             ExoPlayer
                 .Builder(application, mediaSourceFactory)
+                .setLoadControl(videoLoadControl())
                 .setAudioAttributes(
                     AudioAttributes
                         .Builder()
@@ -101,7 +124,7 @@ class Media3VideoPlayerFactory(
 }
 
 /** [VideoPlayback] over an [ExoPlayer] (stable `Player` API only). */
-private class ExoVideoPlayback(
+internal class ExoVideoPlayback(
     private val player: ExoPlayer,
 ) : VideoPlayback {
     private var reportedPlaying = true
@@ -149,7 +172,13 @@ private class ExoVideoPlayback(
             return if (size.width > 0 && size.height > 0) size.width * size.pixelWidthHeightRatio / size.height else 0f
         }
 
-    override fun play() = player.play()
+    override fun play() {
+        // After the end a bare play() does nothing; an idle (stopped / failed-and-reset) player needs prepare().
+        val state = player.playbackState
+        if (state == Player.STATE_ENDED) player.seekToDefaultPosition()
+        if (state == Player.STATE_IDLE) player.prepare()
+        player.play()
+    }
 
     override fun pause() = player.pause()
 

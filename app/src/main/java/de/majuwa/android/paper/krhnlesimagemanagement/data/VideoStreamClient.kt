@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import okhttp3.Call
 import okhttp3.Dispatcher
+import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -9,6 +10,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** The repository that owns a video stream client was closed; the stream request was not sent. */
@@ -48,6 +50,27 @@ internal class VideoStreamClient(
 ) {
     private val closed = AtomicBoolean(false)
 
+    /**
+     * Every call that passed the guard and has not ended. `Dispatcher.cancelAll()` does not reach a
+     * call whose response headers already arrived (OkHttp removes it from the dispatcher then), but
+     * its body may still be read for a long time, so [close] cancels these as well.
+     */
+    private val liveCalls: MutableSet<Call> = ConcurrentHashMap.newKeySet()
+
+    private val callTracker =
+        object : EventListener() {
+            override fun callEnd(call: Call) {
+                liveCalls.remove(call)
+            }
+
+            override fun callFailed(
+                call: Call,
+                ioe: IOException,
+            ) {
+                liveCalls.remove(call)
+            }
+        }
+
     val client: OkHttpClient =
         albumClient
             .newBuilder()
@@ -55,6 +78,7 @@ internal class VideoStreamClient(
             .followSslRedirects(false)
             .dispatcher(Dispatcher())
             .cache(null)
+            .eventListener(callTracker)
             .addInterceptor(::guard)
             .build()
 
@@ -64,6 +88,7 @@ internal class VideoStreamClient(
     fun close() {
         closed.set(true)
         client.dispatcher.cancelAll()
+        liveCalls.toList().forEach { it.cancel() }
     }
 
     /** Only a body-less `GET` strictly below the base folder on the configured origin may be sent. */
@@ -73,6 +98,9 @@ internal class VideoStreamClient(
     }
 
     private fun guard(chain: Interceptor.Chain): Response {
+        // Register before checking `closed`: a concurrent close() then either sees the call or this
+        // check sees the flag.
+        liveCalls.add(chain.call())
         if (closed.get()) throw RepositoryClosedException()
         val request = chain.request()
         requireSafeStreamRequest(request)

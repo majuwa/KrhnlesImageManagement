@@ -13,11 +13,15 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -46,7 +50,6 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewer
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VideoPlayerViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -55,6 +58,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 
 private const val DRAG_STEPS = 10
 private const val DRAG_STEP_PX = 12f
@@ -72,6 +76,7 @@ class FullscreenViewerVideoTest {
 
     private val repo = FakeAlbumsRepository().apply { photos = Result.success(listOf(photoA, video, photoC)) }
     private val playerFactory = FakeVideoPlayerFactory()
+    private val posterRequests = mutableListOf<Any?>()
     private val app get() = RuntimeEnvironment.getApplication() as Application
     private val credentials =
         FakeCredentialRepository(WebDavConfig(url = "https://cloud.example.com/dav/", username = "u", password = "p"))
@@ -95,7 +100,11 @@ class FullscreenViewerVideoTest {
     ) {
         CompositionLocalProvider(
             LocalInspectionMode provides true,
-            LocalAsyncImagePreviewHandler provides AsyncImagePreviewHandler { ColorImage(Color.Gray.toArgb()) },
+            LocalAsyncImagePreviewHandler provides
+                AsyncImagePreviewHandler {
+                    posterRequests += it.data
+                    ColorImage(Color.Gray.toArgb())
+                },
         ) {
             KrhnlesImageManagementTheme {
                 FullscreenViewerScreen(
@@ -129,6 +138,8 @@ class FullscreenViewerVideoTest {
         composeTestRule.onNodeWithContentDescription("Video 2 of 3").assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Play video").assertIsDisplayed()
         assertTrue(playerFactory.created.isEmpty())
+        assertEquals(listOf<Any?>("https://fake.server/full//Album/v.mp4"), posterRequests)
+        composeTestRule.onAllNodesWithTag("videoPlaceholder", useUnmergedTree = true).assertCountEquals(0)
     }
 
     @Test
@@ -138,6 +149,8 @@ class FullscreenViewerVideoTest {
 
         composeTestRule.onNodeWithContentDescription("Video 2 of 3").assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Play video").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("videoPlaceholder", useUnmergedTree = true).assertExists()
+        assertTrue("no poster request: $posterRequests", posterRequests.none { "v.mp4" in it.toString() })
         assertTrue(playerFactory.created.isEmpty())
     }
 
@@ -232,8 +245,9 @@ class FullscreenViewerVideoTest {
     }
 
     @Test
-    fun `a pinch on a video page does not zoom or swipe it`() {
+    fun `a pinch on a video page does not zoom it`() {
         show()
+        val before = composeTestRule.onNodeWithContentDescription("Video 2 of 3").fetchSemanticsNode().size
 
         composeTestRule.onNodeWithContentDescription("Video 2 of 3").performTouchInput {
             pinch(
@@ -245,8 +259,10 @@ class FullscreenViewerVideoTest {
         }
         composeTestRule.waitForIdle()
 
-        // Video pages have no zoomable image: the page stays and shows no scale transform.
-        composeTestRule.onNodeWithContentDescription("Video 2 of 3").assertIsDisplayed()
+        // Video pages have no zoomable image: a zoom would scale the page (its size), a finger drifting
+        // during the pinch may still move the pager like any drag, which the spec allows.
+        val after = composeTestRule.onNodeWithContentDescription("Video 2 of 3").fetchSemanticsNode().size
+        assertEquals(before, after)
         assertTrue(playerFactory.created.isEmpty())
     }
 
@@ -335,7 +351,35 @@ class FullscreenViewerVideoTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText("This video format is not supported on this device.").assertIsDisplayed()
-        assertNotNull(composeTestRule.onNodeWithContentDescription("Video 2 of 3"))
+        composeTestRule.onNodeWithText("Retry").assertIsDisplayed().assertHasClickAction()
+
+        composeTestRule.onNodeWithText("Retry").performClick()
+        composeTestRule.waitUntil(5_000) { playerFactory.created.size == 2 }
+    }
+
+    @Test
+    fun `controls stay visible while touch exploration is enabled`() {
+        val manager = app.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+        shadowOf(manager).setTouchExplorationEnabled(true)
+        show()
+        startPlayback()
+
+        // The hide delay is 3 s; wait past it on the test clock.
+        composeTestRule.mainClock.advanceTimeBy(10_000)
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithContentDescription("Pause video").assertIsDisplayed()
+    }
+
+    @Test
+    fun `controls hide after the delay without touch exploration`() {
+        show()
+        startPlayback()
+
+        composeTestRule.mainClock.advanceTimeBy(10_000)
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onAllNodes(hasContentDescription("Pause video")).assertCountEquals(0)
     }
 }
 

@@ -49,6 +49,20 @@ While a video plays, the viewer SHALL offer play / pause, a seek bar with the cu
 - **WHEN** an accessibility service inspects the seek bar of a 2:00 video at 0:30
 - **THEN** its state contains the position and the duration, and increase / decrease actions move the position
 
+### Requirement: Finished videos can be replayed and the buffer is bounded
+Playing a video that reached its end SHALL start it from the beginning. The player SHALL NOT buffer more than 32 MiB ahead, and a TLS or certificate failure SHALL NOT be retried automatically.
+
+#### Scenario: Replay
+- **WHEN** a video has ended and the user taps play
+- **THEN** it plays again from the start
+
+### Requirement: Controls stay for assistive technology
+The playback controls SHALL NOT auto-hide while a touch exploration service (for example TalkBack) is enabled.
+
+#### Scenario: TalkBack on
+- **WHEN** touch exploration is enabled and a video plays
+- **THEN** the controls remain visible after the usual hide delay
+
 ### Requirement: Playback stops when it is no longer visible
 Playback SHALL stop and its network stream SHALL be closed when the user swipes to another page or leaves the viewer, and SHALL pause when the app goes to the background. Rotating the device SHALL keep the playing video and its position.
 
@@ -66,7 +80,11 @@ Playback SHALL stop and its network stream SHALL be closed when the user swipes 
 
 #### Scenario: Leaving the viewer
 - **WHEN** the user leaves the viewer while a video plays
-- **THEN** the player is released and no further request for the video is sent
+- **THEN** the player is released and no further request for the video is sent, also for a response whose headers already arrived and whose body is still being read
+
+#### Scenario: Background before the player exists
+- **WHEN** the app goes to the background after the user tapped play but before the player was created
+- **THEN** the player starts paused and plays only when the user taps play again
 
 ### Requirement: Playback stops when the configuration changes
 When the user logs out or the server or account changes while a video is playing or loading, playback SHALL stop at once and no further request for the video SHALL be sent with the old server or credentials.
@@ -81,6 +99,10 @@ If a video cannot be played, the video page SHALL show a localized message chose
 #### Scenario: Unsupported format
 - **WHEN** the device cannot decode the video's format
 - **THEN** the page says that this video format cannot be played on this device, with Retry
+
+#### Scenario: Transient decoder failure
+- **WHEN** the decoder cannot be initialised or was reclaimed by the system
+- **THEN** the page shows the generic error with Retry, not "format not supported"
 
 #### Scenario: File removed on the server
 - **WHEN** the server answers the video request with 404

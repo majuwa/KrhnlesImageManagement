@@ -248,6 +248,73 @@ class AlbumsRepositoryVideoStreamTest {
         assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - begin) < 5)
     }
 
+    private fun throttledBodyResponse() =
+        MockResponse()
+            .setHeader("Content-Length", "100000")
+            .setBody(Buffer().write(ByteArray(100000)))
+            .throttleBody(16, 10, TimeUnit.SECONDS)
+
+    @Test
+    fun `close cancels an execute call whose headers arrived and whose body is throttled`() {
+        server.enqueue(throttledBodyResponse())
+        val headersArrived = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val blocked = AtomicReference<Throwable?>()
+        Thread {
+            blocked.set(
+                runCatching {
+                    repo.videoCallFactory().newCall(Request.Builder().url(streamUrl()).build()).execute().use {
+                        headersArrived.countDown()
+                        it.body.bytes()
+                    }
+                }.exceptionOrNull(),
+            )
+            finished.countDown()
+        }.start()
+        assertTrue(headersArrived.await(5, TimeUnit.SECONDS))
+        Thread.sleep(300)
+
+        repo.close()
+
+        assertTrue("close must unblock the body read", finished.await(5, TimeUnit.SECONDS))
+        assertTrue("${blocked.get()}", blocked.get() is IOException)
+    }
+
+    @Test
+    fun `close cancels an enqueued call whose headers arrived and whose body is throttled`() {
+        server.enqueue(throttledBodyResponse())
+        val headersArrived = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val blocked = AtomicReference<Throwable?>()
+        repo.videoCallFactory().newCall(Request.Builder().url(streamUrl()).build()).enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: IOException,
+                ) {
+                    blocked.set(e)
+                    finished.countDown()
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    headersArrived.countDown()
+                    blocked.set(runCatching { response.use { it.body.bytes() } }.exceptionOrNull())
+                    finished.countDown()
+                }
+            },
+        )
+        assertTrue(headersArrived.await(5, TimeUnit.SECONDS))
+        Thread.sleep(300)
+
+        repo.close()
+
+        assertTrue("close must unblock the body read", finished.await(5, TimeUnit.SECONDS))
+        assertTrue("${blocked.get()}", blocked.get() is IOException)
+    }
+
     @Test
     fun `closing the video client does not cancel a running album call`() {
         // The album client and the video client have different dispatchers.

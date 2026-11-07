@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer
 
 import android.app.Activity
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -131,8 +132,11 @@ fun FullscreenViewerScreen(
                 containsText = true,
                 containsControls = true,
             ) ?: CONTROLS_HIDE_DELAY_MS
-    LaunchedEffect(controlsVisible, currentIsVideo, videoPlaying) {
-        if (controlsVisible && (!currentIsVideo || videoPlaying)) {
+    // A TalkBack user needs the controls to stay: they are never hidden while touch exploration is on.
+    val touchExploration = rememberTouchExplorationEnabled()
+    val mayAutoHide = !touchExploration && (!currentIsVideo || videoPlaying)
+    LaunchedEffect(controlsVisible, mayAutoHide) {
+        if (controlsVisible && mayAutoHide) {
             delay(hideTimeout)
             controlsVisible = false
         }
@@ -164,7 +168,11 @@ fun FullscreenViewerScreen(
                         description = description,
                         posterUrl = viewModel.fullImageUrl(photo),
                         state = pageState,
-                        playback = playback.takeIf { pageState is VideoPageState.Playing },
+                        playback =
+                            playback.takeIf {
+                                pageState is VideoPageState.Playing ||
+                                    pageState is VideoPageState.Preparing
+                            },
                         controlsVisible = controlsVisible,
                         onPlay = { playerViewModel.play(photo, viewModel.repositories) },
                         onPause = playerViewModel::pause,
@@ -242,6 +250,20 @@ private fun VideoPlaybackState.forVideo(href: String): VideoPageState =
         this is VideoPlaybackState.Failed && this.href == href -> VideoPageState.Failed(error)
         else -> VideoPageState.Idle
     }
+
+/** Whether a touch exploration service (TalkBack) is on; follows changes while composed. */
+@Composable
+private fun rememberTouchExplorationEnabled(): Boolean {
+    val manager = LocalContext.current.getSystemService(AccessibilityManager::class.java)
+    var enabled by remember { mutableStateOf(manager?.isTouchExplorationEnabled == true) }
+    DisposableEffect(manager) {
+        val listener = AccessibilityManager.TouchExplorationStateChangeListener { enabled = it }
+        manager?.addTouchExplorationStateChangeListener(listener)
+        enabled = manager?.isTouchExplorationEnabled == true
+        onDispose { manager?.removeTouchExplorationStateChangeListener(listener) }
+    }
+    return enabled
+}
 
 /**
  * Keeps playback tied to what the user sees: it stops when the page changes, when the album is gone

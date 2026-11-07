@@ -45,6 +45,8 @@ data class AlbumDetailState(
     val loadedCount: Int = 0,
     /** The listing stopped at a size limit: [photos] is only the first part of the album. */
     val isTruncated: Boolean = false,
+    /** Poster URLs that failed to load; they stay placeholders until the album is loaded again. */
+    val failedPosterUrls: Set<String> = emptySet(),
 ) {
     internal fun withPhotosDeleted(hrefs: Set<String>): AlbumDetailState =
         copy(
@@ -254,6 +256,11 @@ class AlbumDetailViewModel
             repos.invalidate()
             val error = if (config.isValid) AlbumsError.ConfigurationChanged else AlbumsError.NotConfigured
             _detailState.update { AlbumDetailState(albumName = it.albumName, error = error) }
+        }
+
+        /** Remembers a poster that failed to load so the grid does not request it again on every scroll. */
+        fun markPosterFailed(url: String) {
+            _detailState.update { it.copy(failedPosterUrls = it.failedPosterUrls + url) }
         }
 
         /**

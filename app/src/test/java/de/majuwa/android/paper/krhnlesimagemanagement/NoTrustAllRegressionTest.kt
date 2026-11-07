@@ -118,12 +118,40 @@ class NoTrustAllRegressionTest {
     }
 
     @Test
-    fun `scanner allows the two argument player builder over the OkHttp data source`() {
-        val outside = "app/Other.kt"
+    fun `scanner allows the two argument player builder over the OkHttp data source only in the player factory`() {
+        val factory = "app/ui/viewer/Media3VideoPlayerFactory.kt"
         val allowed =
             "ExoPlayer\n    .Builder(application, mediaSourceFactory)\n    .build()\n" +
                 "ProgressiveMediaSource.Factory(OkHttpDataSource.Factory(callFactory), extractors)"
-        assertTrue(TlsSourceScanner.violations(allowed, outside).isEmpty())
+        assertTrue(TlsSourceScanner.violations(allowed, factory).isEmpty())
+        val elsewhere = TlsSourceScanner.violations(allowed, "app/Other.kt")
+        assertEquals(3, elsewhere.size)
+        listOf(
+            "ExoPlayer\n    .Builder(application, mediaSourceFactory)",
+            "ProgressiveMediaSource.Factory(ds, extractors)",
+            "OkHttpDataSource.Factory(callFactory)",
+        ).forEach { sample ->
+            assertTrue("Not flagged: $sample", TlsSourceScanner.violations(sample, "app/Other.kt").isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `scanner flags other playback stacks and unrestricted player builders even in the player factory`() {
+        val factory = "app/ui/viewer/Media3VideoPlayerFactory.kt"
+        listOf(
+            "val e = DefaultExtractorsFactory()",
+            "ExoPlayer.Builder(application, DefaultRenderersFactory(application))",
+            "ExoPlayer.Builder(application, renderersFactory)",
+            "ExoPlayer.Builder(application, renderers, mediaSourceFactory)\n val r = DefaultRenderersFactory(c)",
+            "VideoView(context)",
+            "view.setVideoURI(uri)",
+            "MediaPlayer().setDataSource(url)",
+            "val p = MediaPlayer.create(context, uri)",
+            "MediaMetadataRetriever().setDataSource(url, headers)",
+        ).forEach { sample ->
+            assertTrue("Not flagged: $sample", TlsSourceScanner.violations(sample, factory).isNotEmpty())
+        }
+        assertTrue(TlsSourceScanner.violations("val p: ExoPlayer; MediaPlayback()", factory).isEmpty())
     }
 
     @Test
@@ -206,9 +234,29 @@ internal object TlsSourceScanner {
             "SimpleCache",
             "CacheDataSource",
             """ExoPlayer\.Builder\((?:[^,()]|\([^()]*\))*\)""",
+            // A two-argument builder is only the restricted one if its second argument is the media source factory
+            // (a RenderersFactory there leaves the default media source factory, i.e. DefaultHttpDataSource).
+            """ExoPlayer\.Builder\((?![^)]*[mM]ediaSourceFactory)""",
+            "RenderersFactory",
+            // Every extractor, or other playback stacks that open the URL themselves without the app's client.
+            "DefaultExtractorsFactory",
+            "VideoView",
+            "setVideoURI",
+            """setDataSource\(""",
+            """(?<![A-Za-z])MediaPlayer(?![A-Za-z])""",
             """OkHttpNetworkFetcherFactory\(\)""",
             """HostnameVerifier\{[^}]*->true\}""",
         ).map(::Regex)
+
+    /** Allowed only in [PLAYER_FACTORY_FILE]: the one place that wires the player to the app's OkHttp call factory. */
+    private val playerFactoryOnly =
+        listOf(
+            """ExoPlayer\.Builder\(""",
+            """ProgressiveMediaSource\.Factory\(""",
+            """OkHttpDataSource\.Factory\(""",
+        ).map(::Regex)
+
+    private const val PLAYER_FACTORY_FILE = "Media3VideoPlayerFactory.kt"
 
     /** Allowed only in `data/tls/`. */
     private val outsideTlsForbidden =
@@ -246,7 +294,10 @@ internal object TlsSourceScanner {
     ): List<String> {
         val text = normalize(source)
         val inTls = TLS_DIR in relativePath.replace('\\', '/')
-        val patterns = if (inTls) everywhere else everywhere + outsideTlsForbidden
+        val inPlayerFactory = relativePath.replace('\\', '/').substringAfterLast('/') == PLAYER_FACTORY_FILE
+        val patterns =
+            (if (inTls) everywhere else everywhere + outsideTlsForbidden) +
+                (if (inPlayerFactory) emptyList() else playerFactoryOnly)
         return patterns.filter { it.containsMatchIn(text) }.map { it.pattern }
     }
 

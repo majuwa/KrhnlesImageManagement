@@ -8,6 +8,7 @@ import androidx.media3.common.PlaybackException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySource
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.toAlbumsError
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,12 +49,16 @@ class VideoPlayerViewModel internal constructor(
     private var lastPhoto: RemotePhoto? = null
     private var lastRepositories: AlbumsRepositorySource? = null
 
+    /** The viewer went to the background ([pause]) and the user did not continue since. */
+    private var paused = false
+
     /** Starts [photo]; ignored while it is already starting or playing, replaces another video. */
     fun play(
         photo: RemotePhoto,
         repositories: AlbumsRepositorySource,
     ) {
         if (startJob?.isActive == true) return
+        paused = false
         val current = _state.value
         if (current is VideoPlaybackState.Playing && current.href == photo.href) return
         if (current is VideoPlaybackState.Preparing && current.href == photo.href) return
@@ -73,8 +78,13 @@ class VideoPlayerViewModel internal constructor(
             viewModelScope.launch {
                 try {
                     val repository = repositories.get().getOrThrow()
-                    val url = repository.videoStreamUrl(photo) ?: throw IllegalArgumentException("No stream URL")
+                    val url = repository.videoStreamUrl(photo)
                     if (gen != generation) return@launch
+                    if (url == null) {
+                        // Not a video of this repository's base folder: a typed error, no exception.
+                        fail(photo.href, VideoPlaybackError.Server(AlbumsError.NotFound))
+                        return@launch
+                    }
                     val playback = playerFactory.create(url, repository.videoCallFactory())
                     if (gen != generation) {
                         playback.release()
@@ -121,6 +131,8 @@ class VideoPlayerViewModel internal constructor(
                 }
             }
         _playback.value = playback
+        // The viewer went to the background while the player was still being built: start paused.
+        if (paused) playback.pause()
     }
 
     private fun fail(
@@ -133,6 +145,7 @@ class VideoPlayerViewModel internal constructor(
 
     /** Pauses the current video (the viewer went to the background); the player is kept. */
     fun pause() {
+        paused = true
         _playback.value?.pause()
     }
 
@@ -141,6 +154,7 @@ class VideoPlayerViewModel internal constructor(
      * was built with; otherwise the player is released and the video starts again.
      */
     fun resume() {
+        paused = false
         val playback = _playback.value ?: return
         val repositories = lastRepositories ?: return
         val photo = lastPhoto ?: return

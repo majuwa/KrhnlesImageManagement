@@ -103,6 +103,28 @@ class AlbumDetailViewModelTest {
         }
 
     @Test
+    fun `a failed poster is remembered until the album is loaded again`() =
+        runTest {
+            fakeRepo.photos = Result.success(listOf(beach, sunset))
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+            val url =
+                viewModel.detailState.value.thumbnailUrls
+                    .getValue(beach.href)
+
+            viewModel.markPosterFailed(url)
+            viewModel.markPosterFailed(url)
+
+            assertEquals(setOf(url), viewModel.detailState.value.failedPosterUrls)
+            viewModel.reload()
+            advanceUntilIdle()
+            assertTrue(
+                viewModel.detailState.value.failedPosterUrls
+                    .isEmpty(),
+            )
+        }
+
+    @Test
     fun `loadAlbum decodes the album name and sets loading synchronously`() {
         viewModel.loadAlbum("/remote.php/dav/files/user/My%20Trip/")
 

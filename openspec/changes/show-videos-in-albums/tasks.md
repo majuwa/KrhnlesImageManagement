@@ -46,6 +46,16 @@
 - [ ] 7.2 Manual device checks (by the user, not automatable; list the results in the PR) against a real Nextcloud (with and without the Movie preview provider) and a plain WebDAV server: mixed album shows posters / placeholders with play indicators, core preview works with an app password, an Android `.mp4` and an iPhone `.mov` (HEVC) play and seek, unsupported codec shows the format message, swipe during playback stops it, logout during playback stops it, TalkBack reads tiles and controls, `SurfaceView` behaves during page swipes
 - [x] 7.3 Run `openspec validate show-videos-in-albums --strict` after any artifact update; verify it reports the change as valid
 
+## 8. Review fixes
+
+- [x] 8.1 M1: `VideoStreamClient.close()` also cancels every live call (set filled by the guard, `EventListener` removes on `callEnd` / `callFailed`); tests with headers sent and a throttled body via `execute()` and `enqueue()`
+- [x] 8.2 M2: `ExoVideoPlayback.play()` seeks to the default position at `STATE_ENDED` and prepares at `STATE_IDLE`; `FakeVideoPlayback.emitEnded()`, ViewModel and mockk tests
+- [x] 8.3 M3: Retry for `UnsupportedFormat`; `DECODER_INIT_FAILED` / `DECODING_RESOURCES_RECLAIMED` map to generic `Server(Unknown)`; the UI test asserts the Retry node and a tap
+- [x] 8.4 L1 paused flag in `VideoPlayerViewModel`; L2 missing stream URL is `Server(NotFound)`; L3 no auto-hide while touch exploration is on; L4 `AlbumDetailState.failedPosterUrls`; L5 `SurfaceView` attached during `Preparing` under poster and spinner
+- [x] 8.5 L6 stronger tests (placeholder tag + no poster request, pinch size, listener captured before `stop()`, `AlbumPhotoDeletionTest` rejected-video case for every path)
+- [x] 8.6 S1 `videoLoadControl()` (32 MiB, bytes over time) pinned by reflection in `Media3VideoPlayerFactoryTest`; S2 `NoTrustAllRegressionTest` hardening + unsupported container bodies end in `UnsupportedFormat`; S3 `Range`-ignoring server limit documented; S4 `SSLException` / `CertificateException` final in `isFinalVideoLoadError`
+- [x] 8.7 Not done: `tools:node="remove"` for `WAKE_LOCK` (WorkManager needs it; not trivial) and the Media3 log-level item
+
 ## Workflow follow-up
 
 - Coordinate with sibling changes before merge: `download-album-photos` (skips videos for now; open the follow-up "Save videos to device"; viewer overlay layout next to the play button), `readme-roadmap-cleanup` (README sections touched here), `german-translation` (translate the new and changed strings; implemented last).

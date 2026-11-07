@@ -161,7 +161,10 @@ class VideoPlayerViewModelTest {
             viewModel.play(video, source)
             advanceUntilIdle()
 
-            assertTrue(viewModel.state.value is VideoPlaybackState.Failed)
+            assertEquals(
+                VideoPlaybackState.Failed(video.href, VideoPlaybackError.Server(AlbumsError.NotFound)),
+                viewModel.state.value,
+            )
             assertTrue(factory.created.isEmpty())
         }
 
@@ -322,10 +325,67 @@ class VideoPlayerViewModelTest {
             viewModel.play(video, source)
             advanceUntilIdle()
             val player = factory.created.single()
+            val captured = player.listener!!
             viewModel.stop()
 
-            player.listener?.onReady()
+            captured.onReady()
+            captured.onPlayingChanged(true)
+            captured.onError(decodingFailure())
 
+            assertTrue(player.released)
             assertEquals(VideoPlaybackState.Idle, viewModel.state.value)
+            assertNull(viewModel.playback.value)
+        }
+
+    @Test
+    fun `a pause while the player is still being built starts it paused`() =
+        runTest(testDispatcher) {
+            viewModel.play(video, source)
+            viewModel.pause() // ON_STOP before the start job ran
+            advanceUntilIdle()
+
+            val player = factory.created.single()
+            assertEquals(1, player.pauseCalls)
+            player.emitReady()
+            assertEquals(VideoPlaybackState.Playing(video.href, false), viewModel.state.value)
+        }
+
+    @Test
+    fun `resume before the player exists cancels the pending pause`() =
+        runTest(testDispatcher) {
+            viewModel.play(video, source)
+            viewModel.pause()
+            viewModel.resume()
+            advanceUntilIdle()
+
+            assertEquals(0, factory.created.single().pauseCalls)
+        }
+
+    @Test
+    fun `a new play after a pause starts playing`() =
+        runTest(testDispatcher) {
+            viewModel.pause()
+            viewModel.play(video, source)
+            advanceUntilIdle()
+
+            assertEquals(0, factory.created.single().pauseCalls)
+        }
+
+    @Test
+    fun `resume after the video ended restarts it from the beginning`() =
+        runTest(testDispatcher) {
+            viewModel.play(video, source)
+            advanceUntilIdle()
+            val player = factory.created.single()
+            player.emitReady()
+            player.emitEnded()
+            assertEquals(VideoPlaybackState.Playing(video.href, false), viewModel.state.value)
+
+            viewModel.resume()
+            advanceUntilIdle()
+
+            assertEquals(0L, player.positionMs)
+            assertFalse(player.ended)
+            assertEquals(VideoPlaybackState.Playing(video.href, true), viewModel.state.value)
         }
 }

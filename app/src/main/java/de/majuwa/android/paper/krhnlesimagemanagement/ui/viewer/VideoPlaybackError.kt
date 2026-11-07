@@ -46,6 +46,7 @@ fun PlaybackException.toVideoPlaybackError(): VideoPlaybackError {
     chain.filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()?.let {
         return statusError(it.responseCode)
     }
+    if (errorCode in TRANSIENT_DECODER_ERROR_CODES) return VideoPlaybackError.Server(AlbumsError.Unknown)
     if (errorCode in UNSUPPORTED_ERROR_CODES) return VideoPlaybackError.UnsupportedFormat
     val cause = chain.firstOrNull { !it.javaClass.name.startsWith(MEDIA3_PACKAGE) } ?: this
     return VideoPlaybackError.Server(cause.toAlbumsError().takeUnless { it == AlbumsError.Unknown } ?: ioFallback())
@@ -75,11 +76,19 @@ private val UNSUPPORTED_ERROR_CODES =
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
         PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
         PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
         PlaybackException.ERROR_CODE_DECODING_FAILED,
         PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
         PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+    )
+
+/**
+ * Decoder failures that say nothing about the file (another app holds the codec, the decoder was
+ * reclaimed): a generic, retryable error instead of "not supported on this device".
+ */
+private val TRANSIENT_DECODER_ERROR_CODES =
+    setOf(
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
         PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED,
     )
 

@@ -4,24 +4,35 @@ import android.app.Application
 import android.net.Uri
 import android.os.Looper
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PropfindListingLimits
 import de.majuwa.android.paper.krhnlesimagemanagement.data.RepositoryClosedException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UnsafeVideoUrlException
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.ExoVideoPlayback
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.Media3VideoPlayerFactory
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VIDEO_TARGET_BUFFER_BYTES
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VideoPlayback
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VideoPlaybackError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VideoPlaybackListener
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.isFinalVideoLoadError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.toVideoPlaybackError
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.videoLoadControl
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import io.mockk.verifyOrder
 import okhttp3.Credentials
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,8 +46,12 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.security.cert.CertificateException
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicReference
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 /**
  * The network contract of video playback: the real [OkHttpDataSource] over the video call factory
@@ -162,6 +177,14 @@ class Media3VideoPlayerFactoryTest {
                 HttpDataSource.HttpDataSourceException(UnsafeVideoUrlException(), spec(), 2001, 1),
             ),
         )
+        assertTrue(isFinalVideoLoadError(SSLHandshakeException("pin")))
+        assertTrue(isFinalVideoLoadError(SSLPeerUnverifiedException("pin")))
+        assertTrue(isFinalVideoLoadError(IOException("wrapped", CertificateException("untrusted"))))
+        assertTrue(
+            isFinalVideoLoadError(
+                HttpDataSource.HttpDataSourceException(SSLException("x"), spec(), 2001, 1),
+            ),
+        )
         assertFalse(isFinalVideoLoadError(SocketTimeoutException("t")))
         assertFalse(isFinalVideoLoadError(IOException("reset")))
     }
@@ -247,5 +270,70 @@ class Media3VideoPlayerFactoryTest {
 
         assertEquals(VideoPlaybackError.Server(AlbumsError.Unknown), error!!.toVideoPlaybackError())
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `a body in a container the restricted extractors do not read ends as an unsupported format`() {
+        val mpegTs = ByteArray(188 * 400).also { for (i in it.indices step 188) it[i] = 0x47 }
+        val flv = "FLV".toByteArray() + byteArrayOf(1, 5, 0, 0, 0, 9) + ByteArray(60_000)
+        val mp3 = "ID3".toByteArray() + byteArrayOf(3, 0, 0, 0, 0, 0, 0) + ByteArray(60_000) { 0xFF.toByte() }
+        for (body in listOf(mpegTs, flv, mp3)) {
+            server.dispatcher =
+                object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) =
+                        MockResponse().setBody(Buffer().write(body))
+                }
+            val (playback, events) = startPlayer(server.url(path).toString())
+
+            val error = awaitError(events)
+            playback.release()
+
+            assertNotNull(error)
+            assertEquals(VideoPlaybackError.UnsupportedFormat, error!!.toVideoPlaybackError())
+        }
+    }
+
+    // ── Buffer cap and replay ──────────────────────────────────────────────────
+
+    @Test
+    fun `the load control caps the buffer in bytes and ranks bytes above time`() {
+        val control = videoLoadControl() as DefaultLoadControl
+
+        fun field(name: String) =
+            DefaultLoadControl::class.java
+                .getDeclaredField(name)
+                .apply { isAccessible = true }
+                .get(control)
+
+        assertEquals(32 * 1024 * 1024, VIDEO_TARGET_BUFFER_BYTES)
+        assertEquals(VIDEO_TARGET_BUFFER_BYTES, field("targetBufferBytesOverwrite"))
+        assertEquals(false, field("prioritizeTimeOverSizeThresholds"))
+    }
+
+    @Test
+    fun `play after the end seeks to the start and an idle player is prepared again`() {
+        val player = mockk<ExoPlayer>(relaxed = true)
+        every { player.playbackState } returns Player.STATE_ENDED
+        ExoVideoPlayback(player).play()
+        verifyOrder {
+            player.seekToDefaultPosition()
+            player.play()
+        }
+        verify(exactly = 0) { player.prepare() }
+
+        val idle = mockk<ExoPlayer>(relaxed = true)
+        every { idle.playbackState } returns Player.STATE_IDLE
+        ExoVideoPlayback(idle).play()
+        verifyOrder {
+            idle.prepare()
+            idle.play()
+        }
+
+        val ready = mockk<ExoPlayer>(relaxed = true)
+        every { ready.playbackState } returns Player.STATE_READY
+        ExoVideoPlayback(ready).play()
+        verify(exactly = 0) { ready.seekToDefaultPosition() }
+        verify(exactly = 0) { ready.prepare() }
+        verify(exactly = 1) { ready.play() }
     }
 }

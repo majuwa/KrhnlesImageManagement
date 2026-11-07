@@ -410,11 +410,11 @@ class AlbumPhotoDeletionTest(
     @Test
     fun `a rejected video deletion stays visible and counts one failure`() =
         runTest(testDispatcher) {
-            if (path != DeletePath.SELECTION) return@runTest
+            // Every path ends in the shared launcher, so the rejection is checked for all of them.
             loadAlbumWithVideo()
             fakeRepo.deletePhotoResults = mapOf(video.href to Result.failure(RuntimeException("403")))
 
-            delete(listOf(video, photoA))
+            assertTrue(delete(listOf(video, photoA)))
             advanceUntilIdle()
 
             assertEquals(PhotoDeletionOutcome(1), outcome())

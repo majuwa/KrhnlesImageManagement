@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -96,11 +97,10 @@ internal fun VideoPage(
                 .semantics { contentDescription = description },
     ) {
         val live = playback.takeIf { state is VideoPageState.Playing || state is VideoPageState.Preparing }
-        if (live != null && state is VideoPageState.Playing) {
-            VideoSurface(live)
-        } else {
-            Poster(posterUrl)
-        }
+        // The surface is attached as soon as the player exists, so the first frame needs no extra
+        // layout pass; while preparing the poster (or placeholder) and the spinner cover it.
+        if (live != null) VideoSurface(live)
+        if (state !is VideoPageState.Playing) Poster(posterUrl)
         when (state) {
             VideoPageState.Idle -> {
                 PlayButton(Modifier.align(Alignment.Center), onClick = onPlay)
@@ -152,7 +152,7 @@ private fun Poster(url: String?) {
                 imageVector = Icons.Outlined.Movie,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = 0.6f),
-                modifier = Modifier.size(96.dp),
+                modifier = Modifier.size(96.dp).testTag("videoPlaceholder"),
             )
         }
     }
@@ -175,7 +175,6 @@ private fun PlayButton(
 
 private val NOT_RETRYABLE =
     setOf(
-        VideoPlaybackError.UnsupportedFormat,
         VideoPlaybackError.Server(AlbumsError.NotConfigured),
         VideoPlaybackError.Server(AlbumsError.ConfigurationChanged),
     )
@@ -196,7 +195,7 @@ private fun FailureContent(
             color = Color.White,
             textAlign = TextAlign.Center,
         )
-        // Retrying cannot help once the configuration is gone or the format is unsupported.
+        // Retrying cannot help once the configuration is gone; an unsupported format may be a transient decoder state.
         if (error !in NOT_RETRYABLE) Button(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
     }
 }

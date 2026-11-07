@@ -30,6 +30,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManag
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -230,6 +231,19 @@ class AlbumListingUiTest {
                 resources.getString(R.string.action_find_blurry),
                 useUnmergedTree = true,
             ).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a video poster that fails to load is remembered by the view model`() {
+        fakeRepo.photos = Result.success(listOf(photoA, videoC))
+        val viewModel = createViewModel()
+        // No preview handler: the real image loader cannot load the fake server's URL and reports an error.
+        showAlbum(viewModel)
+
+        val posterUrl = "https://fake.server/thumb//Album/c.mp4"
+        composeTestRule.waitUntil(15_000) { posterUrl in viewModel.detailState.value.failedPosterUrls }
+
+        assertEquals(setOf(posterUrl), viewModel.detailState.value.failedPosterUrls)
     }
 
     @Test

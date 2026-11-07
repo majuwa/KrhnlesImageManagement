@@ -189,6 +189,7 @@ fun AlbumDetailScreen(
             },
             onPhotoLongClick = { href -> selectedHrefs = selectedHrefs + href },
             onRetry = viewModel::reload,
+            onPosterError = viewModel::markPosterFailed,
         )
     }
 }
@@ -230,6 +231,7 @@ private fun AlbumDetailContent(
     onPhotoClick: (index: Int) -> Unit,
     onPhotoLongClick: (href: String) -> Unit,
     onRetry: () -> Unit,
+    onPosterError: (url: String) -> Unit,
 ) {
     when {
         isDeletingPhotos -> {
@@ -274,6 +276,7 @@ private fun AlbumDetailContent(
                     modifier = Modifier.weight(1f),
                     onPhotoClick = onPhotoClick,
                     onPhotoLongClick = onPhotoLongClick,
+                    onPosterError = onPosterError,
                 )
             }
         }
@@ -287,6 +290,7 @@ private fun AlbumPhotoGrid(
     modifier: Modifier,
     onPhotoClick: (index: Int) -> Unit,
     onPhotoLongClick: (href: String) -> Unit,
+    onPosterError: (url: String) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -299,10 +303,13 @@ private fun AlbumPhotoGrid(
                 photo = photo,
                 position = index + 1,
                 total = state.photos.size,
-                thumbUrl = state.thumbnailUrls[photo.href],
+                // A poster that failed once stays a placeholder: the failed item's state is lost when it
+                // scrolls out of the lazy grid, which would request the missing preview again.
+                thumbUrl = state.thumbnailUrls[photo.href]?.takeUnless { it in state.failedPosterUrls },
                 isSelected = photo.href in selectedHrefs,
                 onClick = { onPhotoClick(index) },
                 onLongClick = { onPhotoLongClick(photo.href) },
+                onPosterError = onPosterError,
             )
         }
     }
@@ -391,6 +398,7 @@ internal fun PhotoGridItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPosterError: (url: String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val description = mediaPositionDescription(photo, position, total)
@@ -403,7 +411,7 @@ internal fun PhotoGridItem(
                 .semantics(mergeDescendants = true) { contentDescription = description },
     ) {
         if (photo.isVideo) {
-            VideoTileContent(thumbUrl = thumbUrl)
+            VideoTileContent(thumbUrl = thumbUrl, onPosterError = onPosterError)
         } else if (thumbUrl != null) {
             AsyncImage(
                 model =
@@ -447,7 +455,10 @@ internal fun PhotoGridItem(
  * play indicator. Both decorative: the tile node carries the description.
  */
 @Composable
-private fun VideoTileContent(thumbUrl: String?) {
+private fun VideoTileContent(
+    thumbUrl: String?,
+    onPosterError: (url: String) -> Unit,
+) {
     val context = LocalContext.current
     var posterFailed by remember(thumbUrl) { mutableStateOf(false) }
     val showPoster = thumbUrl != null && !posterFailed
@@ -462,7 +473,10 @@ private fun VideoTileContent(thumbUrl: String?) {
                         .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                onError = { posterFailed = true },
+                onError = {
+                    posterFailed = true
+                    onPosterError(thumbUrl)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

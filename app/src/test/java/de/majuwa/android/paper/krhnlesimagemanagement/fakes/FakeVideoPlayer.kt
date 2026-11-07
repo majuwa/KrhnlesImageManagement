@@ -28,8 +28,16 @@ class FakeVideoPlayback(
     var surface: SurfaceView? = null
         private set
 
+    /** The video played to its end; a `play()` then restarts it from the beginning like the real player. */
+    var ended = false
+        private set
+
     override fun play() {
         playCalls++
+        if (ended) {
+            ended = false
+            positionMs = 0
+        }
         isPlaying = true
         listener?.onPlayingChanged(true)
     }
@@ -58,6 +66,11 @@ class FakeVideoPlayback(
     fun emitPlaying(playing: Boolean) {
         isPlaying = playing
         listener?.onPlayingChanged(playing)
+    }
+
+    fun emitEnded() {
+        ended = true
+        emitPlaying(false)
     }
 
     fun emitError(error: PlaybackException) = listener?.onError(error)
