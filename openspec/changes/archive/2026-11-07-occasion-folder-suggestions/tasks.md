@@ -51,3 +51,5 @@
 - Coordinate with `album-search-and-sort` (both touch `AlbumsRepositoryContract` / `FakeAlbumsRepository`; it adds `RemoteAlbum.lastModified`, which `folderNameOf` ignores) and rebase whichever lands second.
 - Ensure `german-translation` (implemented last) translates `occasion_suggestions_heading` and `occasion_suggestion_use_label`.
 - Archive the change after review and sync the new `occasion-folder-suggestions` spec.
+
+Note: task 6.5 (manual verification with a reachable and an unreachable server) was archived unticked; it still needs a manual check.
