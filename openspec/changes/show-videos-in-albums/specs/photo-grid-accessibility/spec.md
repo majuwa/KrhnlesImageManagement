@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Album video tiles describe themselves as videos
-A video tile in the album detail grid SHALL be described as "Video N of M" (its position among all photos and videos of the album), whether its poster is loaded, failed or replaced by the placeholder. The play indicator and the placeholder icon SHALL NOT be separate accessibility elements. Selection SHALL be announced as for photo tiles.
+A video tile in the album detail grid SHALL be described as "Video N of M" (its position among all photos and videos of the album), whether its poster is loaded, failed or replaced by the placeholder. The play indicator and the placeholder icon SHALL NOT be separate accessibility elements. In selection mode a video tile SHALL expose the same actions and semantics as a photo tile.
 
 #### Scenario: Video tile with poster
 - **WHEN** an accessibility service inspects the album tile of the second of five items, a video with a server preview
@@ -11,9 +11,9 @@ A video tile in the album detail grid SHALL be described as "Video N of M" (its 
 - **WHEN** the video has no server preview and shows the placeholder icon
 - **THEN** its description is still "Video 2 of 5"
 
-#### Scenario: Selected video tile
-- **WHEN** a video tile is selected in selection mode
-- **THEN** it is announced as selected like a selected photo tile
+#### Scenario: Video tile in selection mode
+- **WHEN** an accessibility service inspects a selected video tile and a selected photo tile in selection mode
+- **THEN** both expose the same actions and differ only in their "Video N of M" / "Photo N of M" description
 
 ## MODIFIED Requirements
 

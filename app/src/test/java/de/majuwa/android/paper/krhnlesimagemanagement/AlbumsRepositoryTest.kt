@@ -280,7 +280,7 @@ class AlbumsRepositoryTest {
         }
 
     @Test
-    fun `listPhotos skips video files so reviews never scan them`() =
+    fun `listPhotos lists allow-listed videos with their media kind`() =
         runTest {
             repo = createRepo()
             val xml =
@@ -324,7 +324,8 @@ class AlbumsRepositoryTest {
 
             val photos = repo.listPhotos("/remote.php/dav/files/user/Trip/").getOrThrow().photos
 
-            assertEquals(listOf("beach.jpg"), photos.map { it.displayName })
+            assertEquals(listOf("clip.mp4", "untyped.mov", "beach.jpg"), photos.map { it.displayName })
+            assertEquals(listOf(true, true, false), photos.map { it.isVideo })
         }
 
     // ── deletePhoto ─────────────────────────────────────────────────────────

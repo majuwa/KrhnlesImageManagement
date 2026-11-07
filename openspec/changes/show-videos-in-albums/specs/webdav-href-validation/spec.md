@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Video streams stay on the configured server
-A video SHALL only be streamed from a URL that lies strictly below the configured base folder on the configured origin (resolved from the listing with the same href checks as photos). Any other URL SHALL fail without sending a request. Video requests SHALL carry the user's credentials only to the configured origin and SHALL NOT follow any redirect.
+A video SHALL only be streamed from a URL that lies strictly below the configured base folder on the configured origin (resolved from the listing with the same href checks as photos). Any other URL, and any request other than a plain read of the video, SHALL fail without sending a request. Video requests SHALL carry the user's credentials only to the configured origin, SHALL NOT follow any redirect, and the body of an error response SHALL NOT be read into memory.
 
 #### Scenario: Video below the base folder
 - **WHEN** the user plays a listed video of an album
@@ -20,5 +20,9 @@ A video SHALL only be streamed from a URL that lies strictly below the configure
 - **THEN** no further request is sent with the old configuration's credentials
 
 #### Scenario: Server certificate trust
-- **WHEN** the configured server uses a certificate the app trusts only through the user's explicit choice (see the self-signed certificate setting, when available)
+- **WHEN** the configured server uses a certificate the app trusts only through the user's explicit choice (the pinned self-signed certificate)
 - **THEN** video requests use exactly the same trust decision as album listing requests, never a broader one
+
+#### Scenario: Error response with a huge body
+- **WHEN** the server answers a video request with an error status and an arbitrarily large body
+- **THEN** the body is discarded without being read, memory use stays bounded and the page shows the message for that status

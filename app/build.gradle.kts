@@ -86,6 +86,8 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     // Video frame thumbnails; registered only through LocalVideoFrameDecoderFactory (service loader off).
     implementation(libs.coil.video)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.datasource.okhttp)
 
     // WorkManager
     implementation(libs.workmanager)

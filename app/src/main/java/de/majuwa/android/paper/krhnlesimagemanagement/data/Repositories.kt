@@ -10,6 +10,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
+import okhttp3.Call
 
 interface CredentialRepository {
     val autoDateFoldersEnabled: Flow<Boolean>
@@ -68,7 +69,22 @@ class CredentialSaveException(
     cause: Throwable,
 ) : Exception("Saving credentials failed: ${cause.javaClass.simpleName}", cause)
 
-interface AlbumsRepositoryContract {
+/** What the player needs from an album flow's repository. */
+interface VideoStreamSource {
+    /**
+     * WebDAV URL of a video for playback — the only place a video file URL is handed out, used by
+     * the player after a tap. `null` for an image or an href outside the base folder.
+     */
+    fun videoStreamUrl(photo: RemotePhoto): String?
+
+    /**
+     * The client that streams videos: no redirects, own dispatcher, `GET` only below the base
+     * folder, credentials for the configured origin only; closed with the repository.
+     */
+    fun videoCallFactory(): Call.Factory
+}
+
+interface AlbumsRepositoryContract : VideoStreamSource {
     suspend fun listAlbums(): Result<List<RemoteAlbum>>
 
     /**
@@ -86,9 +102,11 @@ interface AlbumsRepositoryContract {
         newName: String,
     ): Result<RemoteAlbum>
 
-    suspend fun thumbnailUrl(photo: RemotePhoto): String
+    /** Thumbnail URL; `null` only for a video without a server preview (never the video's own URL). */
+    suspend fun thumbnailUrl(photo: RemotePhoto): String?
 
-    fun fullImageUrl(photo: RemotePhoto): String
+    /** Full-screen image URL; `null` only for a video without a server preview. */
+    fun fullImageUrl(photo: RemotePhoto): String?
 
     suspend fun downloadBitmapForHash(url: String): Bitmap
 

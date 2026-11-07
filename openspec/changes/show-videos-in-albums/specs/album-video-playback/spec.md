@@ -27,7 +27,7 @@ A video SHALL start loading only when the user taps play, and SHALL be streamed 
 - **THEN** no request for the video file is sent
 
 #### Scenario: Seeking
-- **WHEN** the user seeks forward in a playing video
+- **WHEN** the user seeks forward in a playing video on a server that supports byte ranges
 - **THEN** the app requests the file from the new position (byte range) instead of downloading everything before it
 
 #### Scenario: No cached copy
@@ -85,6 +85,10 @@ If a video cannot be played, the video page SHALL show a localized message chose
 #### Scenario: File removed on the server
 - **WHEN** the server answers the video request with 404
 - **THEN** the page shows the "not found" message with Retry, not the server's response text
+
+#### Scenario: Rejected credentials are not retried automatically
+- **WHEN** the server answers the video request with 401, 403 or a redirect
+- **THEN** the player does not repeat the request on its own; the matching message with Retry is shown and only a tap on Retry sends a new request
 
 #### Scenario: Retry after a network failure
 - **WHEN** playback failed because the server was unreachable and the user taps Retry

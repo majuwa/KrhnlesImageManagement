@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySource
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.model.imagesOnly
 import de.majuwa.android.paper.krhnlesimagemanagement.util.DuplicateFinder
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +60,8 @@ class DuplicatesViewModel
          * Starts the scan of [photos] for duplicates — only from [DuplicatesState.Idle], so a screen
          * recreated (e.g. after rotation) while the scan runs, its results are shown or a deletion
          * runs keeps that state. Each photo's thumbnail comes from [thumbnailUrls] or, if missing,
-         * the repository's thumbnail URL. The caller passes only a fully loaded album.
+         * the repository's thumbnail URL. The caller passes only a fully loaded album;
+         * videos are filtered out first (the review covers photos only).
          */
         fun findDuplicates(
             photos: List<RemotePhoto>,
@@ -67,7 +69,7 @@ class DuplicatesViewModel
             repositories: AlbumsRepositorySource,
         ) {
             if (_duplicatesState.value != DuplicatesState.Idle) return
-            startScan(photos, thumbnailUrls, repositories)
+            startScan(photos.imagesOnly(), thumbnailUrls, repositories)
         }
 
         /**
@@ -81,7 +83,7 @@ class DuplicatesViewModel
             repositories: AlbumsRepositorySource,
         ) {
             if (_duplicatesState.value !is DuplicatesState.Error || photos.isEmpty()) return
-            startScan(photos, thumbnailUrls, repositories)
+            startScan(photos.imagesOnly(), thumbnailUrls, repositories)
         }
 
         private fun startScan(

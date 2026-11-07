@@ -43,6 +43,15 @@
     <string name="cd_back">Back</string>
     <string name="cd_reload">Reload</string>
     <string name="cd_photo_position">Photo %1$d of %2$d</string>
+    <string name="cd_play_video">Play video</string>
+    <string name="cd_pause_video">Pause video</string>
+    <string name="cd_video_seek">Video position</string>
+    <string name="video_position_state">%1$s of %2$s</string>
+    <string name="video_elapsed_of_total">%1$s / %2$s</string>
+    <string name="viewer_page_counter">%1$d / %2$d</string>
+    <string name="video_error_unsupported_format">This video format is not supported on this device.</string>
+    <string name="video_error_redirected">The server redirected the video request, which is not followed. Check the server address in Settings.</string>
+    <string name="cd_video_position">Video %1$d of %2$d</string>
     <string name="cd_photo_position_taken_on">Photo %1$d of %2$d, taken on %3$s</string>
     <string name="cd_photo_position_date_unknown">Photo %1$d of %2$d, date unknown</string>
     <string name="cd_video_position_duration_taken_on">Video %1$d of %2$d, %3$s, taken on %4$s</string>
@@ -215,7 +224,7 @@
     <string name="album_sort_modified_oldest">Last modified (oldest first)</string>
     <string name="empty_upload_history">No upload history yet.</string>
     <string name="dialog_delete_album_title">Delete album?</string>
-    <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos from the server? This cannot be undone.</string>
+    <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos and videos from the server? This cannot be undone.</string>
     <string name="dialog_rename_album_title">Rename album</string>
     <string name="label_album_name">Album name</string>
     <string name="error_album_name_blank">Please enter an album name.</string>
@@ -243,26 +252,26 @@
     <string name="albums_error_unknown">Something went wrong while talking to the server. Please try again.</string>
 
     <!-- Album detail -->
-    <string name="empty_album_photos">No photos in this album.</string>
+    <string name="empty_album_photos">No photos or videos in this album.</string>
     <plurals name="album_loading_photos">
-        <item quantity="one">Loading photos… %d found</item>
-        <item quantity="other">Loading photos… %d found</item>
+        <item quantity="one">Loading… %d item found</item>
+        <item quantity="other">Loading… %d items found</item>
     </plurals>
     <plurals name="album_truncated_notice">
-        <item quantity="one">This album is too large to show completely. Only the first %d photo is shown.</item>
-        <item quantity="other">This album is too large to show completely. Only the first %d photos are shown.</item>
+        <item quantity="one">This album is too large to show completely. Only the first %d item is shown.</item>
+        <item quantity="other">This album is too large to show completely. Only the first %d items are shown.</item>
     </plurals>
-    <string name="album_truncated_empty_notice">This album is too large to load completely, and no photos were found in the part that could be loaded.</string>
+    <string name="album_truncated_empty_notice">This album is too large to load completely, and no photos or videos were found in the part that could be loaded.</string>
     <string name="review_truncated_notice">This album is too large to load completely, so the results may be incomplete.</string>
-    <string name="status_deleting_photos">Deleting photos…</string>
-    <string name="dialog_delete_photos_title">Delete photos?</string>
+    <string name="status_deleting_photos">Deleting…</string>
+    <string name="dialog_delete_photos_title">Delete from album?</string>
     <plurals name="dialog_delete_photos_message">
-        <item quantity="one">Permanently delete %1$d photo from the server? This cannot be undone.</item>
-        <item quantity="other">Permanently delete %1$d photos from the server? This cannot be undone.</item>
+        <item quantity="one">Permanently delete %1$d item from the server? This cannot be undone.</item>
+        <item quantity="other">Permanently delete %1$d items from the server? This cannot be undone.</item>
     </plurals>
     <plurals name="snackbar_delete_failures">
-        <item quantity="one">%d photo could not be deleted.</item>
-        <item quantity="other">%d photos could not be deleted.</item>
+        <item quantity="one">%d item could not be deleted.</item>
+        <item quantity="other">%d items could not be deleted.</item>
     </plurals>
 
     <!-- Blur review -->

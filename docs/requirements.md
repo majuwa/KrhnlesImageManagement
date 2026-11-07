@@ -47,10 +47,10 @@ implemented behaviour, user feedback, and explicit feature requests.
 | ID    | Requirement                                                                                     | Status      |
 |-------|-------------------------------------------------------------------------------------------------|-------------|
 | A-001 | Users can browse remote WebDAV albums (directories) in a list.                                  | Implemented |
-| A-002 | Tapping an album opens a detail view showing the photos inside it as thumbnails.                | Implemented |
-| A-003 | Users can long-press to enter selection mode and delete selected photos from the server.        | Implemented |
-| A-004 | A duplicate-finder scan is available per album.                                                 | Implemented |
-| A-005 | A blur-detection scan is available per album.                                                   | Implemented |
+| A-002 | Tapping an album opens a detail view showing the photos and videos (MP4, M4V, MOV, 3GP, 3G2, WebM, MKV) inside it as thumbnails; a video tile shows its server preview or a placeholder with a play icon and is described "Video N of M" (issue #74). | Implemented |
+| A-003 | Users can long-press to enter selection mode and delete selected photos and videos from the server. | Implemented |
+| A-004 | A duplicate-finder scan is available per album (photos only; videos are ignored).               | Implemented |
+| A-005 | A blur-detection scan is available per album (photos only; videos are ignored).                 | Implemented |
 | A-006 | The album list can be searched by name (case- and accent-insensitive); the query survives rotation, tab switches and refresh. | Implemented |
 | A-007 | The album list can be sorted by name (A–Z default, Z–A) or last modified (newest / oldest first, undated last); the choice is remembered and reset on logout. | Implemented |
 
@@ -67,8 +67,11 @@ implemented behaviour, user feedback, and explicit feature requests.
 | V-005 | When a photo is zoomed in, swiping must pan the zoomed image instead of switching pages.        | Implemented |
 | V-006 | When zoom is reset to 1×, horizontal swiping must switch pages again.                          | Implemented |
 | V-007 | System bars are hidden in the viewer; a tap toggles overlay controls (back button, page counter). | Implemented |
-| V-008 | Controls auto-hide after 3 seconds of inactivity.                                               | Implemented |
+| V-008 | Controls auto-hide after 3 seconds of inactivity (on a video page only while the video plays; a paused or failed video keeps its controls; photos unchanged; the delay honours the system accessibility timeout). | Implemented |
 | V-009 | The viewer opens at the index of the photo the user tapped.                                     | Implemented |
+| V-010 | A video page shows the server preview (or a placeholder) with a play button; the video file itself is not requested before the tap. | Implemented |
+| V-011 | Videos play in the app, streamed from the configured server only with origin-restricted credentials, pinned trust, no redirects and no copy on the device; play / pause and a seek bar are available. | Implemented |
+| V-012 | Playback stops on page change, when the album is closed or the account / server changes, and pauses when the viewer goes to the background (not on rotation). | Implemented |
 
 > **Note on V-002 / V-006:** The root cause of the regression was that `detectTransformGestures`
 > unconditionally consumed all pointer events — including single-finger horizontal swipes — so

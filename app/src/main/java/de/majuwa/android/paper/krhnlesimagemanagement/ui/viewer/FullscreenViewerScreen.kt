@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer
 
 import android.app.Activity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -42,8 +44,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -53,12 +57,18 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailState
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.mediaPositionDescription
 import kotlinx.coroutines.delay
 
 private const val CONTROLS_HIDE_DELAY_MS = 3_000L
@@ -69,9 +79,12 @@ fun FullscreenViewerScreen(
     viewModel: AlbumDetailViewModel,
     initialIndex: Int,
     onNavigateBack: () -> Unit,
+    playerViewModel: VideoPlayerViewModel = viewModel(),
 ) {
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     val photos = detailState.photos
+    val playbackState by playerViewModel.state.collectAsStateWithLifecycle()
+    val playback by playerViewModel.playback.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val view = LocalView.current
 
@@ -99,10 +112,28 @@ fun FullscreenViewerScreen(
         isCurrentPageZoomed = false
     }
 
-    // Auto-hide controls after delay whenever they become visible.
-    LaunchedEffect(controlsVisible) {
-        if (controlsVisible) {
-            delay(CONTROLS_HIDE_DELAY_MS)
+    VideoPlaybackLifecycle(
+        pagerState = pagerState,
+        detailState = detailState,
+        playbackState = playbackState,
+        playerViewModel = playerViewModel,
+    )
+
+    // Auto-hide controls after a delay whenever they become visible. On a video page they hide only
+    // while the video plays, so a paused or failed video keeps its controls; photos always hide.
+    val currentIsVideo = photos.getOrNull(pagerState.currentPage)?.isVideo == true
+    val videoPlaying = (playbackState as? VideoPlaybackState.Playing)?.isPlaying == true
+    val hideTimeout =
+        LocalAccessibilityManager.current
+            ?.calculateRecommendedTimeoutMillis(
+                CONTROLS_HIDE_DELAY_MS,
+                containsIcons = true,
+                containsText = true,
+                containsControls = true,
+            ) ?: CONTROLS_HIDE_DELAY_MS
+    LaunchedEffect(controlsVisible, currentIsVideo, videoPlaying) {
+        if (controlsVisible && (!currentIsVideo || videoPlaying)) {
+            delay(hideTimeout)
             controlsVisible = false
         }
     }
@@ -126,14 +157,29 @@ fun FullscreenViewerScreen(
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
                 val photo = photos[page]
-                val url = viewModel.fullImageUrl(photo)
-                ZoomablePage(
-                    url = url,
-                    contentDescription = photoPositionDescription(page + 1, photos.size),
-                    onZoomedChange = { zoomed ->
-                        if (page == pagerState.currentPage) isCurrentPageZoomed = zoomed
-                    },
-                )
+                val description = mediaPositionDescription(photo, page + 1, photos.size)
+                if (photo.isVideo) {
+                    val pageState = playbackState.forVideo(photo.href)
+                    VideoPage(
+                        description = description,
+                        posterUrl = viewModel.fullImageUrl(photo),
+                        state = pageState,
+                        playback = playback.takeIf { pageState is VideoPageState.Playing },
+                        controlsVisible = controlsVisible,
+                        onPlay = { playerViewModel.play(photo, viewModel.repositories) },
+                        onPause = playerViewModel::pause,
+                        onResume = playerViewModel::resume,
+                        onRetry = playerViewModel::retry,
+                    )
+                } else {
+                    ZoomablePage(
+                        url = viewModel.fullImageUrl(photo).orEmpty(),
+                        contentDescription = description,
+                        onZoomedChange = { zoomed ->
+                            if (page == pagerState.currentPage) isCurrentPageZoomed = zoomed
+                        },
+                    )
+                }
             }
 
             // Overlay controls — tap anywhere to toggle
@@ -156,7 +202,7 @@ fun FullscreenViewerScreen(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.cd_back),
                             tint = Color.White,
                         )
                     }
@@ -164,7 +210,12 @@ fun FullscreenViewerScreen(
                     // Page counter bottom-centre
                     if (photos.size > 1) {
                         Text(
-                            text = "${pagerState.currentPage + 1} / ${photos.size}",
+                            text =
+                                stringResource(
+                                    R.string.viewer_page_counter,
+                                    pagerState.currentPage + 1,
+                                    photos.size,
+                                ),
                             color = Color.White,
                             style = MaterialTheme.typography.labelMedium,
                             modifier =
@@ -182,6 +233,57 @@ fun FullscreenViewerScreen(
         }
     }
 }
+
+/** The playback state of the video [href] as a page state; every other video page is idle. */
+private fun VideoPlaybackState.forVideo(href: String): VideoPageState =
+    when {
+        this is VideoPlaybackState.Preparing && this.href == href -> VideoPageState.Preparing
+        this is VideoPlaybackState.Playing && this.href == href -> VideoPageState.Playing(isPlaying)
+        this is VideoPlaybackState.Failed && this.href == href -> VideoPageState.Failed(error)
+        else -> VideoPageState.Idle
+    }
+
+/**
+ * Keeps playback tied to what the user sees: it stops when the page changes, when the album is gone
+ * (logout, server change) or the video left the album, and pauses when the viewer goes to the
+ * background — except for the Activity recreation of a rotation, which keeps playing.
+ */
+@Composable
+private fun VideoPlaybackLifecycle(
+    pagerState: PagerState,
+    detailState: AlbumDetailState,
+    playbackState: VideoPlaybackState,
+    playerViewModel: VideoPlayerViewModel,
+) {
+    val activity = LocalActivity.current
+    val playingHref = playbackState.href
+    val photos = detailState.photos
+
+    LaunchedEffect(pagerState.currentPage, playingHref, photos) {
+        val pageHref = photos.getOrNull(pagerState.currentPage)?.href
+        if (playingHref != null && pageHref != null && pageHref != playingHref) playerViewModel.stop()
+    }
+
+    LaunchedEffect(detailState.error, detailState.isLoaded, photos, playingHref) {
+        val albumGone =
+            detailState.error == AlbumsError.NotConfigured || detailState.error == AlbumsError.ConfigurationChanged
+        val videoGone = detailState.isLoaded && photos.none { it.href == playingHref }
+        if (playingHref != null && (albumGone || videoGone)) playerViewModel.stop()
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if (activity?.isChangingConfigurations != true) playerViewModel.pause()
+    }
+}
+
+private val VideoPlaybackState.href: String?
+    get() =
+        when (this) {
+            VideoPlaybackState.Idle -> null
+            is VideoPlaybackState.Preparing -> href
+            is VideoPlaybackState.Playing -> href
+            is VideoPlaybackState.Failed -> href
+        }
 
 @Composable
 private fun ZoomablePage(

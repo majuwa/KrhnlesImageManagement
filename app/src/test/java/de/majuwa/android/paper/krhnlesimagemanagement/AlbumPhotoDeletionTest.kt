@@ -6,6 +6,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
@@ -372,5 +373,52 @@ class AlbumPhotoDeletionTest(
             assertEquals(listOf(photoA), fakeRepo.deletedPhotos)
             assertEquals(PhotoDeletionOutcome(1), outcome())
             assertEquals(listOf(photoB.href, photoC.href), remainingHrefs())
+        }
+
+    private val video = RemotePhoto("v.mp4", "/Album/v.mp4", "7", "video/mp4", MediaKind.Video)
+
+    private fun TestScope.loadAlbumWithVideo() {
+        fakeRepo.photos = Result.success(allPhotos + video)
+        viewModel.loadAlbum("/Album/")
+        advanceUntilIdle()
+        assertEquals(allPhotos.size + 1, viewModel.detailState.value.photos.size)
+    }
+
+    @Test
+    fun `a video in the album is deleted only by the selection path`() =
+        runTest(testDispatcher) {
+            loadAlbumWithVideo()
+
+            if (path == DeletePath.SELECTION) {
+                assertTrue(delete(listOf(photoA, video)))
+                advanceUntilIdle()
+                assertEquals(listOf(photoA, video), fakeRepo.deletedPhotos)
+                assertEquals(listOf(photoB.href, photoC.href), remainingHrefs())
+                assertFalse(thumbnailHrefs().contains(video.href))
+            } else {
+                // Review results never contain videos: a review deletion leaves the video alone.
+                assertTrue(delete(listOf(photoA)))
+                advanceUntilIdle()
+                assertEquals(listOf(photoA), fakeRepo.deletedPhotos)
+                assertTrue(video.href in remainingHrefs())
+                assertTrue(video.href in thumbnailHrefs())
+            }
+            assertEquals(PhotoDeletionOutcome(0), outcome())
+            assertIdle()
+        }
+
+    @Test
+    fun `a rejected video deletion stays visible and counts one failure`() =
+        runTest(testDispatcher) {
+            if (path != DeletePath.SELECTION) return@runTest
+            loadAlbumWithVideo()
+            fakeRepo.deletePhotoResults = mapOf(video.href to Result.failure(RuntimeException("403")))
+
+            delete(listOf(video, photoA))
+            advanceUntilIdle()
+
+            assertEquals(PhotoDeletionOutcome(1), outcome())
+            assertTrue(video.href in remainingHrefs())
+            assertFalse(photoA.href in remainingHrefs())
         }
 }

@@ -13,6 +13,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.UploadedRemov
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionSuggestionsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VideoPlayerViewModel
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +43,7 @@ class ViewModelFactoryRegressionTest(
                 arrayOf(ShareViewModel::class.java),
                 arrayOf(UploadedRemovalViewModel::class.java),
                 arrayOf(OccasionSuggestionsViewModel::class.java),
+                arrayOf(VideoPlayerViewModel::class.java),
             )
     }
 

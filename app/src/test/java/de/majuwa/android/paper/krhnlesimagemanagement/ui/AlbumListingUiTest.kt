@@ -17,6 +17,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailScreen
@@ -205,5 +206,57 @@ class AlbumListingUiTest {
         val empty = resources.getString(R.string.empty_album_photos)
         composeTestRule.waitUntilAtLeastOneExists(hasText(empty))
         composeTestRule.onNodeWithText(resources.getString(R.string.album_truncated_empty_notice)).assertDoesNotExist()
+    }
+
+    private val videoC = RemotePhoto("c.mp4", "/Album/c.mp4", "3", "video/mp4", MediaKind.Video)
+
+    @Test
+    fun `album with only videos shows no empty message and no review buttons`() {
+        fakeRepo.photos = Result.success(listOf(videoC))
+        fakeRepo.videoPreviewsAvailable = false
+        val viewModel = createViewModel()
+        showAlbum(viewModel)
+        composeTestRule.waitUntil { viewModel.detailState.value.isLoaded }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("No photos or videos in this album.").assertDoesNotExist()
+        composeTestRule
+            .onNodeWithText(
+                resources.getString(R.string.action_find_duplicates),
+                useUnmergedTree = true,
+            ).assertDoesNotExist()
+        composeTestRule
+            .onNodeWithText(
+                resources.getString(R.string.action_find_blurry),
+                useUnmergedTree = true,
+            ).assertDoesNotExist()
+    }
+
+    @Test
+    fun `album with photos and videos shows both review buttons`() {
+        fakeRepo.photos = Result.success(listOf(photoA, videoC))
+        val viewModel = createViewModel()
+        showAlbum(viewModel)
+        composeTestRule.waitUntil { viewModel.detailState.value.isLoaded }
+
+        composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithText(
+                resources.getString(R.string.action_find_duplicates),
+                useUnmergedTree = true,
+            ).assertExists()
+        composeTestRule
+            .onNodeWithText(
+                resources.getString(R.string.action_find_blurry),
+                useUnmergedTree = true,
+            ).assertExists()
+    }
+
+    @Test
+    fun `empty album message names photos and videos`() {
+        fakeRepo.photos = Result.success(emptyList())
+        showAlbum(createViewModel())
+
+        composeTestRule.waitUntilAtLeastOneExists(hasText("No photos or videos in this album."))
     }
 }

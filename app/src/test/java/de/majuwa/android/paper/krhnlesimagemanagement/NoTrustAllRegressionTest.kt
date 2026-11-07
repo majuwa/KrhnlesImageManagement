@@ -103,12 +103,27 @@ class NoTrustAllRegressionTest {
                 "override fun onReceivedSslError() {}",
                 "CertificatePinner.Builder()",
                 "DefaultHttpDataSource.Factory()",
+                "DefaultDataSource.Factory(context)",
+                "val f = DefaultMediaSourceFactory(context)",
+                "val c = SimpleCache(dir, evictor, db)",
+                "CacheDataSource.Factory().setCache(c)",
+                "ExoPlayer.Builder(context).build()",
+                "ExoPlayer\n    .Builder(context.applicationContext)\n    .build()",
                 "OkHttpNetworkFetcherFactory()",
                 "HostnameVerifier {\n _, _ ->\n true\n}",
             )
         samples.forEach { sample ->
             assertTrue("Not flagged: $sample", TlsSourceScanner.violations(sample, outside).isNotEmpty())
         }
+    }
+
+    @Test
+    fun `scanner allows the two argument player builder over the OkHttp data source`() {
+        val outside = "app/Other.kt"
+        val allowed =
+            "ExoPlayer\n    .Builder(application, mediaSourceFactory)\n    .build()\n" +
+                "ProgressiveMediaSource.Factory(OkHttpDataSource.Factory(callFactory), extractors)"
+        assertTrue(TlsSourceScanner.violations(allowed, outside).isEmpty())
     }
 
     @Test
@@ -183,6 +198,14 @@ internal object TlsSourceScanner {
             "onReceivedSslError",
             "CertificatePinner",
             "DefaultHttpDataSource",
+            // Media3 playback: only ExoPlayer.Builder(application, ProgressiveMediaSource.Factory(...)) over the
+            // OkHttp data source. These route a MediaItem through DefaultHttpDataSource (system trust only, no
+            // credentials, platform redirects), keep every extractor or leave copies of the video on disk.
+            "DefaultDataSource",
+            "DefaultMediaSourceFactory",
+            "SimpleCache",
+            "CacheDataSource",
+            """ExoPlayer\.Builder\((?:[^,()]|\([^()]*\))*\)""",
             """OkHttpNetworkFetcherFactory\(\)""",
             """HostnameVerifier\{[^}]*->true\}""",
         ).map(::Regex)

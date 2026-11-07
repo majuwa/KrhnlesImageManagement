@@ -7,6 +7,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.util.exceedsAlbumNameLimit
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
+import okhttp3.Call
 
 class FakeAlbumsRepository : AlbumsRepositoryContract {
     var albums: Result<List<RemoteAlbum>> = Result.success(emptyList())
@@ -96,9 +97,34 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
             )
     }
 
-    override suspend fun thumbnailUrl(photo: RemotePhoto): String = "https://fake.server/thumb/${photo.href}"
+    /** `false` simulates a server without video previews: videos get no thumbnail / full image URL. */
+    var videoPreviewsAvailable = true
 
-    override fun fullImageUrl(photo: RemotePhoto): String = "https://fake.server/full/${photo.href}"
+    /** Every photo passed to [thumbnailUrl], in call order. */
+    val thumbnailRequests = mutableListOf<RemotePhoto>()
+
+    override suspend fun thumbnailUrl(photo: RemotePhoto): String? {
+        thumbnailRequests += photo
+        return if (photo.isVideo && !videoPreviewsAvailable) null else "https://fake.server/thumb/${photo.href}"
+    }
+
+    override fun fullImageUrl(photo: RemotePhoto): String? =
+        if (photo.isVideo && !videoPreviewsAvailable) null else "https://fake.server/full/${photo.href}"
+
+    /** `null` simulates an unsafe href: [videoStreamUrl] then yields no URL. */
+    var videoStreamUrlOverride: String? = null
+    var videoStreamUrlAvailable = true
+
+    override fun videoStreamUrl(photo: RemotePhoto): String? =
+        when {
+            !photo.isVideo || !videoStreamUrlAvailable -> null
+            else -> videoStreamUrlOverride ?: "https://fake.server/video${photo.href}"
+        }
+
+    /** The factory handed to the player; the default fails every call (no network in fakes). */
+    var videoCalls: Call.Factory = Call.Factory { error("no network in FakeAlbumsRepository") }
+
+    override fun videoCallFactory(): Call.Factory = videoCalls
 
     /** Every URL passed to [downloadBitmapForHash], in call order. */
     val downloadedUrls = mutableListOf<String>()

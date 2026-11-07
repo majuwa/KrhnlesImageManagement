@@ -6,6 +6,7 @@ import android.util.Log
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerTrust
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -18,6 +19,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.Credentials
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -42,7 +44,7 @@ internal data class PropfindListingLimits(
 /** 32 MiB of (decompressed) PROPFIND XML; the primary memory bound of a listing. */
 internal const val MAX_PROPFIND_RESPONSE_BYTES: Long = 32L * 1024 * 1024
 
-/** Photos kept per album listing; beyond it the listing is truncated. */
+/** Media items (photos and videos together) kept per album listing; beyond it the listing is truncated. */
 internal const val MAX_PHOTOS_PER_ALBUM = 20_000
 
 /**
@@ -115,8 +117,39 @@ class AlbumsRepository internal constructor(
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /** Cancels background Memories retries so a dropped repository never sends another request. */
-    override fun close() = memories.close()
+    private val videoStreamLock = Any()
+    private var videoStream: VideoStreamClient? = null
+    private var closed = false
+
+    /**
+     * Cancels background Memories retries and every running video stream call, and makes the video
+     * client refuse new requests, so a dropped repository never sends another request.
+     */
+    override fun close() {
+        synchronized(videoStreamLock) {
+            closed = true
+            videoStream?.close()
+        }
+        memories.close()
+    }
+
+    /** The WebDAV URL of a video for playback; `null` for an image or an href outside the base folder. */
+    override fun videoStreamUrl(photo: RemotePhoto): String? =
+        if (photo.isVideo) resolveWebDavHref(baseFolderUrl, photo.href)?.toString() else null
+
+    /**
+     * The video stream client ([VideoStreamClient]), built on first use. A client requested after
+     * [close] starts closed, so a late caller can never stream.
+     */
+    override fun videoCallFactory(): Call.Factory =
+        synchronized(videoStreamLock) {
+            val stream =
+                videoStream ?: VideoStreamClient(client, baseFolderUrl).also {
+                    if (closed) it.close()
+                    videoStream = it
+                }
+            stream.callFactory
+        }
 
     /**
      * Album folders below the base folder, from one streamed PROPFIND with the byte cap only: a
@@ -175,7 +208,7 @@ class AlbumsRepository internal constructor(
                 webDavClient.renameDirectory(oldSegments, newSegments).getOrThrow()
                 album.copy(
                     displayName = trimmedName,
-                    href = buildAlbumHref(newSegments),
+                    href = buildAlbumHref(baseHttpUrl, origin, newSegments),
                 )
             }
         }
@@ -184,13 +217,35 @@ class AlbumsRepository internal constructor(
      * URL suitable for a thumbnail (512 px). First call checks Memories availability.
      * Subsequent calls are instant.
      */
-    override suspend fun thumbnailUrl(photo: RemotePhoto): String {
+    override suspend fun thumbnailUrl(photo: RemotePhoto): String? {
         memories.ensureChecked()
-        return buildUrl(photo, size = THUMB_SIZE)
+        return if (photo.isVideo) {
+            videoPreviewUrl(
+                photo,
+                THUMB_SIZE,
+                nextcloudBase,
+                memoriesAvailable == true,
+            )
+        } else {
+            buildUrl(photo, size = THUMB_SIZE)
+        }
     }
 
-    /** URL for full-screen display (up to 2048 px or direct WebDAV). */
-    override fun fullImageUrl(photo: RemotePhoto): String = buildUrl(photo, size = FULL_SIZE)
+    /**
+     * URL for full-screen display (up to 2048 px or direct WebDAV). For a video: its poster, or
+     * `null` without a preview; never the URL of the video file itself.
+     */
+    override fun fullImageUrl(photo: RemotePhoto): String? =
+        if (photo.isVideo) {
+            videoPreviewUrl(
+                photo,
+                FULL_SIZE,
+                nextcloudBase,
+                memoriesAvailable == true,
+            )
+        } else {
+            buildUrl(photo, size = FULL_SIZE)
+        }
 
     suspend fun isMemoriesAvailable(): Boolean {
         memories.ensureChecked()
@@ -279,13 +334,6 @@ class AlbumsRepository internal constructor(
             // The href itself is not logged: it is server-controlled and may be crafted.
             Log.w(TAG, "Refusing request for an href outside the configured WebDAV folder")
             throw UnsafeHrefException()
-        }
-
-    private fun HttpUrl.withoutTrailingSlash(): HttpUrl =
-        if (pathSegments.size > 1 && pathSegments.last().isEmpty()) {
-            newBuilder().removePathSegment(pathSegments.size - 1).build()
-        } else {
-            this
         }
 
     private fun buildUrl(
@@ -382,17 +430,6 @@ class AlbumsRepository internal constructor(
         return segments.drop(baseHttpUrl.nonEmptyPathSegments().size)
     }
 
-    private fun buildAlbumHref(relativeSegments: List<String>): String {
-        val url =
-            baseHttpUrl
-                .newBuilder()
-                .apply { relativeSegments.forEach(::addPathSegment) }
-                .build()
-                .toString()
-                .removePrefix(origin)
-        return if (url.endsWith("/")) url else "$url/"
-    }
-
     internal companion object {
         const val TAG = "AlbumsRepository"
         const val USER_AGENT = "Kroehnles-Image-Management/1.0"
@@ -450,6 +487,46 @@ class AlbumsRepository internal constructor(
             </d:propfind>
             """.trimIndent()
 
+        val VIDEO_CONTENT_TYPES =
+            setOf(
+                "video/mp4",
+                "video/x-m4v",
+                "video/quicktime",
+                "video/3gpp",
+                "video/3gpp2",
+                "video/webm",
+                "video/x-matroska",
+            )
+
+        /** Containers the restricted extractor set of the player can parse. */
+        val VIDEO_EXTENSIONS = setOf("mp4", "m4v", "mov", "3gp", "3g2", "webm", "mkv")
+
+        /**
+         * Kind of a listed entry, or `null` when it is not listed. Directories are never listed;
+         * [isImage] keeps precedence (`photo.jpg` with `video/mp4` stays an image); a video is an
+         * allow-listed content type (parameters stripped, case-insensitive) or, only for a blank /
+         * `application/octet-stream` type, an allow-listed extension.
+         */
+        fun classifyRemoteMedia(entry: WebDavEntry): MediaKind? {
+            if (entry.isDirectory) return null
+            if (isImage(entry)) return MediaKind.Image
+            val type =
+                entry.contentType
+                    .substringBefore(';')
+                    .trim()
+                    .lowercase()
+            if (type in VIDEO_CONTENT_TYPES) return MediaKind.Video
+            if (type.isEmpty() || type == "application/octet-stream") {
+                val ext =
+                    entry.href
+                        .trimEnd('/')
+                        .substringAfterLast('.')
+                        .lowercase()
+                if (ext in VIDEO_EXTENSIONS) return MediaKind.Video
+            }
+            return null
+        }
+
         /** True when the entry is an image — by content type or file extension fallback. */
         fun isImage(entry: WebDavEntry): Boolean {
             if (entry.contentType.startsWith("image/")) return true
@@ -485,7 +562,7 @@ private fun readEntries(
 }
 
 /**
- * Streams the photo entries of [albumUrl]: drops the collection itself, keeps images whose
+ * Streams the media entries of [albumUrl]: drops the collection itself, keeps photos and videos whose
  * href is strictly below the album, drops duplicate hrefs and stops (truncated) at
  * [PropfindListingLimits.maxPhotos] or the byte cap. Only counts are logged, never hrefs.
  */
@@ -556,7 +633,7 @@ private class PhotoListingCollector(
     }
 
     private fun addEntry(entry: WebDavEntry) {
-        if (!AlbumsRepository.isImage(entry)) return
+        val kind = AlbumsRepository.classifyRemoteMedia(entry) ?: return
         if (resolveWebDavHref(albumUrl, entry.href) == null) {
             unsafeCount++
             return
@@ -566,7 +643,7 @@ private class PhotoListingCollector(
             isTruncated = true
             return
         }
-        photos += RemotePhoto(entry.displayName, entry.href, entry.fileId, entry.contentType)
+        photos += RemotePhoto(entry.displayName, entry.href, entry.fileId, entry.contentType, kind)
         if (photos.size % PROGRESS_STEP == 0) onProgress(photos.size)
     }
 
@@ -589,6 +666,50 @@ private suspend fun <T> resultOf(block: suspend () -> T): Result<T> =
         throw e
     } catch (e: Exception) {
         Result.failure(e)
+    }
+
+/** Server-relative href (with trailing slash) of the album at [relativeSegments] below [baseHttpUrl]. */
+private fun buildAlbumHref(
+    baseHttpUrl: HttpUrl,
+    origin: String,
+    relativeSegments: List<String>,
+): String {
+    val url =
+        baseHttpUrl
+            .newBuilder()
+            .apply { relativeSegments.forEach(::addPathSegment) }
+            .build()
+            .toString()
+            .removePrefix(origin)
+    return if (url.endsWith("/")) url else "$url/"
+}
+
+/**
+ * Preview image of a video, never its WebDAV URL (that would download the whole video): the
+ * Memories preview when available, else on Nextcloud ([nextcloudBase]) the core preview
+ * (`mimeFallback=false`, so a missing preview is a 404 instead of a redirect to a mime icon), else
+ * `null`.
+ */
+private fun videoPreviewUrl(
+    photo: RemotePhoto,
+    size: Int,
+    nextcloudBase: String?,
+    memoriesAvailable: Boolean,
+): String? {
+    val base = nextcloudBase ?: return null
+    val id = photo.fileId?.takeIf { FILE_ID_REGEX.matches(it) } ?: return null
+    return if (memoriesAvailable) {
+        "$base/index.php/apps/memories/api/image/preview/$id?x=$size&y=$size&a=1"
+    } else {
+        "$base/index.php/core/preview?fileId=$id&x=$size&y=$size&a=1&mimeFallback=false"
+    }
+}
+
+private fun HttpUrl.withoutTrailingSlash(): HttpUrl =
+    if (pathSegments.size > 1 && pathSegments.last().isEmpty()) {
+        newBuilder().removePathSegment(pathSegments.size - 1).build()
+    } else {
+        this
     }
 
 /** Path of the Memories preview endpoint below the Nextcloud base (see `AlbumsRepository.buildUrl`). */

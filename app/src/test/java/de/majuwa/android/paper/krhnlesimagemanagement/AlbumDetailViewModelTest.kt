@@ -12,6 +12,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailState
@@ -183,7 +184,7 @@ class AlbumDetailViewModelTest {
             assertEquals(AlbumsError.NotConfigured, detail.error)
             assertTrue(detail.photos.isEmpty())
             assertTrue(detail.thumbnailUrls.isEmpty())
-            assertEquals("no URLs of the old server", "", viewModel.fullImageUrl(beach))
+            assertNull("no URLs of the old server", viewModel.fullImageUrl(beach))
             assertTrue(viewModel.repositories.get().isFailure)
             assertTrue(
                 "accepted, but nothing is deleted with the old credentials",
@@ -251,9 +252,9 @@ class AlbumDetailViewModelTest {
         }
 
     @Test
-    fun `fullImageUrl is empty before the album is loaded and the repository URL afterwards`() =
+    fun `fullImageUrl is null before the album is loaded and the repository URL afterwards`() =
         runTest {
-            assertEquals("", viewModel.fullImageUrl(beach))
+            assertNull(viewModel.fullImageUrl(beach))
 
             fakeRepo.photos = Result.success(listOf(beach))
             viewModel.loadAlbum("/Summer/")
@@ -580,5 +581,21 @@ class AlbumDetailViewModelTest {
             gate.complete(Unit)
             advanceUntilIdle()
             assertTrue(viewModel.detailState.value.isLoaded)
+        }
+
+    @Test
+    fun `a video without a server preview has no thumbnail entry and no full image url`() =
+        runTest {
+            val video = RemotePhoto("v.mp4", "/Summer/v.mp4", "5", "video/mp4", MediaKind.Video)
+            fakeRepo.photos = Result.success(listOf(beach, video))
+            fakeRepo.videoPreviewsAvailable = false
+
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            val state = viewModel.detailState.value
+            assertEquals(setOf(beach.href), state.thumbnailUrls.keys)
+            assertEquals(2, state.photos.size)
+            assertNull(viewModel.fullImageUrl(video))
         }
 }

@@ -36,7 +36,8 @@ internal sealed interface PhotoScanOutcome<out T> {
  * download it, [PhotoAnalyzer.analyze] it, always
  * recycle the bitmap, report [onProgress]. A photo that fails is skipped (logged without its
  * href); cancellation stops the scan before the next photo and is rethrown, never reported as a
- * failure.
+ * failure. A video is skipped without any request (the reviews filter videos, this is the
+ * defensive guard so a future caller cannot download one for analysis).
  *
  * The repository comes from [repositories] and the analyzer from [analyzerFactory] (created after
  * the repository, inside the error handling, and closed only if it was created). A failure to
@@ -98,7 +99,9 @@ private suspend fun <T> analyzeOne(
     analyzer: PhotoAnalyzer<T>,
 ): T? =
     try {
-        val url = thumbnailUrls[photo.href] ?: repository.thumbnailUrl(photo)
+        // Defensive: reviews filter videos (imagesOnly); a video is never downloaded for analysis.
+        if (photo.isVideo) return null
+        val url = thumbnailUrls[photo.href] ?: repository.thumbnailUrl(photo) ?: return null
         val bitmap = repository.downloadBitmapForHash(url)
         try {
             analyzer.analyze(bitmap)

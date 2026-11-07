@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FindReplace
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,12 +50,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -64,7 +68,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.mediaPositionDescription
 import kotlinx.coroutines.flow.filterNotNull
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -118,7 +122,8 @@ fun AlbumDetailScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            if (state.photos.isNotEmpty() && !selectionMode && !isDeletingPhotos) {
+            // The reviews analyse photos only: a video-only album has nothing to review.
+            if (state.photos.any { !it.isVideo } && !selectionMode && !isDeletingPhotos) {
                 Column(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -388,13 +393,18 @@ internal fun PhotoGridItem(
     onLongClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val description = mediaPositionDescription(photo, position, total)
     Box(
         modifier =
             Modifier
                 .aspectRatio(1f)
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                // On the tile node, so it is present with a poster, a placeholder or the spinner.
+                .semantics(mergeDescendants = true) { contentDescription = description },
     ) {
-        if (thumbUrl != null) {
+        if (photo.isVideo) {
+            VideoTileContent(thumbUrl = thumbUrl)
+        } else if (thumbUrl != null) {
             AsyncImage(
                 model =
                     ImageRequest
@@ -402,7 +412,7 @@ internal fun PhotoGridItem(
                         .data(thumbUrl)
                         .crossfade(true)
                         .build(),
-                contentDescription = photoPositionDescription(position, total),
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -429,6 +439,51 @@ internal fun PhotoGridItem(
                 )
             }
         }
+    }
+}
+
+/**
+ * Poster of a video (or the movie placeholder without one or when it fails to load) with a centred
+ * play indicator. Both decorative: the tile node carries the description.
+ */
+@Composable
+private fun VideoTileContent(thumbUrl: String?) {
+    val context = LocalContext.current
+    var posterFailed by remember(thumbUrl) { mutableStateOf(false) }
+    val showPoster = thumbUrl != null && !posterFailed
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (showPoster) {
+            AsyncImage(
+                model =
+                    ImageRequest
+                        .Builder(context)
+                        .data(thumbUrl)
+                        .crossfade(true)
+                        .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = { posterFailed = true },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Movie,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.Default.PlayCircle,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(36.dp),
+        )
     }
 }
 

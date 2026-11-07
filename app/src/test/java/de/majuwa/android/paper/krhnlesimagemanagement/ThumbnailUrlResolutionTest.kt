@@ -8,6 +8,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.UnsafeHrefException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.checkPixelLimit
 import de.majuwa.android.paper.krhnlesimagemanagement.data.decodeDownsampled
 import de.majuwa.android.paper.krhnlesimagemanagement.data.thumbnailSampleSize
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurDetector
@@ -24,6 +25,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -84,14 +86,78 @@ class ThumbnailUrlResolutionTest {
             }
     }
 
-    private fun isPreview(url: String) = url.contains("/apps/memories/api/image/preview/42")
+    private val video =
+        RemotePhoto("v.mp4", "/remote.php/dav/files/user/A/v.mp4", "77", "video/mp4", MediaKind.Video)
+
+    @Test
+    fun `video poster is the Memories preview when Memories is available`() =
+        runBlocking {
+            serve(MockResponse().setResponseCode(200))
+            val r = repo()
+            assertEquals(
+                server.url("/index.php/apps/memories/api/image/preview/77?x=512&y=512&a=1").toString(),
+                r.thumbnailUrl(video),
+            )
+            assertTrue(r.fullImageUrl(video)!!.contains("/memories/api/image/preview/77?x=2048"))
+        }
+
+    @Test
+    fun `video poster falls back to the core preview without a missing-preview redirect`() =
+        runBlocking {
+            serve(MockResponse().setResponseCode(404))
+            val r = repo()
+            assertEquals(
+                server.url("/index.php/core/preview?fileId=77&x=512&y=512&a=1&mimeFallback=false").toString(),
+                r.thumbnailUrl(video),
+            )
+            assertTrue(r.fullImageUrl(video)!!.contains("x=2048&y=2048"))
+        }
+
+    @Test
+    fun `video without a safe file id or on plain WebDAV has no poster URL`() =
+        runBlocking {
+            serve(MockResponse().setResponseCode(200))
+            val r = repo()
+            for (id in listOf(null, "", "7/7", "\u0664\u0662")) {
+                assertNull("'$id'", r.thumbnailUrl(video.copy(fileId = id)))
+                assertNull(r.fullImageUrl(video.copy(fileId = id)))
+            }
+            val plain = repo(remotePhp = false)
+            assertNull(plain.thumbnailUrl(video))
+            assertNull(plain.fullImageUrl(video))
+        }
+
+    @Test
+    fun `no preview URL of a video is its WebDAV url`() =
+        runBlocking {
+            for (status in listOf(200, 404)) {
+                serve(MockResponse().setResponseCode(status))
+                val r = repo()
+                val urls = listOf(r.thumbnailUrl(video), r.fullImageUrl(video))
+                assertTrue(urls.none { it == null || it.contains("/files/user/") || it.endsWith(".mp4") })
+            }
+        }
+
+    @Test
+    fun `many mixed items still send one Memories request`() =
+        runBlocking {
+            serve(MockResponse().setResponseCode(200))
+            val r = repo()
+            repeat(250) {
+                r.thumbnailUrl(photo)!!
+                r.thumbnailUrl(video)
+            }
+            assertEquals(1, server.requestCount)
+        }
+
+    private fun isPreview(url: String?) = url?.contains("/apps/memories/api/image/preview/42") == true
 
     @Test
     fun `many sequential calls send one Memories request`() =
         runBlocking {
             serve(MockResponse().setResponseCode(200))
             val r = repo()
-            val urls = (1..500).map { r.thumbnailUrl(photo) }
+            val urls = (1..500).map { r.thumbnailUrl(photo)!! }
             assertTrue(urls.all(::isPreview))
             assertEquals(1, server.requestCount)
             assertEquals(describePath, server.takeRequest().path)
@@ -102,7 +168,7 @@ class ThumbnailUrlResolutionTest {
         runBlocking {
             serve(MockResponse().setResponseCode(200).setHeadersDelay(300, TimeUnit.MILLISECONDS))
             val r = repo()
-            val urls = (1..50).map { async(Dispatchers.Default) { r.thumbnailUrl(photo) } }.awaitAll()
+            val urls = (1..50).map { async(Dispatchers.Default) { r.thumbnailUrl(photo)!! } }.awaitAll()
             assertTrue(urls.all(::isPreview))
             assertEquals(1, server.requestCount)
         }
@@ -112,7 +178,7 @@ class ThumbnailUrlResolutionTest {
         runBlocking {
             serve(MockResponse().setResponseCode(404))
             val r = repo(backoffMs = 0)
-            repeat(20) { assertTrue(r.thumbnailUrl(photo).endsWith("/A/a.jpg")) }
+            repeat(20) { assertTrue(r.thumbnailUrl(photo)!!.endsWith("/A/a.jpg")) }
             assertEquals(1, server.requestCount)
         }
 
@@ -121,7 +187,7 @@ class ThumbnailUrlResolutionTest {
         runBlocking {
             serve(MockResponse().setResponseCode(200))
             val r = repo(remotePhp = false)
-            repeat(50) { r.thumbnailUrl(photo) }
+            repeat(50) { r.thumbnailUrl(photo)!! }
             assertEquals(0, server.requestCount)
         }
 
@@ -184,7 +250,7 @@ class ThumbnailUrlResolutionTest {
             val r = repo()
             r.listPhotos(albumHref) {}.getOrThrow()
             assertTrue("describe and PROPFIND must be in flight together", concurrent)
-            assertTrue(isPreview(r.thumbnailUrl(photo)))
+            assertTrue(isPreview(r.thumbnailUrl(photo)!!))
         }
 
     @Test
@@ -192,13 +258,13 @@ class ThumbnailUrlResolutionTest {
         runBlocking {
             serve(MockResponse().setResponseCode(503), MockResponse().setResponseCode(200))
             val r = repo(backoffMs = 100)
-            assertTrue(!isPreview(r.thumbnailUrl(photo)))
+            assertTrue(!isPreview(r.thumbnailUrl(photo)!!))
             assertEquals(1, server.requestCount)
             delay(200)
-            r.thumbnailUrl(photo) // starts the background retry
+            r.thumbnailUrl(photo)!! // starts the background retry
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-            while (!isPreview(r.thumbnailUrl(photo)) && System.nanoTime() < deadline) delay(20)
-            assertTrue(isPreview(r.thumbnailUrl(photo)))
+            while (!isPreview(r.thumbnailUrl(photo)!!) && System.nanoTime() < deadline) delay(20)
+            assertTrue(isPreview(r.thumbnailUrl(photo)!!))
             assertEquals(2, server.requestCount)
         }
 
@@ -213,9 +279,9 @@ class ThumbnailUrlResolutionTest {
                     override fun dispatch(request: RecordedRequest): MockResponse = MockResponse().setResponseCode(200)
                 }
             val r = repo(backoffMs = 60_000)
-            assertTrue(!isPreview(r.thumbnailUrl(photo)))
+            assertTrue(!isPreview(r.thumbnailUrl(photo)!!))
             val afterFirst = server.requestCount
-            repeat(100) { assertTrue(!isPreview(r.thumbnailUrl(photo))) }
+            repeat(100) { assertTrue(!isPreview(r.thumbnailUrl(photo)!!)) }
             assertEquals(afterFirst, server.requestCount)
         }
 
@@ -225,10 +291,10 @@ class ThumbnailUrlResolutionTest {
             serve(MockResponse().setResponseCode(200))
             val r = repo()
             for (id in listOf("\u0664\u0662", "4/2", "")) {
-                val url = r.thumbnailUrl(photo.copy(fileId = id))
+                val url = r.thumbnailUrl(photo.copy(fileId = id))!!
                 assertTrue("'$id' -> $url", url.endsWith("/A/a.jpg"))
             }
-            assertTrue(isPreview(r.thumbnailUrl(photo)))
+            assertTrue(isPreview(r.thumbnailUrl(photo)!!))
         }
 
     @Test

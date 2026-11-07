@@ -201,7 +201,13 @@ class AlbumDetailViewModel
                                 .getOrThrow()
                         val urls =
                             withContext(backgroundDispatcher) {
-                                listing.photos.associate { photo -> photo.href to repository.thumbnailUrl(photo) }
+                                listing.photos
+                                    .mapNotNull { photo ->
+                                        repository.thumbnailUrl(photo)?.let {
+                                            photo.href to
+                                                it
+                                        }
+                                    }.toMap()
                             }
                         // A cancelled or replaced load (new load, configuration change) never publishes stale photos.
                         currentCoroutineContext().ensureActive()
@@ -250,8 +256,11 @@ class AlbumDetailViewModel
             _detailState.update { AlbumDetailState(albumName = it.albumName, error = error) }
         }
 
-        /** Full-size image URL of [photo], or `""` before the album has been loaded. */
-        fun fullImageUrl(photo: RemotePhoto): String = repos.current?.fullImageUrl(photo) ?: ""
+        /**
+         * Full-size image URL of [photo], or `null` before the album has been loaded and for a video
+         * without a server preview.
+         */
+        fun fullImageUrl(photo: RemotePhoto): String? = repos.current?.fullImageUrl(photo)
 
         /**
          * Deletes [toDelete] photos directly from the album view (not via a review).

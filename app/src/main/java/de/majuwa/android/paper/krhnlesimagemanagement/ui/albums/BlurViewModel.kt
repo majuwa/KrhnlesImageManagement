@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySource
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.model.imagesOnly
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurAnalyzer
 import de.majuwa.android.paper.krhnlesimagemanagement.util.BlurScorer
 import kotlinx.coroutines.CoroutineDispatcher
@@ -69,7 +70,8 @@ class BlurViewModel
          * Starts the scan of [photos] for blurry images — only from [BlurState.Idle], so a screen
          * recreated (e.g. after rotation) while the scan runs, its results are shown or a
          * deletion runs keeps that state. Each photo's thumbnail comes from [thumbnailUrls] or,
-         * if missing, the repository's thumbnail URL. The caller passes only a fully loaded album.
+         * if missing, the repository's thumbnail URL. The caller passes only a fully loaded album;
+         * videos are filtered out first (the review covers photos only).
          */
         fun findBlurryPhotos(
             photos: List<RemotePhoto>,
@@ -78,7 +80,7 @@ class BlurViewModel
             sensitivity: Flow<BlurSensitivity>,
         ) {
             if (_blurState.value != BlurState.Idle) return
-            startScan(photos, thumbnailUrls, repositories, sensitivity)
+            startScan(photos.imagesOnly(), thumbnailUrls, repositories, sensitivity)
         }
 
         /**
@@ -93,7 +95,7 @@ class BlurViewModel
             sensitivity: Flow<BlurSensitivity>,
         ) {
             if (_blurState.value !is BlurState.Error || photos.isEmpty()) return
-            startScan(photos, thumbnailUrls, repositories, sensitivity)
+            startScan(photos.imagesOnly(), thumbnailUrls, repositories, sensitivity)
         }
 
         private fun startScan(

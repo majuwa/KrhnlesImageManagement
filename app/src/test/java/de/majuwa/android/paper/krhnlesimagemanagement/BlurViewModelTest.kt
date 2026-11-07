@@ -15,6 +15,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialReposi
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.RecordingPhotoDeletionLauncher
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
@@ -571,6 +572,48 @@ class BlurViewModelTest {
             advanceUntilIdle()
 
             assertEquals(BlurState.Error(AlbumsError.Unknown), viewModel.blurState.value)
+        }
+
+    private val video = RemotePhoto("v.mp4", "/Album/v.mp4", "3", "video/mp4", MediaKind.Video)
+
+    @Test
+    fun `videos are never scanned and progress counts photos only`() =
+        runTest(testDispatcher) {
+            viewModel.blurState.test {
+                assertEquals(BlurState.Idle, awaitItem())
+                viewModel.scan(listOf(photoA, video, photoB))
+
+                assertEquals(BlurState.Scanning(0, 2), awaitItem())
+                assertEquals(BlurState.Scanning(1, 2), awaitItem())
+                assertEquals(BlurState.Scanning(2, 2), awaitItem())
+                val found = awaitItem() as BlurState.Found
+                assertEquals(listOf(photoB), found.blurryPhotos)
+                cancelAndConsumeRemainingEvents()
+            }
+            assertTrue(fakeRepo.thumbnailRequests.none { it.isVideo })
+            assertTrue(fakeRepo.downloadedUrls.none { "v.mp4" in it })
+        }
+
+    @Test
+    fun `a loaded album with only videos finds no blurry photo`() =
+        runTest(testDispatcher) {
+            viewModel.scan(listOf(video))
+            advanceUntilIdle()
+
+            assertEquals(BlurState.NoneFound, viewModel.blurState.value)
+            assertTrue(fakeRepo.downloadedUrls.isEmpty())
+        }
+
+    @Test
+    fun `Retry with only videos reports none found instead of doing nothing`() =
+        runTest(testDispatcher) {
+            viewModel.scan(source = AlbumsRepositorySource { Result.failure(IllegalStateException("x")) })
+            advanceUntilIdle()
+
+            viewModel.retryFindBlurryPhotos(listOf(video), emptyMap(), repositories, sensitivity)
+            advanceUntilIdle()
+
+            assertEquals(BlurState.NoneFound, viewModel.blurState.value)
         }
 
     private companion object {

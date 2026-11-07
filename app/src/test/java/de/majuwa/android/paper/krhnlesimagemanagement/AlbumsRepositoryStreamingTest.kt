@@ -320,7 +320,7 @@ class AlbumsRepositoryStreamingTest {
 
         val photo = listPhotos(repo).getOrThrow().photos.single()
         val requestsAfterListing = server.requestCount
-        val thumb = runBlocking { repo.thumbnailUrl(photo) }
+        val thumb = runBlocking { repo.thumbnailUrl(photo) }!!
 
         assertEquals("both requests were in flight at the same time", 2, overlapping.get())
         assertEquals(2, requestsAfterListing)

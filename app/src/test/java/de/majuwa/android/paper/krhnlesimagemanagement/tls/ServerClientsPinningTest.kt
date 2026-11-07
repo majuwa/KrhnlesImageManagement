@@ -101,6 +101,38 @@ class ServerClientsPinningTest {
             assertFalse(AlbumsRepository(config(server), null).listAlbums().isSuccess)
         }
 
+    private fun videoGet(
+        server: SelfSignedServer,
+        pin: PinnedCertificate?,
+    ): Int {
+        val repository = AlbumsRepository(config(server), pin)
+        return try {
+            repository
+                .videoCallFactory()
+                .newCall(Request.Builder().url(server.url("/remote.php/dav/files/user/clip.mp4")).build())
+                .execute()
+                .use { it.code }
+        } finally {
+            repository.close()
+        }
+    }
+
+    @Test
+    fun `video stream client accepts the pinned origin`() {
+        val server = start()
+        assertEquals(200, videoGet(server, pin(server)))
+    }
+
+    @Test
+    fun `video stream client rejects another pin and no pin before any request`() {
+        val server = start()
+        assertTrue(
+            runCatching { videoGet(server, pin(server, port = server.port + 1)) }.exceptionOrNull() is SSLException,
+        )
+        assertTrue(runCatching { videoGet(server, null) }.exceptionOrNull() is SSLException)
+        assertEquals(0, server.server.requestCount)
+    }
+
     @Test
     fun `connection test of a pinned server succeeds`() =
         runBlocking {
