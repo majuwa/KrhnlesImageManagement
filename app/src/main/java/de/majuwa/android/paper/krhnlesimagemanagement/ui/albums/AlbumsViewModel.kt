@@ -16,6 +16,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -24,10 +26,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -37,6 +43,15 @@ data class AlbumsState(
     val error: AlbumsError? = null,
     val isDeletingAlbum: Boolean = false,
     val isRenamingAlbum: Boolean = false,
+)
+
+/**
+ * The albums of one loaded list ([source], compared by identity with [AlbumsState.albums]) in the
+ * order of the current sort, with their search keys. Built off the main thread.
+ */
+class SortedAlbums internal constructor(
+    val source: List<RemoteAlbum>,
+    internal val entries: List<AlbumListIndex.Entry>,
 )
 
 /** Result of one rename, reported once to the Albums screen. */
@@ -65,6 +80,7 @@ class AlbumsViewModel
             TrustedCertificateStore(application),
         repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract =
             { config, pin -> AlbumsRepository(config, pin) },
+        private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
     ) : AndroidViewModel(application) {
         private val repos = AlbumsRepositoryProvider(credentialRepo, trustedCertificates, repoFactory = repoFactory)
 
@@ -86,15 +102,56 @@ class AlbumsViewModel
         /** The user's choice of this session until the store confirms it (or while a save keeps failing). */
         private val sortOverride = MutableStateFlow<AlbumSort?>(null)
 
+        /** The stored sort, fed by the single collector in `init` (Name A-Z until the first value). */
+        private val stored = MutableStateFlow(AlbumSort.DEFAULT)
+
         /** Current album sort: the session choice if any, else the stored value (Name A-Z while unset). */
         val albumSort: StateFlow<AlbumSort> =
-            combine(storedSort, sortOverride) { stored, chosen -> chosen ?: stored }
+            combine(stored, sortOverride) { storedValue, chosen -> chosen ?: storedValue }
                 .stateIn(viewModelScope, SharingStarted.Eagerly, AlbumSort.DEFAULT)
 
+        private val _sortedAlbums = MutableStateFlow(SortedAlbums(emptyList(), emptyList()))
+
+        /** The loaded albums in the current sort order, computed on [computeDispatcher]; the screen only filters. */
+        val sortedAlbums: StateFlow<SortedAlbums> = _sortedAlbums.asStateFlow()
+
         init {
-            // Once the store confirms the choice, later store changes (e.g. the reset by a logout) win again.
+            // One subscription to the store: the value is published before the override is dropped, so
+            // a confirmed choice never flickers through the old stored value.
             viewModelScope.launch {
-                storedSort.collect { stored -> sortOverride.update { if (it == stored) null else it } }
+                storedSort.collect { value ->
+                    stored.value = value
+                    sortOverride.update { if (it == value) null else it }
+                }
+            }
+            // A logout resets the sort even when the save of the choice failed (the override would stay).
+            viewModelScope.launch {
+                var wasConfigured = false
+                credentialRepo.isConfigured
+                    .catch { t ->
+                        if (t is CancellationException) throw t
+                        emit(wasConfigured)
+                    }.collect { configured ->
+                        if (wasConfigured && !configured) sortOverride.value = null
+                        wasConfigured = configured
+                    }
+            }
+            viewModelScope.launch {
+                var indexed: Pair<List<RemoteAlbum>, AlbumListIndex>? = null
+                combine(
+                    _albumsState.map { it.albums }.distinctUntilChanged { a, b -> a === b },
+                    albumSort,
+                ) { albums, sort -> albums to sort }
+                    .collectLatest { (albums, sort) ->
+                        val cached = indexed?.takeIf { it.first === albums }?.second
+                        val (index, entries) =
+                            withContext(computeDispatcher) {
+                                val index = cached ?: AlbumListIndex(albums)
+                                index to sortAlbums(index, sort)
+                            }
+                        indexed = albums to index
+                        _sortedAlbums.value = SortedAlbums(albums, entries)
+                    }
             }
         }
 

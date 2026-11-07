@@ -45,7 +45,11 @@ class FakeCredentialRepository(
     /** When non-null, [saveAlbumSort] throws this instead of storing anything. */
     var albumSortSaveFailure: Throwable? = null
 
+    /** When non-null, [saveAlbumSort] suspends until it completes (simulates a slow disk write). */
+    var albumSortSaveGate: CompletableDeferred<Unit>? = null
+
     override suspend fun saveAlbumSort(sort: AlbumSort) {
+        albumSortSaveGate?.await()
         albumSortSaveFailure?.let { throw it }
         albumSortState.value = sort
     }

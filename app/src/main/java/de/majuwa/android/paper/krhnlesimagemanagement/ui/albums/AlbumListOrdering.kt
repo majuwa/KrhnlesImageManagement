@@ -7,16 +7,34 @@ import java.util.Locale
 
 private val COMBINING_MARKS = Regex("\\p{Mn}+")
 
+/** Longest name prefix (UTF-16 units) that goes into a key: bounds the NFD cost of hostile combining-mark runs. */
+internal const val MAX_KEY_NAME_LENGTH = 255
+
+/** At most [MAX_KEY_NAME_LENGTH] chars, never ending in the middle of a surrogate pair. */
+private fun String.boundedForKey(): String {
+    if (length <= MAX_KEY_NAME_LENGTH) return this
+    val end =
+        if (this[MAX_KEY_NAME_LENGTH - 1].isHighSurrogate()) MAX_KEY_NAME_LENGTH - 1 else MAX_KEY_NAME_LENGTH
+    return substring(0, end)
+}
+
 /**
- * Search / sort key of an album name: lowercase, uppercase, lowercase (`Locale.ROOT`; approximates
- * full case folding, `ß` and `ẞ` become `ss`), then NFD with the combining marks removed (`é` -> `e`).
- * Letters without a canonical decomposition keep their form (`ł`, `ø`). Used for the album list
- * only: occasion suggestions dedupe real folder names and must keep "Cafe" and "Café" apart.
+ * Search / sort key of an album name, built from its first [MAX_KEY_NAME_LENGTH] chars only (a server
+ * name may be hostile and NFD of long combining-mark runs is slow).
+ *
+ * Steps: lowercase, uppercase, lowercase (`Locale.ROOT`; approximates full case folding, `ß` and `ẞ`
+ * become `ss`), then NFD with the combining marks removed (`é` -> `e`). Letters without a canonical
+ * decomposition keep their form (`ł`, `ø`). Used for the album list only: occasion suggestions dedupe
+ * real folder names and must keep "Cafe" and "Café" apart.
  */
 internal fun albumNameKey(name: String): String =
     Normalizer
         .normalize(
-            name.lowercase(Locale.ROOT).uppercase(Locale.ROOT).lowercase(Locale.ROOT),
+            name
+                .boundedForKey()
+                .lowercase(Locale.ROOT)
+                .uppercase(Locale.ROOT)
+                .lowercase(Locale.ROOT),
             Normalizer.Form.NFD,
         ).replace(COMBINING_MARKS, "")
 

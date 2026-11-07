@@ -82,6 +82,13 @@ The Albums tab SHALL offer a sort menu with the options Name A–Z, Name Z–A, 
 - **WHEN** the user has scrolled down the album list and selects another sort option
 - **THEN** the newly ordered list is shown from its first album
 
+### Requirement: Album names are bounded for search and ordering
+Only the first 255 characters of an album name SHALL be used for matching and name ordering, and the list SHALL be prepared off the main thread, so an album name with a very long run of combining marks cannot freeze the Albums tab. Albums with equal bounded names SHALL still be ordered by their exact name and address, and a freshly loaded list SHALL NOT be shown unsorted.
+
+#### Scenario: Hostile names
+- **WHEN** the listing contains thousands of albums whose names consist of a letter followed by thousands of combining marks
+- **THEN** the list is shown sorted without noticeable delay
+
 ### Requirement: Name order is case- and diacritic-insensitive and deterministic
 Name sorting SHALL compare folded names (case and diacritics ignored), independent of the device language. Albums with equal folded names SHALL be ordered by their exact name and then by their address, so the order never depends on the server's listing order.
 
@@ -130,9 +137,20 @@ The chosen sort option SHALL take effect immediately and SHALL be stored so that
 - **WHEN** storing the sort option fails
 - **THEN** the list stays sorted by the selected option and the app does not crash
 
+#### Scenario: Logout after a failed save
+- **WHEN** storing the sort option failed, the list was sorted by the selected option and the user logs out
+- **THEN** the Albums tab uses Name A–Z
+
 #### Scenario: Logout while the Albums tab is kept
 - **WHEN** the user selected Last modified (newest first), switches to the Photos tab, logs out in Settings and returns to the Albums tab
 - **THEN** the Albums tab uses Name A–Z
+
+### Requirement: Each album is listed once
+The album listing SHALL contain each album address at most once; for repeated addresses the first listed entry SHALL be kept.
+
+#### Scenario: Repeated address
+- **WHEN** the server lists the same album address twice
+- **THEN** the album is shown once
 
 ### Requirement: Album management is unchanged by search and sort
 Search and sort SHALL only change which loaded albums are shown and in which order. Opening, renaming and deleting an album, the loading, error and busy states, and Refresh (still ignored while a rename runs) SHALL behave as before and SHALL act on the album the user picked.

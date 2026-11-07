@@ -137,4 +137,31 @@ class AlbumsRepositoryListingTest {
                     .first { it.method == "PROPFIND" }
             assertTrue(!propfind.body.readUtf8().contains("getlastmodified"))
         }
+
+    @Test
+    fun `a repeated href is listed once and the first entry wins`() =
+        runTest {
+            repo = createRepo()
+            val base = "/remote.php/dav/files/user"
+
+            fun folder(
+                href: String,
+                name: String,
+            ) = "<d:response><d:href>$href</d:href><d:propstat><d:prop><d:displayname>$name</d:displayname>" +
+                "<d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>"
+            val xml =
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+                    "<d:multistatus xmlns:d=\"DAV:\" xmlns:oc=\"http://owncloud.org/ns\">" +
+                    folder("$base/", "") +
+                    folder("$base/Summer/", "First") +
+                    folder("$base/Other/", "Other") +
+                    folder("$base/Summer/", "Second") +
+                    "</d:multistatus>"
+            server.enqueue(propfindResponse(xml))
+
+            val albums = repo.listAlbums().getOrThrow()
+
+            assertEquals(listOf("First", "Other"), albums.map { it.displayName })
+            assertEquals(albums.size, albums.map { it.href }.distinct().size)
+        }
 }

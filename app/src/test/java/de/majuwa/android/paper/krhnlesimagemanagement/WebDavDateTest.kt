@@ -39,7 +39,7 @@ class WebDavDateTest {
     }
 
     @Test
-    fun `overlong input is unknown`() {
+    fun `long unparseable input is unknown`() {
         assertNull(parseWebDavDate("Tue, 15 Nov 1994 08:12:31 GMT" + " ".repeat(10) + "x".repeat(60)))
         assertNull(parseWebDavDate("x".repeat(65)))
     }

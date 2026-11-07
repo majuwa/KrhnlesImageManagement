@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumListIndex
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.MAX_KEY_NAME_LENGTH
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.albumNameKey
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.filterAlbums
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.sortAlbums
@@ -57,7 +58,7 @@ class AlbumListOrderingTest {
     @Test
     fun `dotted and dotless i fold to i`() {
         assertEquals(true, matches("İstanbul", "istanbul"))
-        assertEquals("ı".uppercase(java.util.Locale.ROOT).lowercase(java.util.Locale.ROOT), albumNameKey("ı"))
+        assertEquals("i", albumNameKey("ı"))
         assertEquals(true, matches("Isparta", "ısparta"))
     }
 
@@ -155,6 +156,33 @@ class AlbumListOrderingTest {
     @Test
     fun `empty input gives empty output for every sort`() {
         AlbumSort.entries.forEach { assertEquals(emptyList<String>(), names(emptyList(), "x", it)) }
+    }
+
+    // ── hostile names ───────────────────────────────────────────────────────
+
+    @Test(timeout = 30_000)
+    fun `long combining mark runs are bounded and indexing stays fast`() {
+        // NFD of such a run took tens of seconds per name before the key input was bounded.
+        val hostile = "a" + "\u0301\u0316".repeat(4096)
+        val albums = (1..2000).map { album(hostile + it, href = "/h$it/") }
+
+        val index = AlbumListIndex(albums)
+        val sorted = sortAlbums(index, AlbumSort.NAME_ASC)
+
+        assertEquals(2000, sorted.size)
+        assertEquals(true, index.entries.all { it.key.length <= MAX_KEY_NAME_LENGTH })
+    }
+
+    @Test
+    fun `the key never splits a surrogate pair at the length bound`() {
+        val name = "a".repeat(MAX_KEY_NAME_LENGTH - 1) + "\uD83D\uDE00tail"
+
+        assertEquals("a".repeat(MAX_KEY_NAME_LENGTH - 1), albumNameKey(name))
+    }
+
+    @Test
+    fun `names up to the bound keep their full key`() {
+        assertEquals("a".repeat(MAX_KEY_NAME_LENGTH), albumNameKey("A".repeat(MAX_KEY_NAME_LENGTH)))
     }
 
     private fun <T> permutations(items: List<T>): List<List<T>> =

@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -93,9 +94,10 @@ fun AlbumsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val gridState = rememberLazyGridState()
     val sort by viewModel.albumSort.collectAsStateWithLifecycle()
-    val index = remember(state.albums) { AlbumListIndex(state.albums) }
-    val sorted = remember(index, sort) { sortAlbums(index, sort) }
-    val shown = remember(sorted, query) { filterAlbums(sorted, query).map { it.album } }
+    val sorted by viewModel.sortedAlbums.collectAsStateWithLifecycle()
+    // The ViewModel sorts off the main thread; until it caught up with a new list the spinner stays.
+    val sortPending = sorted.source !== state.albums
+    val shown = remember(sorted, query) { filterAlbums(sorted.entries, query).map { it.album } }
 
     LaunchedEffect(Unit) { viewModel.loadAlbums() }
 
@@ -169,7 +171,7 @@ fun AlbumsScreen(
         },
     ) { padding ->
         when {
-            state.isLoading || state.isDeletingAlbum || state.isRenamingAlbum -> {
+            state.isBusy() || sortPending -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(padding),
                     contentAlignment = Alignment.Center,
@@ -231,6 +233,8 @@ fun AlbumsScreen(
         }
     }
 }
+
+private fun AlbumsState.isBusy() = isLoading || isDeletingAlbum || isRenamingAlbum
 
 @Composable
 private fun AlbumListContent(
@@ -345,22 +349,24 @@ private fun SortDropdown(
     onSelect: (AlbumSort) -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        AlbumSort.entries.forEach { option ->
-            DropdownMenuItem(
-                text = { Text(stringResource(option.labelRes())) },
-                leadingIcon = {
-                    if (option == sort) Icon(Icons.Default.Check, contentDescription = null)
-                },
-                onClick = {
-                    onDismiss()
-                    if (option != sort) onSelect(option)
-                },
-                modifier =
-                    Modifier.semantics {
-                        role = Role.RadioButton
-                        selected = option == sort
+        Column(modifier = Modifier.selectableGroup()) {
+            AlbumSort.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(option.labelRes())) },
+                    leadingIcon = {
+                        if (option == sort) Icon(Icons.Default.Check, contentDescription = null)
                     },
-            )
+                    onClick = {
+                        onDismiss()
+                        if (option != sort) onSelect(option)
+                    },
+                    modifier =
+                        Modifier.semantics {
+                            role = Role.RadioButton
+                            selected = option == sort
+                        },
+                )
+            }
         }
     }
 }

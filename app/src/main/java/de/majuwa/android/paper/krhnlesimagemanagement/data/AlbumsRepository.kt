@@ -131,6 +131,7 @@ class AlbumsRepository internal constructor(
                     .drop(1) // first entry is the directory itself
                     .filter { it.isDirectory }
                     .withSafeHrefsBelow(baseFolderUrl)
+                    .distinctBy { it.href } // the href is the grid key and the delete / rename target: first wins
                     .map {
                         RemoteAlbum(
                             displayName = it.displayName,

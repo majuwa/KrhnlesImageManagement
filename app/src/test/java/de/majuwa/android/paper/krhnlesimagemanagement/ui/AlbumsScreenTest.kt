@@ -11,6 +11,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -52,6 +53,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -86,6 +88,8 @@ class AlbumsScreenTest {
             credentialRepo = credentials,
             repoFactory = { _, _ -> fakeRepo },
             trustedCertificates = FakeTrustedCertificateRepository(),
+            // Deterministic: a result from Dispatchers.Default would race the paused main looper.
+            computeDispatcher = Dispatchers.Unconfined,
         )
     }
 
@@ -531,35 +535,33 @@ class AlbumsScreenTest {
         composeTestRule.setContent {
             KrhnlesImageManagementTheme {
                 nav = rememberNavController()
-                NavHost(nav, startDestination = "albums") {
+                NavHost(nav, startDestination = "photos") {
+                    composable("photos") {}
                     composable(
                         "albums",
                     ) { AlbumsScreen(viewModel = viewModel, onOpenAlbum = { nav.navigate("detail") }) }
-                    composable("other") {}
                     composable("detail") {}
                 }
             }
         }
-        composeTestRule.waitForIdle()
+
+        // Exactly like the bottom bar in KrhnlesApp: popUpTo the photos root saving state, restoreState.
+        fun tab(route: String) {
+            composeTestRule.runOnIdle {
+                nav.navigate(route) {
+                    launchSingleTop = true
+                    restoreState = true
+                    popUpTo("photos") { saveState = true }
+                }
+            }
+            composeTestRule.waitForIdle()
+        }
+        tab("albums")
         search().performTextInput("caf")
 
-        // Like the bottom bar: pop to the root saving state, then restore it.
-        composeTestRule.runOnIdle {
-            nav.navigate("other") {
-                popUpTo("albums") { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
-        }
-        composeTestRule.waitForIdle()
-        composeTestRule.runOnIdle {
-            nav.navigate("albums") {
-                popUpTo("albums") { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
-        }
-        composeTestRule.waitForIdle()
+        tab("photos")
+        composeTestRule.onNodeWithTag(ALBUM_SEARCH_TAG).assertDoesNotExist()
+        tab("albums")
         assertEquals("caf", queryText())
 
         // A pushed and popped detail destination keeps it as well.
@@ -581,10 +583,22 @@ class AlbumsScreenTest {
         composeTestRule.onNodeWithText("Album 30").assertIsDisplayed()
 
         composeTestRule.onNodeWithContentDescription("Sort albums").performClick()
-        composeTestRule.onNodeWithText("Last modified (newest first)").performClick()
+        composeTestRule.onNodeWithText("Name Z\u2013A").performClick()
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("Album 01").assertIsDisplayed()
+        // Name Z-A puts Album 30 first: the old anchor (the last item) is now the top item.
+        composeTestRule.onNodeWithText("Album 30").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Album 29").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Album 01").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a listing with a repeated href renders the album once`() {
+        val repo = FakeAlbumsRepository()
+        repo.albums = Result.success(listOf(summer))
+        show(createViewModel(repo))
+
+        composeTestRule.onAllNodesWithText("Summer").assertCountEquals(1)
     }
 
     @Test
@@ -638,29 +652,32 @@ class AlbumsScreenTest {
     }
 
     @Test
-    fun `renamed album appears at its sorted position and is hidden when it no longer matches`() {
+    fun `renamed album is hidden under the typed query and sorted once the query is cleared`() {
         val repo = repoWith(RemoteAlbum("Alpha", "/Alpha/"), RemoteAlbum("Beta", "/Beta/"))
         val viewModel = createViewModel(repo)
         show(viewModel)
+        search().performTextInput("alp")
+        composeTestRule.onNodeWithText("Beta").assertDoesNotExist()
         composeTestRule.onNodeWithText("Alpha").performTouchInput { longClick() }
         composeTestRule.onNodeWithText("Rename").performClick()
         composeTestRule.onNode(dialogTextField()).performTextClearance()
         composeTestRule.onNode(dialogTextField()).performTextInput("Zulu")
         composeTestRule.onAllNodesWithText("Rename")[0].performClick()
         composeTestRule.waitForIdle()
-        // Server order still holds Zulu first, the sorted grid shows Beta before Zulu.
+        // Server order still holds Zulu first; the typed query "alp" no longer matches it: hidden.
         assertEquals(
             "Zulu",
             viewModel.albumsState.value.albums
                 .first()
                 .displayName,
         )
-        assertTrue(isBefore("Beta", "Zulu"))
-
-        search().performTextInput("beta")
         composeTestRule.onNodeWithText("Zulu").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Beta").assertIsDisplayed()
-        search().assertTextEquals("Search albums", "beta")
+        composeTestRule.onNodeWithText("Beta").assertDoesNotExist()
+        search().assertTextEquals("Search albums", "alp")
+
+        // Clearing the query shows both at their sorted positions.
+        search().performTextClearance()
+        assertTrue(isBefore("Beta", "Zulu"))
     }
 
     @Test
