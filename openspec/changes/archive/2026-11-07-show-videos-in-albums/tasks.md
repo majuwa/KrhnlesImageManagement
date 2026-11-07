@@ -43,7 +43,7 @@
 ## 7. Integration checks
 
 - [x] 7.1 Run `./gradlew test`, `./gradlew spotlessCheck`, `./gradlew detekt` (no new issues), `./gradlew lintDebug` (zero issues, no suppression; exactly one `@OptIn(UnstableApi::class)`, on the player factory, as approved by the user) and `./gradlew jacocoTestReport`; all must pass
-- [ ] 7.2 Manual device checks (by the user, not automatable; list the results in the PR) against a real Nextcloud (with and without the Movie preview provider) and a plain WebDAV server: mixed album shows posters / placeholders with play indicators, core preview works with an app password, an Android `.mp4` and an iPhone `.mov` (HEVC) play and seek, unsupported codec shows the format message, swipe during playback stops it, logout during playback stops it, TalkBack reads tiles and controls, `SurfaceView` behaves during page swipes
+- [ ] 7.2 (NOT DONE at archive time: left open for the user to verify on a device) Manual device checks (by the user, not automatable; list the results in the PR) against a real Nextcloud (with and without the Movie preview provider) and a plain WebDAV server: mixed album shows posters / placeholders with play indicators, core preview works with an app password, an Android `.mp4` and an iPhone `.mov` (HEVC) play and seek, unsupported codec shows the format message, swipe during playback stops it, logout during playback stops it, TalkBack reads tiles and controls, `SurfaceView` behaves during page swipes
 - [x] 7.3 Run `openspec validate show-videos-in-albums --strict` after any artifact update; verify it reports the change as valid
 
 ## 8. Review fixes
