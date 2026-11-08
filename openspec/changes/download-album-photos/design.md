@@ -6,7 +6,8 @@ See proposal.md (Why) for the motivation and specs/ for the behaviour. The desig
 
 - **Album flow.** `AlbumDetailViewModel` owns the loaded listing (`detailState.photos`, `RemotePhoto.href`) and an `AlbumsRepositoryProvider`. The viewer (`albums/viewer`) shares the detail entry's ViewModel, and selection mode lives in `AlbumDetailScreen` (`selectedHrefs`).
 - **Href hardening.** `resolveWebDavHref(root, href)` and `UnsafeHrefException` (`data/WebDavHref.kt`). `AlbumsRepository.baseFolderUrl` = config URL + normalized base folder.
-- **Transport.** `WebDavClient` adds the origin-restricted `Authorization` header, uses `noRedirectClient` / `uploadClient` without a `callTimeout`, and runs calls through `executeCancellable()` (`data/CancellableCall.kt`). `LimitedInputStream` provides byte caps. The `pin-self-signed-certificate` sibling change will give `WebDavClient` a pinned-trust client factory.
+- **Transport.** `WebDavClient(config, pin)` is built on `serverHttpClientBuilder(ServerTrust(pin))`, adds the origin-restricted `Authorization` header, uses `noRedirectClient` / `uploadClient` without a `callTimeout`, and runs calls through `executeCancellable()` (`data/CancellableCall.kt`). `LimitedInputStream` provides byte caps. The upload worker builds it through a `(WebDavConfig, PinnedCertificate?) -> WebDavClient` factory with `TrustedCertificateRepository.pinFor(url)` and refreshes the pin per entry (`withRefreshedPin`).
+- **Albums with videos.** The listing classifies each entry (`RemotePhoto.mediaKind`, `isVideo`); the viewer renders video pages with `VideoPage`.
 - **Upload worker.** It provides several patterns to reuse:
   - validated queue files in `noBackupFilesDir` (`worker/QueueFiles.kt`) and atomic rewrites (`rewriteQueueFile()`)
   - per-entry done markers, and `interruptions` capped at `MAX_UPLOAD_RUN_ATTEMPTS` with a `runAttemptCount` backstop
@@ -25,7 +26,7 @@ See proposal.md (Why) for the motivation and specs/ for the behaviour. The desig
 - Nothing partial is ever visible, nothing is overwritten, and no permission is added.
 
 **Non-Goals:**
-- Videos, TIFF and SVG. They are skipped as unsupported until `show-videos-in-albums` and a follow-up extend `DownloadImageType` and add `MediaStore.Video` as a target collection.
+- Videos, TIFF and SVG. Albums list videos, but saving them needs `MediaStore.Video` and a cap far above 200 MiB; a follow-up can extend `DownloadImageType`. Until then they are skipped as unsupported, and the viewer does not offer the button on a video page.
 - A "Retry failed" action, upload-history entries for downloads, and saving whole albums from the album list.
 - Preserving the server's modification time. `DATE_TAKEN` comes from the MediaProvider's EXIF scan after publishing.
 - Excluding saved photos from the local grid or from the "new photos" view. They are new local items, see Decision 9.
@@ -41,9 +42,10 @@ See proposal.md (Why) for the motivation and specs/ for the behaviour. The desig
 2. Under a `Mutex` acquired with a timeout, sweeps orphaned queue files (see below).
 3. Writes `noBackupFilesDir/download_queue_<millis>_<uuid>.json`:
    ```json
-   {"serverUrl": "...", "albumHref": "...", "albumFolder": "...", "entries": [{"href": "..."}], "interruptions": 0}
+   {"serverUrl": "...", "albumHref": "...", "entries": [{"href": "..."}], "interruptions": 0}
    ```
-4. Awaits `enqueueUniqueWork("photo_download", APPEND_OR_REPLACE, request)`. The request is tagged `photo_download` and `download_queue:<name>`, has a `CONNECTED` constraint and an explicit exponential back-off, and is built only by `downloadWorkRequest()`. It deliberately ignores the Wi-Fi-only upload setting: every download is an explicit user action, and that setting is named and documented for uploads.
+   The worker derives the local album folder from `albumHref` itself (`albumFolderName()`), so no second, unvalidated name is stored.
+4. Awaits `enqueueUniqueWork("photo_download", APPEND_OR_REPLACE, request)`. The request is tagged `photo_download` and `download_queue:<name>` (never `photo_upload`, so `cancelRunningUpload()` cannot reach it), has a `CONNECTED` constraint and an explicit exponential back-off, and is built only by `downloadWorkRequest()`. It deliberately ignores the Wi-Fi-only upload setting: every download is an explicit user action, and that setting is named and documented for uploads.
 5. Shows the plural "Saving N photos" toast on Main. On failure it deletes the file and shows `download_enqueue_failed`.
 
 The work input `Data` carries only `KEY_QUEUE_FILE`. The queue holds no credentials and no username. The server URL is non-sensitive (CLAUDE.md) and is needed for Decision 7. `WorkManager` `Data` is limited to 10 KB, while a selection can hold thousands of hrefs, so the hrefs go into the file. `noBackupFilesDir` is excluded from backup and device transfer automatically. The hrefs contain user folder names.
@@ -60,7 +62,8 @@ The work input `Data` carries only `KEY_QUEUE_FILE`. The queue holds no credenti
 
 **Consequences, handled explicitly:**
 - **No cascade on failure.** A failed predecessor would fail its dependents. The worker therefore returns `Result.success()` for every finished batch, including all-failed and malformed-queue batches. It returns `Result.retry()` only for interruptions and never returns `Result.failure()`.
-- **Cancel cascades.** Cancelling one work cancels the batches queued after it. The spec states this ("stops the running batch and the batches queued after it"). Their queue files are never opened by a worker. `DownloadEnqueuer` therefore sweeps download queue files whose `download_queue:<name>` work is not unfinished, using `getWorkInfosByTag` bounded to 5 s. The sweep fails closed: on a timeout or error it deletes nothing. It runs before writing a new file, under the same mutex, so it cannot race the enqueue.
+- **Cancel cascades.** Cancelling one work cancels the batches queued after it. The spec states this ("stops the running batch and the batches queued after it"). Their queue files are never opened by a worker. `DownloadEnqueuer` therefore sweeps download queue files whose `download_queue:<name>` work is finished (or has no work info, e.g. pruned or never enqueued after a process death), using `getWorkInfosByTag` bounded to 5 s. The sweep fails closed: on a timeout or error it deletes nothing. Before deleting a file it discards a recorded `pendingItem` through `LocalMediaWriter.discardLeftover()` (a process death during a user cancel can leave one). It runs before writing a new file, under the same mutex, and the enqueue is awaited inside that mutex, so it cannot race the enqueue.
+- **Existing guard.** `NoUploadWorkCancelOutsideCancelPathRegressionTest` forbids `APPEND_OR_REPLACE` in all of `src/main`, because its author grouped it with `REPLACE`. `APPEND_OR_REPLACE` never cancels or stops existing work (it only drops already failed / cancelled prerequisites of a new chain, per the WorkManager docs), and the unique name `photo_download` is never used by upload work. The guard therefore gets one allowance: `APPEND_OR_REPLACE` only in `download/DownloadEnqueuer.kt`; `REPLACE` stays forbidden everywhere. Plain `APPEND` is not an option: after one user cancel every later download appended to the cancelled chain would be cancelled at once until WorkManager prunes it, and `pruneWork()` would also erase the work infos that `recoverCancelledUploads()` relies on. **Decision (approved by the user):** the guard is narrowed as follows. `ExistingWorkPolicy.APPEND_OR_REPLACE` is allowed only in `download/DownloadEnqueuer.kt`; WorkManager's `createCancelPendingIntent` (the progress notification's Cancel action) is allowed only in `worker/DownloadNotifications.kt`; `ExistingWorkPolicy.REPLACE` stays forbidden everywhere; the upload cancel path (`cancelRunningUpload()`) stays the only code that cancels upload work, and download work never gets the `photo_upload` tag. `CLAUDE.md` rule 4 and `NoUploadWorkCancelOutsideCancelPathRegressionTest` (planted-copy cases for both allowances) are updated accordingly.
 
 **Alternatives considered:**
 - *Independent parallel works.* They need one foreground id per work, and WorkManager has no notification tag for `ForegroundInfo`, so ids would collide.
@@ -73,13 +76,13 @@ The work input `Data` carries only `KEY_QUEUE_FILE`. The queue holds no credenti
 `AlbumDetailViewModel.saveToDevice(photos: List<RemotePhoto>)`:
 - Keeps only photos whose href is in the current `detailState.photos`, with `currentHref` as the album (the same rule as `launchPhotoDeletion`).
 - Ignores calls while the album is not loaded or has `NotConfigured` / `ConfigurationChanged`.
-- Hands `(albumHref, albumName, hrefs)` to an injected `DownloadRequester`. The interface is implemented by `DownloadEnqueuer`. The ViewModel gets it from a `@JvmOverloads` default via `(application as KrhnlesApplication).downloadEnqueuer`, so `ViewModelFactoryRegressionTest` keeps passing.
+- Hands `(albumHref, hrefs)` to an injected `DownloadRequester`. Videos are not filtered here; the worker's allow-list is the single source of truth and reports them as unsupported. The interface is implemented by `DownloadEnqueuer`. The ViewModel gets it from a `@JvmOverloads` default via `(application as KrhnlesApplication).downloadEnqueuer`, so `ViewModelFactoryRegressionTest` keeps passing.
 
 ViewModels never reference each other. The viewer calls the shared detail ViewModel it already holds.
 
 UI:
 - **`AlbumDetailScreen`.** `SelectionTopBar` gets a `Save` action (`Icons.Default.Download`, `cd_save_to_device`), disabled while `isDeletingPhotos`. Selection is cleared after the call.
-- **`FullscreenViewerScreen`.** The overlay gets a top-end `IconButton`. A `rememberSaveable` set of hrefs saved in this viewer session disables the button for those photos, which prevents accidental double taps. Saving again later is allowed and yields a uniquified copy.
+- **`FullscreenViewerScreen`.** The overlay gets a top-end `IconButton`, shown only when the current page is not a video (`currentIsVideo`, already computed for auto-hide). A `rememberSaveable` set of hrefs saved in this viewer session disables the button for those photos, which prevents accidental double taps. Saving again later is allowed and yields a uniquified copy.
 - Toasts come from the enqueuer, as for uploads, so a viewer that is left at once still gets feedback.
 
 ### 3. Transfer: `WebDavClient.download()`
@@ -88,7 +91,7 @@ UI:
 suspend fun download(url: HttpUrl, maxBytes: Long, sink: (DownloadBody) -> Unit): Result<Unit>
 ```
 
-- Runs on `downloadClient` = `noRedirectClient` with the default 60 s read timeout and no `callTimeout`. It inherits the origin-restricted interceptor and, once `pin-self-signed-certificate` lands, the pinned trust, because it is derived from the same base client.
+- Runs on `noRedirectClient` (default 60 s read timeout, no `callTimeout`); no new client is needed. It inherits the origin-restricted interceptor and the pin-aware trust of the base client.
 - Requires `url.hasSameOriginAs(config.url)` as defence in depth, else `UnsafeHrefException` without a request.
 - Sends `GET` with `Accept-Encoding: identity`, so the stored bytes arrive and `Content-Length` is the file size.
 - Runs through `executeCancellable`: Cancel or a WorkManager stop aborts a blocked read at once.
@@ -124,7 +127,7 @@ PendingMediaItem.discard()                                              // conte
 
 - **Inserting.**
   - The target is `MediaStore.Images.Media.getContentUri(VOLUME_EXTERNAL_PRIMARY)`.
-  - `RELATIVE_PATH` = `Pictures/KroehnSync/<albumFolder>/`. `KroehnSync` is a non-localized constant, so it is unaffected by `german-translation`.
+  - `RELATIVE_PATH` = `Pictures/KroehnSync/<albumFolderName(albumHref)>/`. `KroehnSync` is a non-localized constant, so it is unaffected by `german-translation`.
   - `DISPLAY_NAME` is sanitized and `MIME_TYPE` comes from the allow-list.
   - `insert` never overwrites: MediaProvider appends ` (1)`, ` (2)`, … to a taken name.
 - **Pending item record.** Before writing, the worker records the item uri in the queue file (`"pendingItem"`, via `rewriteQueueFile()`) and clears it after `publish()` / `discard()`.
@@ -142,7 +145,7 @@ PendingMediaItem.discard()                                              // conte
 - **`DownloadImageType`.** The extension map is built from `SharedImageType`: jpg/jpeg → JPEG, png, gif, webp, heic → HEIC, heif → HEIF, avif, bmp, dng. The extension decides the type; the response `Content-Type` only vetoes (Decision 3).
 - **`downloadDisplayName(href)`.**
   - Takes the decoded last segment (`HttpUrl.pathSegments.last()`).
-  - Replaces `/ \ : * ? " < > |`, ISO control characters and Unicode Cf / bidi / line / paragraph separators and unpaired surrogates with `_`, and trims spaces and dots.
+  - Replaces `/ \ : * ? " < > |`, ISO control characters and Unicode Cf / bidi / line / paragraph separators and unpaired surrogates with `_`, and trims spaces and dots at both ends. A leading dot must go: MediaProvider treats dot files and dot directories as hidden, so the saved photo would not appear in the gallery.
   - Truncates the stem so that the whole name is ≤ 255 UTF-8 bytes with the extension kept.
   - A blank stem gets `photo_<millis>_<8 hex>.<ext>`.
 - **`albumFolderName(albumHref)`.** Sanitizes the same way to one segment of at most 100 UTF-8 bytes. `.`, `..` or blank → `Album`.
@@ -155,9 +158,9 @@ PendingMediaItem.discard()                                              // conte
 
 ### 5. Worker loop, failures and stop rules
 
-`DownloadWorker(context, params)` has a public constructor for WorkManager and an internal test constructor taking `CredentialRepository`, `(WebDavConfig) -> WebDavClient`, a `LocalMediaWriter` factory, a free-space provider and a clock. For each pending entry, in order:
+`DownloadWorker(context, params)` has a public constructor for WorkManager and an internal test constructor taking `CredentialRepository`, `TrustedCertificateRepository`, `(WebDavConfig, PinnedCertificate?) -> WebDavClient`, a `LocalMediaWriter` factory, a free-space provider and a clock. It overrides `getForegroundInfo()` like `UploadWorker`. For each pending entry, in order:
 
-1. Re-check the config. This is a bounded read (3 s) with `isValid` and `url == queue.serverUrl`; otherwise the rest fails with `ConfigurationChanged`.
+1. Re-check the config. This is a bounded read (3 s) with `isValid` and `url == queue.serverUrl`; otherwise the rest fails with `ConfigurationChanged`. Re-read the pin (`pinFor(url)`) and rebuild the client when it changed, as the upload worker does.
 2. Resolve the target (Decision 3), then the type and name (Decision 4).
 3. `setForegroundOrFalse(progress)`.
 4. Download into a pending item. Then publish, and mark the entry `"downloaded": true` via `rewriteQueueFile()`. A failed marker write is logged; a re-run may save that photo again as a uniquified copy (accepted).
@@ -191,8 +194,8 @@ Result notification:
 - The counts cover the whole batch, including entries saved by earlier runs.
 
 Notification channel and glyph:
-- Progress and foreground use id 1004 in channel `download_channel` (IMPORTANCE_LOW, `channel_name_downloads`), with small icon `ic_stat_download`.
-- The Cancel action is `WorkManager.createCancelPendingIntent(id)`.
+- Progress and foreground use id 1004 in channel `download_channel` (IMPORTANCE_LOW, `channel_name_downloads`), with small icon `ic_notification_download` (named like the existing `ic_notification_upload`).
+- The Cancel action is `WorkManager.createCancelPendingIntent(id)` with the download worker's own id, created only in `worker/DownloadNotifications.kt` (the guard's second allowance). It is not a broadcast to `CancelUploadReceiver`.
 - 1001 / 1002 stay with uploads, so an upload and a download never replace each other's notifications.
 
 ### 6. Cancellation vs. system stop, interruptions
@@ -239,6 +242,8 @@ Reasons not to mark saved photos as uploaded:
 - [Process death between `publish()` and the `downloaded` marker write] → that photo is saved again as a uniquified copy on resume. The window is tiny and the outcome is visible and harmless (no overwrite).
 - [A server serving non-image bytes under an image extension with `application/octet-stream`] → the gallery shows an undecodable item. No content sniffing is done in v1; the `Content-Type` veto catches the common HTML case (captive portal, login page).
 - [The `dataSync` foreground budget (Android 15: 6 h / 24 h) is shared with uploads] → refusals use the interruption cap, and progress is kept for later runs.
+- [A chained batch starts while the app is in the background and the foreground start is refused] → counted as an interruption and retried with back-off, like uploads.
+- [Process death between `insert` and the `pendingItem` write] → an invisible pending item is left without a record; MediaProvider expires it (about 7 days). Accepted: it is never visible and never published.
 - [`getAllocatableBytes` may not reflect the shared volume on every device] → the ENOSPC mapping is the backstop; the margin keeps the device usable.
 - [The extension decides the type, so a wrong server extension (PNG named `.jpg`)] → the MediaProvider stores the declared MIME; galleries decode by content. Accepted.
 - [Unsupported types are only discovered by the worker] → they are reported in the result notification as "unsupported type", which keeps one source of truth; the UI does not pre-filter.
@@ -249,6 +254,7 @@ Additive only: new work tag, queue file pattern, channel, notification ids and s
 
 ## Open Questions
 
+- (Resolved) Narrowing `NoUploadWorkCancelOutsideCancelPathRegressionTest` was approved by the user, see Decision 1, "Existing guard".
 - Folder name `Pictures/KroehnSync/`: confirm the brand spelling, for example `Pictures/Kroehnles Image Management/`. It is one constant and changes neither the spec structure nor the tasks.
 - Should a later change hide app-saved photos from the local grid or from `new-photos-reminder` (by `OWNER_PACKAGE_NAME`)? This is out of scope here.
 - Should the per-file cap become a setting, for example for RAW files above 200 MiB? It is a constant for now.

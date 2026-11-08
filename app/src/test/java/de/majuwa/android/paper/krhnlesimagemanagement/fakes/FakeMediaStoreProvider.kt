@@ -28,6 +28,7 @@ class FakeMediaStoreProvider : ContentProvider() {
         sortOrder: String?,
     ): Cursor? {
         itemRows[uri.toString()]?.let { row -> return itemCursor(uri, projection, row) }
+        inserted[uri.toString()]?.let { return itemCursor(uri, projection, it.toRow()) }
         val rows =
             when (uri) {
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI -> {
@@ -61,9 +62,23 @@ class FakeMediaStoreProvider : ContentProvider() {
         queryArgs: Bundle?,
         cancellationSignal: CancellationSignal?,
     ): Cursor? {
-        val row = itemRows[uri.toString()] ?: return super.query(uri, projection, queryArgs, cancellationSignal)
+        val row =
+            itemRows[uri.toString()] ?: inserted[uri.toString()]?.toRow()
+                ?: return super.query(uri, projection, queryArgs, cancellationSignal)
         return itemCursor(uri, projection, row)
     }
+
+    private fun InsertedItem.toRow(): Map<String, Any?> =
+        mapOf(
+            MediaStore.MediaColumns.SIZE to file.length(),
+            MediaStore.MediaColumns.DATE_MODIFIED to 1L,
+            MediaStore.MediaColumns.IS_TRASHED to 0,
+            MediaStore.MediaColumns.IS_PENDING to if (pending) 1 else 0,
+            MediaStore.MediaColumns.OWNER_PACKAGE_NAME to owner,
+            MediaStore.MediaColumns.DISPLAY_NAME to displayName,
+            MediaStore.MediaColumns.RELATIVE_PATH to relativePath,
+            MediaStore.MediaColumns.MIME_TYPE to mimeType,
+        )
 
     private fun itemCursor(
         uri: Uri,
@@ -101,23 +116,97 @@ class FakeMediaStoreProvider : ContentProvider() {
 
     override fun getType(uri: Uri): String? = null
 
+    /**
+     * Inserts into `images/media` like MediaProvider: records the values, owns the item by this
+     * app's package and gives a taken `RELATIVE_PATH` + `DISPLAY_NAME` a ` (1)`, ` (2)` suffix.
+     * [insertFailure] makes the insert fail.
+     */
     override fun insert(
         uri: Uri,
         values: ContentValues?,
-    ): Uri? = null
+    ): Uri? {
+        if (values == null || uri.path?.endsWith("/images/media") != true) return null
+        insertFailure?.let { throw it }
+        val relativePath = values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH).orEmpty()
+        val name = uniqueName(relativePath, values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME).orEmpty())
+        val id = nextId.getAndIncrement()
+        val itemUri = Uri.parse("content://$AUTHORITY/${uri.pathSegments.first()}/images/media/$id")
+        inserted[itemUri.toString()] =
+            InsertedItem(
+                relativePath = relativePath,
+                displayName = name,
+                mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE),
+                pending = values.getAsInteger(MediaStore.MediaColumns.IS_PENDING) == 1,
+                owner = ownerPackage ?: context?.packageName.orEmpty(),
+                file = File.createTempFile("saved", ".bin").apply { deleteOnExit() },
+            )
+        return itemUri
+    }
 
     override fun delete(
         uri: Uri,
         selection: String?,
         selectionArgs: Array<String>?,
-    ) = 0
+    ): Int {
+        val item = inserted.remove(uri.toString()) ?: return 0
+        item.file.delete()
+        deletes += uri.toString()
+        return 1
+    }
 
     override fun update(
         uri: Uri,
         values: ContentValues?,
         selection: String?,
         selectionArgs: Array<String>?,
-    ) = 0
+    ): Int {
+        val item = inserted[uri.toString()] ?: return 0
+        updateFailure?.let { throw it }
+        values?.getAsInteger(MediaStore.MediaColumns.IS_PENDING)?.let { item.pending = it == 1 }
+        return 1
+    }
+
+    /** Write access to an inserted item's backing file; failure injection via [openFailure]. */
+    override fun openFile(
+        uri: Uri,
+        mode: String,
+    ): ParcelFileDescriptor? {
+        val item = inserted[uri.toString()] ?: return super.openFile(uri, mode)
+        openFailure?.let { throw it }
+        return ParcelFileDescriptor.open(
+            item.file,
+            ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_CREATE or
+                ParcelFileDescriptor.MODE_TRUNCATE,
+        )
+    }
+
+    private fun uniqueName(
+        relativePath: String,
+        requested: String,
+    ): String {
+        val taken =
+            inserted.values
+                .filter { it.relativePath == relativePath }
+                .map { it.displayName.lowercase() }
+                .toSet()
+        val stem = requested.substringBeforeLast('.', requested)
+        val extension = requested.substring(stem.length)
+        return generateSequence(0) { it + 1 }
+            .map { if (it == 0) requested else "$stem ($it)$extension" }
+            .first { it.lowercase() !in taken }
+    }
+
+    /** One item inserted through [insert]. */
+    class InsertedItem(
+        val relativePath: String,
+        val displayName: String,
+        val mimeType: String?,
+        var pending: Boolean,
+        val owner: String,
+        val file: File,
+    ) {
+        val bytes: ByteArray get() = file.readBytes()
+    }
 
     companion object {
         const val AUTHORITY = MediaStore.AUTHORITY
@@ -137,6 +226,29 @@ class FakeMediaStoreProvider : ContentProvider() {
 
         /** MediaStore item rows by uri string (`content://media/external/images/media/<id>`). */
         val itemRows = java.util.concurrent.ConcurrentHashMap<String, Map<String, Any?>>()
+
+        /** Items inserted through [insert] by uri string. */
+        val inserted = java.util.concurrent.ConcurrentHashMap<String, InsertedItem>()
+
+        /** Uris deleted through [delete], in order. */
+        val deletes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+        private val nextId =
+            java.util.concurrent.atomic
+                .AtomicLong(1000L)
+
+        @Volatile
+        var insertFailure: RuntimeException? = null
+
+        @Volatile
+        var updateFailure: RuntimeException? = null
+
+        @Volatile
+        var openFailure: java.io.FileNotFoundException? = null
+
+        /** Owner of newly inserted items; null = this app's package. */
+        @Volatile
+        var ownerPackage: String? = null
 
         @Volatile
         var imageRows: List<Map<String, Any?>> = emptyList()
@@ -158,6 +270,12 @@ class FakeMediaStoreProvider : ContentProvider() {
             files.clear()
             itemFailures.clear()
             itemQueries.clear()
+            inserted.clear()
+            deletes.clear()
+            insertFailure = null
+            updateFailure = null
+            openFailure = null
+            ownerPackage = null
             imageRows = emptyList()
             videoRows = emptyList()
             videoFailure = null

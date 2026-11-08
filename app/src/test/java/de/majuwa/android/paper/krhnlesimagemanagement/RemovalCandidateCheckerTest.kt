@@ -3,6 +3,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.data.DefaultRemovalCandidateChecker
+import de.majuwa.android.paper.krhnlesimagemanagement.data.LocalMediaWriter
 import de.majuwa.android.paper.krhnlesimagemanagement.data.RemovalCandidate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
@@ -237,6 +238,40 @@ class RemovalCandidateCheckerTest {
         val head = requests.single()
         assertEquals("HEAD", head.method)
         assertEquals("/remote.php/dav/files/u/Trip/img_1.jpg", head.path)
+    }
+
+    @Test
+    fun `a photo saved from an album is never a candidate and the recorded original still is`() {
+        val original = consistent(record(1))
+        // Saved from the album: same display name and size as the verified upload, but a fresh MediaStore item.
+        val saved =
+            LocalMediaWriter(
+                context,
+            ).insertPending("Pictures/KroehnSync/Trip/", original.fileName, "image/jpeg")
+        saved.write { it.write(ByteArray(original.size.toInt())) }
+        saved.publish()
+        val savedItem = FakeMediaStoreProvider.inserted.getValue(saved.uriString)
+        assertEquals(original.size, savedItem.file.length())
+        assertEquals(original.fileName, savedItem.displayName)
+
+        val candidates = check(original)
+
+        assertEquals(listOf(original.uri), candidates.map { it.uri.toString() })
+        assertTrue(candidates.none { it.uri.toString() == saved.uriString })
+        assertEquals("only the recorded original was checked against the server", 1, requests.size)
+    }
+
+    @Test
+    fun `a device with only saved photos has no record and so nothing to check or remove`() {
+        val saved = LocalMediaWriter(context).insertPending("Pictures/KroehnSync/Trip/", "img_1.jpg", "image/jpeg")
+        saved.write { it.write(ByteArray(100)) }
+        saved.publish()
+        serverSizes["/remote.php/dav/files/u/Trip/img_1.jpg"] = 100L
+
+        // Saving never writes a record, so the removal check starts from an empty record list.
+        assertTrue(check().isEmpty())
+        assertTrue(requests.isEmpty())
+        assertEquals(1, FakeMediaStoreProvider.inserted.size)
     }
 
     @Test

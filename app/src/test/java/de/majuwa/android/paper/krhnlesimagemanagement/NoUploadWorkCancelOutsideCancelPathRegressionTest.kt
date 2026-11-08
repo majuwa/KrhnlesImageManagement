@@ -10,9 +10,16 @@ import java.io.File
 /**
  * Guards design D2 of `cancel-running-upload`: the worker treats a stop as the user's cancel only
  * when WorkManager reports `STOP_REASON_CANCELLED_BY_APP`, which is only sound while the single
- * `cancelRunningUpload()` in `worker/UploadCancellation.kt` is the only code that cancels work.
- * `ExistingWorkPolicy.REPLACE` / `APPEND_OR_REPLACE` also stop running work with that reason and
- * are therefore forbidden, as are the other WorkManager cancel APIs outside that file.
+ * `cancelRunningUpload()` in `worker/UploadCancellation.kt` is the only code that cancels *upload*
+ * work. `ExistingWorkPolicy.REPLACE` also stops running work with that reason and is forbidden
+ * everywhere, as are the other WorkManager cancel APIs outside that file.
+ *
+ * Two narrow allowances exist for the separate, serialized download chain (`download-album-photos`,
+ * decision confirmed by the user): `ExistingWorkPolicy.APPEND_OR_REPLACE` only in
+ * `download/DownloadEnqueuer.kt` (it never stops running work; the unique name `photo_download` is
+ * never used by upload work) and WorkManager's `createCancelPendingIntent` only in
+ * `worker/DownloadNotifications.kt` (it cancels the download work by its own id; download work never
+ * carries the `photo_upload` tag).
  */
 class NoUploadWorkCancelOutsideCancelPathRegressionTest {
     @get:Rule
@@ -49,6 +56,65 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
     }
 
     @Test
+    fun `replace is forbidden even in the files that have an allowance`() {
+        val copy = tmp.newFolder("main")
+        val enqueuer = File(copy, "java/de/x/download/DownloadEnqueuer.kt")
+        checkNotNull(enqueuer.parentFile).mkdirs()
+        enqueuer.writeText("val p = ExistingWorkPolicy.REPLACE\n")
+
+        assertEquals(listOf("java/de/x/download/DownloadEnqueuer.kt:1"), violations(copy))
+    }
+
+    @Test
+    fun `append or replace is allowed only in the download enqueuer`() {
+        val copy = tmp.newFolder("main")
+        val enqueuer = File(copy, "java/de/x/download/DownloadEnqueuer.kt")
+        checkNotNull(enqueuer.parentFile).mkdirs()
+        enqueuer.writeText("val p = ExistingWorkPolicy.APPEND_OR_REPLACE\n")
+        assertEquals(emptyList<String>(), violations(copy))
+
+        File(copy, "java/de/x/upload/UploadEnqueuer.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("val p = ExistingWorkPolicy.APPEND_OR_REPLACE\n")
+        File(copy, "java/de/x/worker/DownloadNotifications.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("val p = ExistingWorkPolicy.APPEND_OR_REPLACE\n")
+
+        assertEquals(
+            listOf("java/de/x/upload/UploadEnqueuer.kt:1", "java/de/x/worker/DownloadNotifications.kt:1"),
+            violations(copy),
+        )
+    }
+
+    @Test
+    fun `the cancel pending intent is allowed only in the download notifications`() {
+        val copy = tmp.newFolder("main")
+        val notifications = File(copy, "java/de/x/worker/DownloadNotifications.kt")
+        checkNotNull(notifications.parentFile).mkdirs()
+        notifications.writeText("val i = WorkManager.getInstance(c).createCancelPendingIntent(id)\n")
+        assertEquals(emptyList<String>(), violations(copy))
+
+        File(copy, "java/de/x/worker/UploadNotifications.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("val i = WorkManager.getInstance(c).createCancelPendingIntent(id)\n")
+        File(copy, "java/de/x/download/DownloadEnqueuer.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("val i = WorkManager.getInstance(c).createCancelPendingIntent(id)\n")
+        File(copy, "java/de/x/worker/UploadCancellation.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("val i = WorkManager.getInstance(c).createCancelPendingIntent(id)\n")
+
+        assertEquals(
+            listOf(
+                "java/de/x/download/DownloadEnqueuer.kt:1",
+                "java/de/x/worker/UploadCancellation.kt:1",
+                "java/de/x/worker/UploadNotifications.kt:1",
+            ),
+            violations(copy),
+        )
+    }
+
+    @Test
     fun `the scan allows the cancel path file and ignores comments`() {
         val copy = tmp.newFolder("main")
         val cancelPath = File(copy, "java/de/majuwa/android/paper/krhnlesimagemanagement/worker/UploadCancellation.kt")
@@ -61,23 +127,33 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
 
     private companion object {
         const val CANCEL_PATH_FILE = "worker/UploadCancellation.kt"
+        const val DOWNLOAD_ENQUEUER_FILE = "download/DownloadEnqueuer.kt"
+        const val DOWNLOAD_NOTIFICATIONS_FILE = "worker/DownloadNotifications.kt"
 
         val cancelApis = Regex("""\b(cancelWorkById|cancelAllWorkByTag|cancelUniqueWork|cancelAllWork)\b""")
-        val replacePolicies = Regex("""ExistingWorkPolicy\.(REPLACE|APPEND_OR_REPLACE)\b""")
+        val cancelIntentApi = Regex("""\bcreateCancelPendingIntent\b""")
+        val replacePolicy = Regex("""ExistingWorkPolicy\.REPLACE\b""")
+        val appendOrReplacePolicy = Regex("""ExistingWorkPolicy\.APPEND_OR_REPLACE\b""")
 
         fun violations(mainDir: File): List<String> =
             mainDir
                 .walkTopDown()
                 .filter { it.isFile && it.extension == "kt" }
                 .flatMap { file ->
-                    val inCancelPath = file.invariantSeparatorsPath.endsWith("/$CANCEL_PATH_FILE")
+                    val path = file.invariantSeparatorsPath
+                    val inCancelPath = path.endsWith("/$CANCEL_PATH_FILE")
+                    val inEnqueuer = path.endsWith("/$DOWNLOAD_ENQUEUER_FILE")
+                    val inDownloadNotifications = path.endsWith("/$DOWNLOAD_NOTIFICATIONS_FILE")
                     file
                         .readLines()
                         .withIndex()
                         .filter { (_, line) -> isCode(line) }
                         .filter { (_, line) ->
                             val code = line.substringBefore("//")
-                            replacePolicies.containsMatchIn(code) || (!inCancelPath && cancelApis.containsMatchIn(code))
+                            replacePolicy.containsMatchIn(code) ||
+                                (!inEnqueuer && appendOrReplacePolicy.containsMatchIn(code)) ||
+                                (!inCancelPath && cancelApis.containsMatchIn(code)) ||
+                                (!inDownloadNotifications && cancelIntentApi.containsMatchIn(code))
                         }.map { (index, _) -> "${file.relativeTo(mainDir).invariantSeparatorsPath}:${index + 1}" }
                 }.sorted()
                 .toList()

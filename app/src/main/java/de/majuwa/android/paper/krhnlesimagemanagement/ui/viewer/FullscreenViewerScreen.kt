@@ -23,6 +23,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +107,9 @@ fun FullscreenViewerScreen(
 
     val pagerState = rememberPagerState(initialPage = initialIndex) { photos.size }
     var controlsVisible by remember { mutableStateOf(true) }
+
+    // Photos already saved from this viewer: their Save button is disabled (no accidental double tap).
+    var savedHrefs by rememberSaveable(stateSaver = savedHrefsSaver) { mutableStateOf(emptySet<String>()) }
 
     // Track whether the currently visible page is zoomed in (disables pager swipe).
     var isCurrentPageZoomed by remember { mutableStateOf(false) }
@@ -215,6 +221,25 @@ fun FullscreenViewerScreen(
                         )
                     }
 
+                    // Save to device top-right: photos only, a video page has no button
+                    photos.getOrNull(pagerState.currentPage)?.takeUnless { it.isVideo }?.let { current ->
+                        val alreadySaved = current.href in savedHrefs
+                        IconButton(
+                            enabled = !alreadySaved,
+                            onClick = {
+                                viewModel.saveToDevice(listOf(current))
+                                savedHrefs = savedHrefs + current.href
+                            },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = stringResource(R.string.cd_save_to_device),
+                                tint = Color.White.copy(alpha = if (alreadySaved) SAVED_ICON_ALPHA else 1f),
+                            )
+                        }
+                    }
+
                     // Page counter bottom-centre
                     if (photos.size > 1) {
                         Text(
@@ -241,6 +266,12 @@ fun FullscreenViewerScreen(
         }
     }
 }
+
+private const val SAVED_ICON_ALPHA = 0.4f
+
+/** Saves the set of saved hrefs across rotation and process death as a list. */
+private val savedHrefsSaver =
+    listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
 
 /** The playback state of the video [href] as a page state; every other video page is idle. */
 private fun VideoPlaybackState.forVideo(href: String): VideoPageState =

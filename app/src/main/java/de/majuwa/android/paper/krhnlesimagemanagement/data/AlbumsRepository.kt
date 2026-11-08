@@ -76,15 +76,7 @@ class AlbumsRepository internal constructor(
      * Configured WebDAV URL plus base folder. Every server-supplied album / photo href must resolve
      * to a URL strictly below it (see [resolveWebDavHref]); anything else is never requested.
      */
-    private val baseFolderUrl: HttpUrl =
-        baseHttpUrl
-            .newBuilder()
-            .apply {
-                config.normalizedBaseFolder
-                    .split('/')
-                    .filter { it.isNotBlank() }
-                    .forEach(::addPathSegment)
-            }.build()
+    private val baseFolderUrl: HttpUrl = baseFolderUrlOf(config)
 
     private val client: OkHttpClient =
         serverHttpClientBuilder(ServerTrust(pin))

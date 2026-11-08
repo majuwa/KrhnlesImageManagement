@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FindReplace
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.Movie
@@ -147,6 +148,10 @@ fun AlbumDetailScreen(
                     selectedCount = selectedHrefs.size,
                     enabled = !isDeletingPhotos,
                     onClearSelection = { selectedHrefs = emptySet() },
+                    onSaveClick = {
+                        viewModel.saveToDevice(state.photos.filter { it.href in selectedHrefs })
+                        selectedHrefs = emptySet()
+                    },
                     onDeleteClick = { showDeleteConfirmation = true },
                 )
             } else {
@@ -200,6 +205,7 @@ private fun SelectionTopBar(
     selectedCount: Int,
     enabled: Boolean,
     onClearSelection: () -> Unit,
+    onSaveClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     TopAppBar(
@@ -210,6 +216,9 @@ private fun SelectionTopBar(
             }
         },
         actions = {
+            IconButton(enabled = enabled, onClick = onSaveClick) {
+                Icon(Icons.Default.Download, contentDescription = stringResource(R.string.cd_save_to_device))
+            }
             IconButton(enabled = enabled, onClick = onDeleteClick) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete_selected))
             }

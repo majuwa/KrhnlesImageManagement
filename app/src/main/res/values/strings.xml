@@ -371,6 +371,47 @@
     <string name="channel_name_uploads">Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo and video backups</string>
 
+    <!-- Saving album photos to the device (DownloadWorker) -->
+    <string name="cd_save_to_device">Save to device</string>
+    <plurals name="download_saving">
+        <item quantity="one">Saving %d photo in the background.</item>
+        <item quantity="other">Saving %d photos in the background.</item>
+    </plurals>
+    <string name="download_not_configured">No server is configured. Open Settings and connect your server first.</string>
+    <string name="download_enqueue_failed">Saving could not be started. Please try again.</string>
+    <string name="download_notification_title">Saving photos to this device</string>
+    <string name="action_cancel_download">Cancel</string>
+    <string name="download_complete">Photos saved</string>
+    <string name="download_partial">Photos partly saved</string>
+    <string name="download_failed">Saving failed</string>
+    <string name="download_cancelled">Saving cancelled</string>
+    <plurals name="download_saved_count">
+        <item quantity="one">%d photo saved.</item>
+        <item quantity="other">%d photos saved.</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%d photo could not be saved.</item>
+        <item quantity="other">%d photos could not be saved.</item>
+    </plurals>
+    <plurals name="download_cancelled_counts">
+        <item quantity="one">%1$d of %2$d photo saved before cancelling.</item>
+        <item quantity="other">%1$d of %2$d photos saved before cancelling.</item>
+    </plurals>
+    <string name="download_failure_unsupported">Only photos can be saved, not videos or other file types.</string>
+    <string name="download_failure_too_large">A file is too large to save (limit 200 MB).</string>
+    <string name="download_failure_storage_full">This device has no storage space left.</string>
+    <string name="download_failure_not_found">A file was not found on the server any more.</string>
+    <string name="download_failure_access_denied">The server refused access. Check your login in Settings.</string>
+    <string name="download_failure_certificate">The server certificate is not trusted. You can check the connection with Test Connection in Settings.</string>
+    <string name="download_failure_connection">The server could not be reached.</string>
+    <string name="download_failure_server_error">The server reported an error.</string>
+    <string name="download_failure_rejected">A file was not accepted because it did not look like a photo from this album.</string>
+    <string name="download_failure_write_failed">A photo could not be written to this device.</string>
+    <string name="download_failure_configuration_changed">The server settings changed while saving.</string>
+    <string name="download_failure_interrupted">The system stopped saving repeatedly. Try again later.</string>
+    <string name="channel_name_downloads">Downloads</string>
+    <string name="channel_desc_downloads">Shows progress when photos are saved to this device</string>
+
     <!-- Onboarding -->
     <string name="onboarding_step_indicator">Step %1$d of %2$d</string>
     <string name="onboarding_action_next">Next</string>

@@ -39,6 +39,8 @@ implemented behaviour, user feedback, and explicit feature requests.
 | U-005 | A retry mechanism must be available when an upload fails.                                       | Implemented |
 | U-006 | A running upload can be cancelled and resumed later (Cancel in the notification and in the app; uploaded items stay uploaded, the rest is resumed with "Retry Failed"). | Implemented |
 | U-007 | Large files on Nextcloud (at least 50 MiB) are uploaded in resumable 10 MiB chunks: an interrupted file continues after its last confirmed chunk, server body-size limits do not apply, the progress shows the file percentage (issue #69). | Implemented |
+| U-008 | Album photos saved to the device are downloaded by `WorkManager` in the background (survives closing the app), one batch at a time, with a progress notification and Cancel; an interrupted batch resumes without re-downloading finished photos; the result reports saved / failed counts with typed reasons (issue #73). | Implemented |
+| U-009 | A downloaded photo is limited to 200 MiB, must be an allow-listed raster image (videos are reported as unsupported), is requested only below its album with origin-restricted credentials and never through a redirect, and becomes visible only when complete. | Implemented |
 
 ---
 
@@ -53,6 +55,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | A-005 | A blur-detection scan is available per album (photos only; videos are ignored).                 | Implemented |
 | A-006 | The album list can be searched by name (case- and accent-insensitive); the query survives rotation, tab switches and refresh. | Implemented |
 | A-007 | The album list can be sorted by name (A–Z default, Z–A) or last modified (newest / oldest first, undated last); the choice is remembered and reset on logout. | Implemented |
+| A-008 | Selected album photos can be saved to the device from the selection top bar: a background download to `Pictures/KroehnSync/<album>/` that needs no storage permission, never overwrites a file and is not marked as uploaded (issue #73). | Implemented |
 
 ---
 
@@ -72,6 +75,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | V-010 | A video page shows the server preview (or a placeholder) with a play button; the video file itself is not requested before the tap. | Implemented |
 | V-011 | Videos play in the app, streamed from the configured server only with origin-restricted credentials, pinned trust, no redirects and no copy on the device; play / pause and a seek bar are available. | Implemented |
 | V-012 | Playback stops on page change, when the album is closed or the account / server changes, and pauses when the viewer goes to the background (not on rotation). | Implemented |
+| V-013 | The viewer offers "Save to device" for the current photo (not on a video page); a photo already saved from this viewer session cannot be saved again by accident (issue #73). | Implemented |
 
 > **Note on V-002 / V-006:** The root cause of the regression was that `detectTransformGestures`
 > unconditionally consumed all pointer events — including single-finger horizontal swipes — so
@@ -100,3 +104,4 @@ implemented behaviour, user feedback, and explicit feature requests.
 | N-002 | Code must pass `./gradlew spotlessCheck` (ktlint formatting) before merging.                   | Policy      |
 | N-003 | No new detekt issues may be introduced without explicit approval.                               | Policy      |
 | N-004 | The app must not suppress lint/detekt warnings without justification.                           | Policy      |
+| N-005 | Saving album photos never requests a storage permission, never deletes anything but the app's own incomplete items and never creates an uploaded marker or a verified-upload record. | Policy      |

@@ -299,6 +299,49 @@ class WebDavClient(
         }.onFailure { if (it is CancellationException) throw it }
 
     /**
+     * Downloads the file at [url] (a URL already resolved with [resolveWebDavHref]) as the stored
+     * bytes and hands the body to [sink] as a [DownloadBody], never buffered in memory. Runs on
+     * [noRedirectClient] (pin-aware, origin-restricted `Authorization`, any 3xx fails, no call
+     * timeout, per-read timeout) with `Accept-Encoding: identity`, cancelled with the coroutine
+     * ([executeCancellable]). A URL on another origin fails with [UnsafeHrefException] without a
+     * request; a non-2xx status with [WebDavHttpException]; an announced length above [maxBytes] with
+     * [DownloadTooLargeException] before [sink] runs; a present `Content-Type` that is neither
+     * an image type nor `application/octet-stream` with [UnexpectedContentException]. The stream given
+     * to [sink] fails with [DownloadTooLargeException] once it would exceed [maxBytes]. Cancellation
+     * is rethrown.
+     */
+    suspend fun download(
+        url: HttpUrl,
+        maxBytes: Long,
+        sink: (DownloadBody) -> Unit,
+    ): Result<Unit> =
+        runCatching {
+            if (!url.hasSameOriginAs(config.url)) throw UnsafeHrefException()
+            val request =
+                Request
+                    .Builder()
+                    .url(url)
+                    .get()
+                    .header("Accept-Encoding", "identity")
+                    .build()
+            executeCancellable(noRedirectClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Download failed: HTTP ${response.code}")
+                }
+                val body = response.body
+                val length = body.contentLength()
+                if (length > maxBytes) throw DownloadTooLargeException()
+                if (!body.contentType().isDownloadable()) throw UnexpectedContentException()
+                sink(
+                    DownloadBody(
+                        length,
+                        LimitedInputStream(body.byteStream(), maxBytes) { DownloadTooLargeException() },
+                    ),
+                )
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
      * Size of `folderName/fileName` on the server from one `HEAD` (`Content-Length`; `null` when the
      * server sends none). `Accept-Encoding: identity` keeps it the stored size. Runs on
      * [noRedirectClient] (any 3xx fails), is cancelled with the coroutine; a non-2xx status fails
@@ -571,6 +614,9 @@ class WebDavClient(
         /** Read timeout of [uploadClient] (time to the response after the last byte, per read). */
         const val UPLOAD_READ_TIMEOUT_MINUTES = 5L
 
+        /** Per-file limit of a photo download (phone JPEG / HEIC / DNG are far below). */
+        const val MAX_DOWNLOAD_BYTES = 200L * 1024 * 1024
+
         /** 2xx, including 207 Multi-Status, which is the normal PROPFIND answer. */
         private val HTTP_SUCCESS_CODES = 200..299
         private const val HEADER_REQUEST_HASH = "X-Hash"
@@ -600,6 +646,18 @@ enum class ChunkedUploadCreation {
 data class UploadResponse(
     val serverSha256: String?,
 )
+
+/** The body of a photo download: [contentLength] (`-1` = unknown) and the size-limited [stream]. */
+class DownloadBody(
+    val contentLength: Long,
+    val stream: InputStream,
+)
+
+/** No `Content-Type` is fine; otherwise only an image or `application/octet-stream` may be saved. */
+private fun MediaType?.isDownloadable(): Boolean =
+    this == null ||
+        type.equals("image", ignoreCase = true) ||
+        (type.equals("application", ignoreCase = true) && subtype.equals("octet-stream", ignoreCase = true))
 
 /** SHA-256 (lower-case hex) and byte count of a downloaded body. */
 data class RemoteDigest(

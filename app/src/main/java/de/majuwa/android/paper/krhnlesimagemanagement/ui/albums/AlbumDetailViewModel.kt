@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.majuwa.android.paper.krhnlesimagemanagement.KrhnlesApplication
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryProvider
@@ -15,6 +16,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.deletePhotosIndividua
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadRequester
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CoroutineDispatcher
@@ -108,6 +110,8 @@ class AlbumDetailViewModel
             { config, pin -> AlbumsRepository(config, pin) },
         /** Resolves the thumbnail URLs of a loaded listing (up to 20,000 photos) off the main thread. */
         private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
+        /** Starts saving photos to the device in the application scope (default: the app's enqueuer). */
+        private val downloadRequester: DownloadRequester = (application as KrhnlesApplication).downloadEnqueuer,
     ) : AndroidViewModel(application),
         PhotoDeletionLauncher {
         private val repos = AlbumsRepositoryProvider(credentialRepo, trustedCertificates, repoFactory = repoFactory)
@@ -281,6 +285,22 @@ class AlbumDetailViewModel
                 onStart = { _isDeletingPhotos.value = true },
                 onFinish = { _isDeletingPhotos.value = false },
             )
+
+        /**
+         * Saves [photos] of the open album to the device in the background. Only photos of the
+         * currently loaded listing are requested (stale photos, e.g. after a server or account
+         * change, are dropped); nothing happens while the album is not loaded or after a
+         * [AlbumsError.NotConfigured] / [AlbumsError.ConfigurationChanged]. Videos are passed on:
+         * the download worker reports them as unsupported.
+         */
+        fun saveToDevice(photos: List<RemotePhoto>) {
+            val albumHref = currentHref ?: return
+            val state = _detailState.value
+            if (!state.isLoaded || state.error != null) return
+            val loaded = state.photos.mapTo(HashSet()) { it.href }
+            val hrefs = photos.map { it.href }.filter { it in loaded }.distinct()
+            if (hrefs.isNotEmpty()) downloadRequester.requestDownload(albumHref, hrefs)
+        }
 
         /** Clears [photoDeletionOutcome] once the UI has shown it. */
         fun consumePhotoDeletionOutcome() {

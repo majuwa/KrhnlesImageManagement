@@ -1,5 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
+import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -56,7 +57,7 @@ private fun String.hasOnlySafeSegments(): Boolean =
     }
 
 /** Percent-decodes [this] as UTF-8; `null` for malformed escapes. `+` is kept literally. */
-private fun String.percentDecodedOrNull(): String? {
+internal fun String.percentDecodedOrNull(): String? {
     if ('%' !in this) return this
     val bytes = java.io.ByteArrayOutputStream()
     var i = 0
@@ -80,3 +81,20 @@ private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' ||
 private const val HEX_RADIX = 16
 private const val PERCENT_ESCAPE_LENGTH = 3
 private val FORBIDDEN_HREF_CHARS = setOf('?', '#', '\\')
+
+/**
+ * Configured WebDAV URL plus the normalized base folder, as a collection URL. Server-supplied album
+ * and photo hrefs must resolve strictly below it ([resolveWebDavHref]). Shared by [AlbumsRepository]
+ * and the download target resolution so both use one definition.
+ *
+ * @throws IllegalArgumentException if the configured URL is not a valid HTTP(S) URL.
+ */
+internal fun baseFolderUrlOf(config: WebDavConfig): HttpUrl =
+    requireNotNull(config.url.trimEnd('/').toHttpUrlOrNull()) { "Invalid WebDAV URL" }
+        .newBuilder()
+        .apply {
+            config.normalizedBaseFolder
+                .split('/')
+                .filter { it.isNotBlank() }
+                .forEach(::addPathSegment)
+        }.build()

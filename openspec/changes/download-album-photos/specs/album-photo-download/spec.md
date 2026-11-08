@@ -7,7 +7,7 @@ Lets the user save photos from a remote album back to the device. Saving runs in
 ## ADDED Requirements
 
 ### Requirement: Save to device is offered in the viewer and in selection mode
-The fullscreen viewer SHALL show a "Save to device" button for the current photo in its overlay controls. The album detail selection top bar SHALL show a "Save to device" action that saves every selected photo and then clears the selection. Both SHALL have localized accessibility labels. The selection action SHALL be disabled while a photo deletion runs.
+The fullscreen viewer SHALL show a "Save to device" button for the current photo in its overlay controls, and SHALL NOT show it while the current page is a video. The album detail selection top bar SHALL show a "Save to device" action that saves every selected photo and then clears the selection. Both SHALL have localized accessibility labels. The selection action SHALL be disabled while a photo deletion runs.
 
 #### Scenario: Save from the viewer
 - **WHEN** the user taps "Save to device" in the viewer
@@ -16,6 +16,10 @@ The fullscreen viewer SHALL show a "Save to device" button for the current photo
 #### Scenario: Save the selection
 - **WHEN** three photos are selected and the user taps "Save to device"
 - **THEN** one background download of those three photos is started and the selection is cleared
+
+#### Scenario: Video page in the viewer
+- **WHEN** the viewer shows a video
+- **THEN** no "Save to device" button is shown
 
 #### Scenario: Deletion running
 - **WHEN** a selection-mode deletion is running
@@ -113,8 +117,8 @@ Saved photos SHALL be written to the shared Pictures collection under `Pictures/
 - **THEN** it appears in the device gallery under `Pictures/KroehnSync/Summer 2026/`
 
 #### Scenario: Unsafe album name
-- **WHEN** the album folder name contains characters such as `:` `*` `?` `"` `<` `>` `|`, control or bidi-format characters, or consists only of dots or spaces
-- **THEN** those characters are replaced or a neutral fallback name is used, and the photo is still saved in a single folder below `Pictures/KroehnSync/`
+- **WHEN** the album folder name contains characters such as `:` `*` `?` `"` `<` `>` `|`, control or bidi-format characters, starts with a dot, or consists only of dots or spaces
+- **THEN** those characters are replaced or a neutral fallback name is used, and the photo is still saved in a single, non-hidden folder below `Pictures/KroehnSync/`
 
 ### Requirement: Saved file names are safe and never overwrite
 The saved display name SHALL come from the decoded last path segment of the photo's href, with path separators, control and format characters and characters invalid on common file systems replaced. It SHALL be at most 255 UTF-8 bytes with the allow-listed extension kept, and a generated name SHALL be used when nothing usable remains. Saving SHALL NOT overwrite an existing file: a name already in the folder SHALL get a unique variant.

@@ -17,6 +17,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerTrust
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
+import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.recoverCancelledUploads
@@ -40,6 +41,9 @@ class KrhnlesApplication :
 
     /** Enqueues uploads in [appScope] so they survive the calling activity being destroyed. */
     val uploadEnqueuer: UploadEnqueuer by lazy { UploadEnqueuer(this, CredentialStore(this), appScope) }
+
+    /** Enqueues saving album photos to the device in [appScope], so it survives the screen being left. */
+    val downloadEnqueuer: DownloadEnqueuer by lazy { DownloadEnqueuer(this, CredentialStore(this), appScope) }
 
     override fun onCreate() {
         super.onCreate()
