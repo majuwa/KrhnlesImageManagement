@@ -2,6 +2,8 @@ package de.majuwa.android.paper.krhnlesimagemanagement.worker
 
 import android.content.Context
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.work.CoroutineWorker
@@ -10,10 +12,13 @@ import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.DownloadBody
 import de.majuwa.android.paper.krhnlesimagemanagement.data.DownloadFailure
+import de.majuwa.android.paper.krhnlesimagemanagement.data.LocalMediaWriteException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.LocalMediaWriter
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PendingMediaItem
 import de.majuwa.android.paper.krhnlesimagemanagement.data.StorageFullException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.UnexpectedContentException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
@@ -21,9 +26,12 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificat
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.data.toDownloadFailure
 import de.majuwa.android.paper.krhnlesimagemanagement.download.DOWNLOAD_ROOT_FOLDER
+import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadImageType
+import de.majuwa.android.paper.krhnlesimagemanagement.download.SIGNATURE_BYTES
 import de.majuwa.android.paper.krhnlesimagemanagement.download.albumFolderName
 import de.majuwa.android.paper.krhnlesimagemanagement.download.downloadDisplayName
 import de.majuwa.android.paper.krhnlesimagemanagement.download.downloadImageTypeOf
+import de.majuwa.android.paper.krhnlesimagemanagement.download.matchesSignature
 import de.majuwa.android.paper.krhnlesimagemanagement.download.resolveDownloadTarget
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.NonCancellable
@@ -32,15 +40,34 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 import java.io.File
+import java.io.FilterOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val DOWNLOAD_WORKER_TAG = "DownloadWorker"
 private const val CONFIG_READ_TIMEOUT_MS = 3_000L
 private const val FREE_SPACE_MARGIN_BYTES = 200L * 1024 * 1024
+private const val FREE_SPACE_FLOOR_BYTES = 50L * 1024 * 1024
+private const val CHECK_INTERVAL_BYTES = 4L * 1024 * 1024
 
 /** Consecutive connection / server failures after which the rest of a batch is not requested. */
 internal const val MAX_DOWNLOAD_CONSECUTIVE_SERVER_FAILURES = 5
+
+/**
+ * Test seams of [DownloadWorker]; every `null` means the real rule.
+ *
+ * @property userCancelled whether the stop is the user's cancel (real: `STOP_REASON_CANCELLED_BY_APP`)
+ * @property stopped whether the work is stopped (real: WorkManager's `isStopped`)
+ * @property networkAvailable whether a validated network is active (real: [hasValidatedNetwork]); without
+ *   one a connection failure is a pause, not a failed photo
+ */
+internal class DownloadWorkerSeams(
+    val userCancelled: (() -> Boolean)? = null,
+    val stopped: (() -> Boolean)? = null,
+    val networkAvailable: (() -> Boolean)? = null,
+)
 
 /**
  * Saves the photos of one download queue file (see `DownloadEnqueuer`) into
@@ -64,8 +91,7 @@ class DownloadWorker internal constructor(
     private val writer: LocalMediaWriter,
     private val freeBytes: () -> Long = writer::freeBytes,
     private val clock: () -> Long = System::currentTimeMillis,
-    /** Test seam for [userCancelled]; null = the real rule (`STOP_REASON_CANCELLED_BY_APP`). */
-    private val userCancelledOverride: (() -> Boolean)? = null,
+    private val seams: DownloadWorkerSeams = DownloadWorkerSeams(),
 ) : CoroutineWorker(context, params) {
     /** Used by WorkManager's default factory. */
     constructor(context: Context, params: WorkerParameters) : this(
@@ -96,7 +122,7 @@ class DownloadWorker internal constructor(
         const val KEY_QUEUE_FILE = "queue_file"
     }
 
-    private enum class LoopEnd { Completed, Stopped, Interrupted }
+    private enum class LoopEnd { Completed, Stopped, Interrupted, NetworkLost }
 
     private class RunClient(
         val config: WebDavConfig,
@@ -117,7 +143,7 @@ class DownloadWorker internal constructor(
         } catch (e: CancellationException) {
             // Only a cancel by the app is the user's: the queue is final. Every other stop (lost
             // network, system limits) keeps the queue with its markers for the re-run.
-            if (!terminal && userCancelled()) reportCancelled(queueFile)
+            if (!terminal && cancelledByUser) reportCancelled(queueFile)
             throw e
         }
     }
@@ -127,8 +153,10 @@ class DownloadWorker internal constructor(
         return foregroundInfo(0, 0)
     }
 
-    private fun userCancelled(): Boolean =
-        userCancelledOverride?.invoke() ?: (isStopped && stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP)
+    private val stoppedNow: Boolean get() = seams.stopped?.invoke() ?: isStopped
+
+    private val cancelledByUser: Boolean
+        get() = seams.userCancelled?.invoke() ?: (stoppedNow && stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP)
 
     private fun validQueueFile(): File? =
         inputData
@@ -136,22 +164,24 @@ class DownloadWorker internal constructor(
             ?.let(::File)
             ?.takeIf { isDownloadQueueFile(applicationContext, it) && it.isFile }
 
-    private fun readQueue(queueFile: File): DownloadQueue? =
-        try {
-            parseDownloadQueue(queueFile.readText())
-        } catch (e: IOException) {
-            Log.w(DOWNLOAD_WORKER_TAG, "Queue file unreadable: ${e.javaClass.simpleName}")
-            null
-        }
-
     private suspend fun runBatch(queueFile: File): Result {
         discardLeftoverItem(queueFile)
         val queue = checkNotNull(liveQueue)
         if (queue.pendingIndices.isEmpty()) return finish(queueFile)
         applicationContext.createDownloadNotificationChannel()
         return when (processEntries(queueFile)) {
-            LoopEnd.Completed, LoopEnd.Stopped -> finish(queueFile)
-            LoopEnd.Interrupted -> interrupted(queueFile)
+            LoopEnd.Completed, LoopEnd.Stopped -> {
+                finish(queueFile)
+            }
+
+            LoopEnd.Interrupted -> {
+                interrupted(queueFile)
+            }
+
+            LoopEnd.NetworkLost -> {
+                throwIfStopped()
+                Result.retry()
+            }
         }
     }
 
@@ -166,11 +196,10 @@ class DownloadWorker internal constructor(
     }
 
     private suspend fun processEntries(queueFile: File): LoopEnd {
-        val serverUrl = checkNotNull(liveQueue).serverUrl
         var run: RunClient? = null
         var consecutiveServerFailures = 0
         for (index in checkNotNull(liveQueue).pendingIndices) {
-            val config = readConfig()?.takeIf { it.isValid && it.url == serverUrl }
+            val config = currentConfig()
             if (config == null) {
                 failRest(DownloadFailure.ConfigurationChanged)
                 return LoopEnd.Stopped
@@ -189,6 +218,7 @@ class DownloadWorker internal constructor(
                 consecutiveServerFailures = 0
                 continue
             }
+            if (pausesForNetwork(failure)) return LoopEnd.NetworkLost
             failures[index] = failure
             consecutiveServerFailures =
                 if (failure.isServerSide()) consecutiveServerFailures + 1 else 0
@@ -199,6 +229,28 @@ class DownloadWorker internal constructor(
         }
         return LoopEnd.Completed
     }
+
+    /**
+     * The configuration this run may use now: valid, the server the batch was queued for and, when
+     * the queue is bound to an account, that account. Null = the rest of the batch must stop.
+     */
+    private suspend fun currentConfig(): WebDavConfig? {
+        val queue = checkNotNull(liveQueue)
+        return readConfig()?.takeIf {
+            it.isValid && it.url == queue.serverUrl &&
+                (queue.account == null || it.accountFingerprint() == queue.account)
+        }
+    }
+
+    /**
+     * Without a validated network a connection failure is a pause (the lost network), not a failed
+     * photo: the queue and its markers are kept and WorkManager retries. A backstop on
+     * `runAttemptCount` ends the pause for a network that never validates.
+     */
+    private fun pausesForNetwork(failure: DownloadFailure): Boolean =
+        failure == DownloadFailure.Connection &&
+            runAttemptCount < MAX_DOWNLOAD_RUN_ATTEMPTS_BACKSTOP &&
+            !(seams.networkAvailable?.invoke() ?: applicationContext.hasValidatedNetwork())
 
     /** Downloads and publishes entry [index]; null = saved, otherwise the reason it was not. */
     private suspend fun saveEntry(
@@ -222,7 +274,7 @@ class DownloadWorker internal constructor(
 
             else -> {
                 val folder = "Pictures/$DOWNLOAD_ROOT_FOLDER/${albumFolderName(queue.albumHref)}/"
-                download(queueFile, run.client, target, Destination(folder, name, type.mimeType), index)
+                download(queueFile, run.client, target, Destination(folder, name, type), index)
             }
         }
     }
@@ -230,7 +282,7 @@ class DownloadWorker internal constructor(
     private class Destination(
         val relativePath: String,
         val displayName: String,
-        val mimeType: String,
+        val type: DownloadImageType,
     )
 
     /**
@@ -250,16 +302,25 @@ class DownloadWorker internal constructor(
         try {
             val result =
                 client.download(target, maxDownloadBytes) { body ->
-                    if (!hasRoomFor(body.contentLength, freeBytes())) throw StorageFullException()
+                    val head = readVerifiedHead(body, destination.type, freeBytes())
                     val created =
-                        writer.insertPending(destination.relativePath, destination.displayName, destination.mimeType)
+                        writer.insertPending(
+                            destination.relativePath,
+                            destination.displayName,
+                            destination.type.mimeType,
+                        )
                     item = created
-                    update(queueFile) { it.withPendingItem(created.uriString) }
-                    created.write { out -> body.stream.copyTo(out) }
+                    // No byte is written while the item is not recorded: a killed run could not discard it.
+                    if (!update(queueFile) { it.withPendingItem(created.uriString) }) throw LocalMediaWriteException()
+                    created.write { out ->
+                        val guarded = SpaceGuardedOutputStream(out, freeBytes)
+                        guarded.write(head.bytes, 0, head.length)
+                        body.stream.copyTo(guarded)
+                    }
                 }
             result.exceptionOrNull()?.let { error ->
                 // A network error caused by the system stopping the work is a stop, not a failure.
-                if (isStopped) throw CancellationException("Work stopped")
+                if (stoppedNow) throw CancellationException("Work stopped")
                 return error.toDownloadFailure()
             }
             // The finished photo is published and booked even if the work is cancelled right now.
@@ -270,30 +331,27 @@ class DownloadWorker internal constructor(
         } finally {
             if (!published) {
                 withContext(NonCancellable) {
-                    item?.discard()
-                    update(queueFile) { it.withPendingItem(null) }
+                    // The record stays while the item could not be deleted: a later run or sweep retries.
+                    val removed = item?.discard() ?: true
+                    if (removed) update(queueFile) { it.withPendingItem(null) }
                 }
             }
         }
     }
-
-    private fun publishQuietly(item: PendingMediaItem): Boolean =
-        runCatching { item.publish() }
-            .onFailure { Log.w(DOWNLOAD_WORKER_TAG, "Publish failed: ${it.javaClass.simpleName}") }
-            .isSuccess
 
     private suspend fun readConfig(): WebDavConfig? =
         runCatching { withTimeoutOrNull(CONFIG_READ_TIMEOUT_MS) { credentialRepository.webDavConfig.first() } }
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
 
+    /** Applies [transform] to the live queue and saves it; false if the file could not be written. */
     private fun update(
         queueFile: File,
         transform: (DownloadQueue) -> DownloadQueue,
-    ) {
+    ): Boolean {
         val next = transform(checkNotNull(liveQueue))
         liveQueue = next
-        rewriteQueueFile(queueFile, next.toJson().toString())
+        return rewriteQueueFile(queueFile, next.toJson().toString())
     }
 
     private fun failRest(reason: DownloadFailure) {
@@ -310,8 +368,14 @@ class DownloadWorker internal constructor(
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
 
+    /** A stop (the user's cancel or the system's) is never an interruption and never counted. */
+    private fun throwIfStopped() {
+        if (cancelledByUser) throw CancellationException("Download cancelled by the user")
+        if (stoppedNow) throw CancellationException("Work stopped")
+    }
+
     private suspend fun interrupted(queueFile: File): Result {
-        if (userCancelled()) throw CancellationException("Download cancelled by the user")
+        throwIfStopped()
         val queue = checkNotNull(liveQueue)
         if (queue.interruptions + 1 < MAX_DOWNLOAD_RUN_ATTEMPTS &&
             runAttemptCount < MAX_DOWNLOAD_RUN_ATTEMPTS_BACKSTOP
@@ -370,13 +434,117 @@ private fun DownloadFailure.stopsBatch(): Boolean =
         else -> false
     }
 
+private fun readQueue(queueFile: File): DownloadQueue? =
+    try {
+        parseDownloadQueue(queueFile.readText())
+    } catch (e: IOException) {
+        Log.w(DOWNLOAD_WORKER_TAG, "Queue file unreadable: ${e.javaClass.simpleName}")
+        null
+    }
+
+private fun publishQuietly(item: PendingMediaItem): Boolean =
+    runCatching { item.publish() }
+        .onFailure { Log.w(DOWNLOAD_WORKER_TAG, "Publish failed: ${it.javaClass.simpleName}") }
+        .isSuccess
+
+/** The first bytes of a body (at most [SIGNATURE_BYTES]). */
+private class Head(
+    val bytes: ByteArray,
+    val length: Int,
+)
+
+/**
+ * Checks the free space for [body] and reads and verifies its first bytes against [type] before
+ * anything is stored: [StorageFullException] if it does not fit, [UnexpectedContentException] if
+ * the bytes are not that image type.
+ */
+private fun readVerifiedHead(
+    body: DownloadBody,
+    type: DownloadImageType,
+    freeBytes: Long,
+): Head {
+    if (!hasRoomFor(body.contentLength, freeBytes)) throw StorageFullException()
+    val bytes = ByteArray(SIGNATURE_BYTES)
+    val length = body.stream.readUpTo(bytes)
+    if (!type.matchesSignature(bytes, length)) throw UnexpectedContentException()
+    return Head(bytes, length)
+}
+
 private fun deleteDownloadQueueFile(queueFile: File) {
     queueFile.delete()
     queueTempFile(queueFile).delete()
 }
 
-/** False when the announced size does not fit the free space minus a safety margin (unknown size: true). */
+/**
+ * False when the announced size does not fit the free space minus a safety margin. An unknown size
+ * (`-1`) needs more than the margin to be free; [SpaceGuardedOutputStream] then watches the rest.
+ */
 internal fun hasRoomFor(
     announcedBytes: Long,
     freeBytes: Long,
-): Boolean = announcedBytes < 0L || announcedBytes <= freeBytes - FREE_SPACE_MARGIN_BYTES
+): Boolean =
+    if (announcedBytes < 0L) {
+        freeBytes > FREE_SPACE_MARGIN_BYTES
+    } else {
+        announcedBytes <= freeBytes - FREE_SPACE_MARGIN_BYTES
+    }
+
+/** Reads until [buffer] is full or the stream ends; returns the number of bytes read. */
+private fun InputStream.readUpTo(buffer: ByteArray): Int {
+    var total = 0
+    while (total < buffer.size) {
+        val read = read(buffer, total, buffer.size - total)
+        if (read < 0) break
+        total += read
+    }
+    return total
+}
+
+/**
+ * Fails with [StorageFullException] once the free space (re-read every [CHECK_INTERVAL_BYTES]
+ * written) falls to [FREE_SPACE_FLOOR_BYTES]: a body of unknown length cannot be checked up front.
+ */
+private class SpaceGuardedOutputStream(
+    delegate: OutputStream,
+    private val freeBytes: () -> Long,
+) : FilterOutputStream(delegate) {
+    private var sinceCheck = 0L
+
+    override fun write(b: Int) {
+        out.write(b)
+        count(1)
+    }
+
+    override fun write(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ) {
+        out.write(b, off, len)
+        count(len.toLong())
+    }
+
+    private fun count(bytes: Long) {
+        sinceCheck += bytes
+        if (sinceCheck < CHECK_INTERVAL_BYTES) return
+        sinceCheck = 0L
+        if (freeBytes() <= FREE_SPACE_FLOOR_BYTES) throw StorageFullException()
+    }
+}
+
+/** True while a validated network is active (`NET_CAPABILITY_VALIDATED`); unknown counts as true. */
+internal fun Context.hasValidatedNetwork(): Boolean =
+    try {
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val network = manager?.activeNetwork
+        if (manager == null) {
+            true
+        } else {
+            network != null &&
+                manager.getNetworkCapabilities(network)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ==
+                true
+        }
+    } catch (e: SecurityException) {
+        Log.w(DOWNLOAD_WORKER_TAG, "Network state unknown: ${e.javaClass.simpleName}")
+        true
+    }

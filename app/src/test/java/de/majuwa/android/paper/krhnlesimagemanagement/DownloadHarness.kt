@@ -23,6 +23,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.worker.DOWNLOAD_RESULT_NOT
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadQueue
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadQueueEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadWorkerSeams
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.accountFingerprint
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -67,6 +69,12 @@ class DownloadHarness {
 
     var runAttemptCount = 0
 
+    /** Test seam for `isStopped`; null = WorkManager's own flag. */
+    var stopped: (() -> Boolean)? = null
+
+    /** Whether a validated network is active; the default keeps a connection failure a failure. */
+    var networkAvailable: () -> Boolean = { true }
+
     val albumHref get() = "/remote.php/dav/files/u/Photos/Summer/"
 
     fun hrefOf(name: String) = "${albumHref}$name"
@@ -101,14 +109,17 @@ class DownloadHarness {
             }?.forEach { it.delete() }
     }
 
-    /** Serves [body] (an image) for [name] of the default album. */
+    /**
+     * Serves an image for [name] of the default album: the valid start of that file type
+     * ([imageHeader]) followed by [body].
+     */
     fun serve(
         name: String,
         body: ByteArray = name.toByteArray(),
         type: String = "image/jpeg",
     ) {
         responses["/remote.php/dav/files/u/Photos/Summer/${encode(name)}"] = {
-            MockResponse().setBody(Buffer().write(body)).setHeader("Content-Type", type)
+            MockResponse().setBody(Buffer().write(imageHeader(name) + body)).setHeader("Content-Type", type)
         }
     }
 
@@ -128,6 +139,7 @@ class DownloadHarness {
         pendingItem: String? = null,
         interruptions: Int = 0,
         downloaded: Set<Int> = emptySet(),
+        account: String? = config.accountFingerprint(),
     ): File {
         val queue =
             DownloadQueue(
@@ -136,10 +148,36 @@ class DownloadHarness {
                 entries = hrefs.mapIndexed { i, href -> DownloadQueueEntry(href, i in downloaded) },
                 pendingItem = pendingItem,
                 interruptions = interruptions,
+                account = account,
             )
         return File(context.noBackupFilesDir, "download_queue_1_${UUID.randomUUID()}.json")
             .also { it.writeText(queue.toJson().toString()) }
     }
+
+    fun workerFactory(): WorkerFactory =
+        object : WorkerFactory() {
+            override fun createWorker(
+                appContext: Context,
+                workerClassName: String,
+                workerParameters: WorkerParameters,
+            ): ListenableWorker {
+                val mediaWriter = writer ?: LocalMediaWriter(appContext)
+                return DownloadWorker(
+                    appContext,
+                    workerParameters,
+                    credentials,
+                    trusted,
+                    clientFactory ?: { c, pin ->
+                        seenPins += pin
+                        WebDavClient(c, pin)
+                    },
+                    mediaWriter,
+                    freeBytes ?: { Long.MAX_VALUE / 2 },
+                    { FIXED_NOW },
+                    DownloadWorkerSeams(userCancelled, stopped, networkAvailable),
+                ).also { worker -> maxBytes?.let { worker.maxDownloadBytes = it } }
+            }
+        }
 
     fun buildWorker(queueFile: File): DownloadWorker =
         TestListenableWorkerBuilder<DownloadWorker>(context)
@@ -155,31 +193,8 @@ class DownloadHarness {
                 } else {
                     Futures.immediateFuture(null)
                 }
-            }.setWorkerFactory(
-                object : WorkerFactory() {
-                    override fun createWorker(
-                        appContext: Context,
-                        workerClassName: String,
-                        workerParameters: WorkerParameters,
-                    ): ListenableWorker {
-                        val mediaWriter = writer ?: LocalMediaWriter(appContext)
-                        return DownloadWorker(
-                            appContext,
-                            workerParameters,
-                            credentials,
-                            trusted,
-                            clientFactory ?: { c, pin ->
-                                seenPins += pin
-                                WebDavClient(c, pin)
-                            },
-                            mediaWriter,
-                            freeBytes ?: { Long.MAX_VALUE / 2 },
-                            { FIXED_NOW },
-                            userCancelled,
-                        ).also { worker -> maxBytes?.let { worker.maxDownloadBytes = it } }
-                    }
-                },
-            ).build()
+            }.setWorkerFactory(workerFactory())
+            .build()
 
     fun run(queueFile: File): ListenableWorker.Result = runBlocking { buildWorker(queueFile).doWork() }
 
@@ -200,5 +215,19 @@ class DownloadHarness {
 
     companion object {
         const val FIXED_NOW = 1_700_000_000_000L
+
+        /** The valid start of a file called [name] (by extension), as `matchesSignature` expects it. */
+        fun imageHeader(name: String): ByteArray =
+            when (name.substringAfterLast('.').lowercase()) {
+                "jpg", "jpeg" -> byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+                "png" -> byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+                "gif" -> "GIF89a".toByteArray()
+                "webp" -> "RIFF\u0000\u0000\u0000\u0000WEBP".toByteArray(Charsets.ISO_8859_1)
+                "heic", "heif" -> byteArrayOf(0, 0, 0, 0x18) + "ftypheic".toByteArray()
+                "avif" -> byteArrayOf(0, 0, 0, 0x18) + "ftypavif".toByteArray()
+                "bmp" -> "BM".toByteArray()
+                "dng" -> byteArrayOf(0x49, 0x49, 0x2A, 0x00)
+                else -> ByteArray(0)
+            }
     }
 }

@@ -2,9 +2,11 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadQueue
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadQueueEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.MAX_DOWNLOAD_RUN_ATTEMPTS
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.accountFingerprint
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.downloadQueueFilesDir
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.isDownloadQueueFile
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.parseDownloadQueue
@@ -30,6 +32,7 @@ class DownloadQueueTest {
             entries = listOf(DownloadQueueEntry("/a.jpg", downloaded = true), DownloadQueueEntry("/b.jpg")),
             pendingItem = "content://media/external_primary/images/media/7",
             interruptions = 2,
+            account = "0123abcd",
         )
 
     @Test
@@ -46,6 +49,29 @@ class DownloadQueueTest {
     }
 
     @Test
+    fun `a queue file without an account is unbound and an account survives the round trip`() {
+        assertNull(parseDownloadQueue("""{"serverUrl":"u","albumHref":"a","entries":[]}""")?.account)
+        assertEquals("0123abcd", parseDownloadQueue(queue.toJson().toString())?.account)
+    }
+
+    @Test
+    fun `the account fingerprint is a hash of url and user that contains neither`() {
+        val config = WebDavConfig("https://cloud.example/dav", "alice", "pw-secret")
+
+        val fingerprint = config.accountFingerprint()
+
+        assertTrue(Regex("[0-9a-f]{64}").matches(fingerprint))
+        assertFalse(fingerprint.contains("alice"))
+        assertEquals(fingerprint, config.copy(password = "other").accountFingerprint())
+        assertFalse(fingerprint == config.copy(username = "bob").accountFingerprint())
+        assertFalse(fingerprint == config.copy(url = "https://cloud.example/dav2").accountFingerprint())
+        // "ab"+"c" and "a"+"bc" must not collide.
+        assertFalse(
+            WebDavConfig("ab", "c", "p").accountFingerprint() == WebDavConfig("a", "bc", "p").accountFingerprint(),
+        )
+    }
+
+    @Test
     fun `a missing or non string field is malformed`() {
         listOf(
             """{"albumHref":"a","entries":[]}""",
@@ -58,6 +84,8 @@ class DownloadQueueTest {
             """{"serverUrl":"u","albumHref":"a","entries":[{}]}""",
             """{"serverUrl":"u","albumHref":"a","entries":["x"]}""",
             """{"serverUrl":"u","albumHref":"a","entries":[],"pendingItem":3}""",
+            """{"serverUrl":"u","albumHref":"a","entries":[],"account":3}""",
+            """{"serverUrl":"u","albumHref":"a","entries":[],"account":null}""",
             """{"serverUrl":"u","albumHref":"a","entries":[],"pendingItem":null}""",
             "not json",
             "",

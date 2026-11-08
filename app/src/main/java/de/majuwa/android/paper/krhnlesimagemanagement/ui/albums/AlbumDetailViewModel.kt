@@ -292,14 +292,19 @@ class AlbumDetailViewModel
          * change, are dropped); nothing happens while the album is not loaded or after a
          * [AlbumsError.NotConfigured] / [AlbumsError.ConfigurationChanged]. Videos are passed on:
          * the download worker reports them as unsupported.
+         *
+         * @return true if a download was requested; false if nothing was (the caller tells the user
+         *   and keeps its selection / "saved" state).
          */
-        fun saveToDevice(photos: List<RemotePhoto>) {
-            val albumHref = currentHref ?: return
+        fun saveToDevice(photos: List<RemotePhoto>): Boolean {
+            val albumHref = currentHref ?: return false
             val state = _detailState.value
-            if (!state.isLoaded || state.error != null) return
+            if (!state.isLoaded || state.error != null) return false
             val loaded = state.photos.mapTo(HashSet()) { it.href }
             val hrefs = photos.map { it.href }.filter { it in loaded }.distinct()
-            if (hrefs.isNotEmpty()) downloadRequester.requestDownload(albumHref, hrefs)
+            if (hrefs.isEmpty()) return false
+            downloadRequester.requestDownload(albumHref, hrefs)
+            return true
         }
 
         /** Clears [photoDeletionOutcome] once the UI has shown it. */

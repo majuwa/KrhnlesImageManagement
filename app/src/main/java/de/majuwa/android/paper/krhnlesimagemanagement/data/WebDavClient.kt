@@ -22,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
@@ -29,6 +30,7 @@ import okio.BufferedSink
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 import kotlin.coroutines.cancellation.CancellationException
@@ -305,8 +307,8 @@ class WebDavClient(
      * timeout, per-read timeout) with `Accept-Encoding: identity`, cancelled with the coroutine
      * ([executeCancellable]). A URL on another origin fails with [UnsafeHrefException] without a
      * request; a non-2xx status with [WebDavHttpException]; an announced length above [maxBytes] with
-     * [DownloadTooLargeException] before [sink] runs; a present `Content-Type` that is neither
-     * an image type nor `application/octet-stream` with [UnexpectedContentException]. The stream given
+     * [DownloadTooLargeException] before [sink] runs; a response that is not storable as is (see
+     * [isStorableImageResponse]) with [UnexpectedContentException]. The stream given
      * to [sink] fails with [DownloadTooLargeException] once it would exceed [maxBytes]. Cancellation
      * is rethrown.
      */
@@ -331,7 +333,7 @@ class WebDavClient(
                 val body = response.body
                 val length = body.contentLength()
                 if (length > maxBytes) throw DownloadTooLargeException()
-                if (!body.contentType().isDownloadable()) throw UnexpectedContentException()
+                if (!response.isStorableImageResponse(length)) throw UnexpectedContentException()
                 sink(
                     DownloadBody(
                         length,
@@ -653,11 +655,57 @@ class DownloadBody(
     val stream: InputStream,
 )
 
-/** No `Content-Type` is fine; otherwise only an image or `application/octet-stream` may be saved. */
-private fun MediaType?.isDownloadable(): Boolean =
-    this == null ||
-        type.equals("image", ignoreCase = true) ||
-        (type.equals("application", ignoreCase = true) && subtype.equals("octet-stream", ignoreCase = true))
+/**
+ * Image subtypes a download may announce (the allow-listed raster types and their usual aliases;
+ * `image/svg+xml`, `image/tiff` and the like are not on the list). Case-insensitive.
+ */
+private val downloadImageSubtypes =
+    setOf(
+        "jpeg",
+        "jpg",
+        "pjpeg",
+        "png",
+        "gif",
+        "webp",
+        "heic",
+        "heif",
+        "heic-sequence",
+        "heif-sequence",
+        "avif",
+        "bmp",
+        "x-ms-bmp",
+        "x-adobe-dng",
+        "dng",
+        "x-dcraw",
+    )
+
+/**
+ * True if the stored bytes of this response may be saved as an image. It fails closed:
+ *  - a raw `Content-Type` header that does not parse is rejected; a missing one is fine;
+ *  - the type must be `application/octet-stream` or an allow-listed `image/…` subtype;
+ *  - any `Content-Encoding` other than `identity` is rejected (the request asks for none, and
+ *    OkHttp does not decode a response to a request with its own `Accept-Encoding`);
+ *  - with an unknown [length] (`-1`) an HTTP/1.x response must be `Transfer-Encoding: chunked`:
+ *    a body delimited only by the closing connection cannot be told from a truncated one.
+ * What the bytes really are is checked from their first bytes before anything is stored.
+ */
+private fun Response.isStorableImageResponse(length: Long): Boolean {
+    val rawType = header("Content-Type")
+    val type = body.contentType()
+    val typeOk =
+        when {
+            rawType == null -> true
+            type == null -> false
+            type.type.equals("application", ignoreCase = true) -> type.subtype.equals("octet-stream", ignoreCase = true)
+            type.type.equals("image", ignoreCase = true) -> type.subtype.lowercase(Locale.ROOT) in downloadImageSubtypes
+            else -> false
+        }
+    val encoding = header("Content-Encoding")
+    val encodingOk = encoding == null || encoding.trim().equals("identity", ignoreCase = true)
+    val http1 = protocol == Protocol.HTTP_1_0 || protocol == Protocol.HTTP_1_1
+    val delimited = length >= 0L || !http1 || header("Transfer-Encoding")?.trim().equals("chunked", ignoreCase = true)
+    return typeOk && encodingOk && delimited
+}
 
 /** SHA-256 (lower-case hex) and byte count of a downloaded body. */
 data class RemoteDigest(

@@ -6,6 +6,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.ChunkedUploadCreation
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadResponse
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.hasCertificateFailure
 import de.majuwa.android.paper.krhnlesimagemanagement.data.newTransferId
 import de.majuwa.android.paper.krhnlesimagemanagement.util.DigestCountingInputStream
 import de.majuwa.android.paper.krhnlesimagemanagement.util.MediaFileState
@@ -19,9 +20,6 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
-import java.security.cert.CertificateException
-import javax.net.ssl.SSLHandshakeException
-import javax.net.ssl.SSLPeerUnverifiedException
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "ChunkedUploader"
@@ -525,16 +523,6 @@ internal fun Throwable.isTransientChunkFailure(): Boolean =
         else -> {
             false
         }
-    }
-
-private const val MAX_CAUSE_DEPTH = 10
-
-/** Trust failures only; a plain `SSLException` (e.g. a connection reset during a read) stays transient. */
-private fun Throwable.hasCertificateFailure(): Boolean =
-    generateSequence(this) { it.cause }.take(MAX_CAUSE_DEPTH).any {
-        it is CertificateException ||
-            it is SSLHandshakeException ||
-            it is SSLPeerUnverifiedException
     }
 
 /**

@@ -373,6 +373,8 @@
 
     <!-- Saving album photos to the device (DownloadWorker) -->
     <string name="cd_save_to_device">Save to device</string>
+    <string name="state_saved_to_device">Saved</string>
+    <string name="download_save_unavailable">These photos cannot be saved right now. Reload the album and try again.</string>
     <plurals name="download_saving">
         <item quantity="one">Saving %d photo in the background.</item>
         <item quantity="other">Saving %d photos in the background.</item>

@@ -115,12 +115,14 @@ class LocalMediaWriter internal constructor(
     internal fun openForWrite(uri: Uri): OutputStream =
         try {
             outputOpener(resolver, uri) ?: throw LocalMediaWriteException()
-        } catch (e: SecurityException) {
+        } catch (e: LocalMediaWriteException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Whatever the provider throws (security, missing file, a runtime error) is a write failure.
             Log.w(TAG, "MediaStore open failed: ${e.javaClass.simpleName}")
-            throw LocalMediaWriteException()
-        } catch (e: java.io.FileNotFoundException) {
-            Log.w(TAG, "MediaStore open failed: ${e.javaClass.simpleName}")
-            throw LocalMediaWriteException()
+            throw LocalMediaWriteException(e)
         }
 
     internal fun markPublished(uri: Uri) {
@@ -168,20 +170,16 @@ class LocalMediaWriter internal constructor(
         return uri.takeIf { valid }
     }
 
-    /** Runs a provider call; a refusing provider yields null (logged by exception type only). */
+    /** Runs a provider call; any failing provider yields null (logged by exception type only). */
     private fun <T> providerCall(
         step: String,
         call: () -> T,
     ): T? =
         try {
             call()
-        } catch (e: SecurityException) {
-            Log.w(TAG, "MediaStore $step failed: ${e.javaClass.simpleName}")
-            null
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "MediaStore $step failed: ${e.javaClass.simpleName}")
-            null
-        } catch (e: IllegalStateException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Log.w(TAG, "MediaStore $step failed: ${e.javaClass.simpleName}")
             null
         }
@@ -234,6 +232,9 @@ private class GuardedOutputStream(
             action()
         } catch (e: IOException) {
             throw if (e.isOutOfSpaceError()) StorageFullException(e) else LocalMediaWriteException(e)
+        } catch (e: RuntimeException) {
+            // A provider that fails with a runtime error is still a failure of the destination.
+            throw LocalMediaWriteException(e)
         }
     }
 }

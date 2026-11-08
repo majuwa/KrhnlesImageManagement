@@ -1,8 +1,9 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import java.io.IOException
-import java.security.GeneralSecurityException
-import javax.net.ssl.SSLException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Why saving one album photo to the device failed, for user-facing messages (never raw exception text). */
@@ -47,7 +48,11 @@ enum class DownloadFailure {
 /** The body is, or announces to be, larger than the per-file limit. */
 class DownloadTooLargeException : IOException("Download is larger than the limit")
 
-/** The response `Content-Type` is neither an image nor `application/octet-stream`. */
+/**
+ * The response is not a usable image: a `Content-Type` that is not an allow-listed image type, an
+ * encoded body, a body whose first bytes do not match the file type, or a body whose end cannot be
+ * told from a truncation.
+ */
 class UnexpectedContentException : IOException("Response is not an image")
 
 private const val HTTP_UNAUTHORIZED = 401
@@ -73,7 +78,7 @@ fun Throwable.toDownloadFailure(): DownloadFailure {
         chain.any { it is StorageFullException } || isOutOfSpaceError() -> DownloadFailure.StorageFull
         chain.any { it is LocalMediaWriteException } -> DownloadFailure.WriteFailed
         http != null -> http.code.toHttpFailure()
-        chain.any { it is SSLException || it is GeneralSecurityException } -> DownloadFailure.Certificate
+        hasCertificateFailure() -> DownloadFailure.Certificate
         else -> DownloadFailure.Connection
     }
 }
@@ -84,4 +89,15 @@ private fun Int.toHttpFailure(): DownloadFailure =
         HTTP_NOT_FOUND_CODE, HTTP_GONE -> DownloadFailure.NotFound
         HTTP_UNAUTHORIZED, HTTP_FORBIDDEN -> DownloadFailure.AccessDenied
         else -> DownloadFailure.ServerError
+    }
+
+/**
+ * Trust failures only (also used by the chunked upload): a plain `SSLException`, e.g. a connection
+ * reset during a read, is not one and stays a connection problem.
+ */
+internal fun Throwable.hasCertificateFailure(): Boolean =
+    generateSequence(this) { it.cause }.take(MAX_DOWNLOAD_CAUSE_DEPTH).any {
+        it is CertificateException ||
+            it is SSLHandshakeException ||
+            it is SSLPeerUnverifiedException
     }

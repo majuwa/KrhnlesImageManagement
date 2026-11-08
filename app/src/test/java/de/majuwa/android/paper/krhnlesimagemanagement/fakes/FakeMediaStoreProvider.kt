@@ -148,6 +148,7 @@ class FakeMediaStoreProvider : ContentProvider() {
         selection: String?,
         selectionArgs: Array<String>?,
     ): Int {
+        deleteFailure?.let { throw it }
         val item = inserted.remove(uri.toString()) ?: return 0
         item.file.delete()
         deletes += uri.toString()
@@ -246,6 +247,9 @@ class FakeMediaStoreProvider : ContentProvider() {
         @Volatile
         var openFailure: java.io.FileNotFoundException? = null
 
+        @Volatile
+        var deleteFailure: RuntimeException? = null
+
         /** Owner of newly inserted items; null = this app's package. */
         @Volatile
         var ownerPackage: String? = null
@@ -275,6 +279,7 @@ class FakeMediaStoreProvider : ContentProvider() {
             insertFailure = null
             updateFailure = null
             openFailure = null
+            deleteFailure = null
             ownerPackage = null
             imageRows = emptyList()
             videoRows = emptyList()

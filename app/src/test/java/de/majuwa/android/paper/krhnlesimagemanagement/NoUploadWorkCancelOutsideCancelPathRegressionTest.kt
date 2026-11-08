@@ -125,6 +125,24 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
         assertEquals(emptyList<String>(), violations(copy))
     }
 
+    @Test
+    fun `the files with a cancel allowance never touch upload work`() {
+        assertEquals(emptyList<String>(), uploadWorkReferences(File(moduleDir, "src/main")))
+    }
+
+    @Test
+    fun `a reference to upload work in an allowed file is found in a copy of the tree`() {
+        val copy = tmp.newFolder("main")
+        File(moduleDir, "src/main").copyRecursively(copy)
+        val enqueuer = copy.walkTopDown().single { it.invariantSeparatorsPath.endsWith("/$DOWNLOAD_ENQUEUER_FILE") }
+        enqueuer.appendText("\nval planted = UploadWorker::class\n")
+        val notifications =
+            copy.walkTopDown().single { it.invariantSeparatorsPath.endsWith("/$DOWNLOAD_NOTIFICATIONS_FILE") }
+        notifications.appendText("\nval tag = \"photo_upload\"\n")
+
+        assertEquals(listOf("DownloadEnqueuer.kt", "DownloadNotifications.kt"), uploadWorkReferences(copy))
+    }
+
     private companion object {
         const val CANCEL_PATH_FILE = "worker/UploadCancellation.kt"
         const val DOWNLOAD_ENQUEUER_FILE = "download/DownloadEnqueuer.kt"
@@ -157,6 +175,25 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
                         }.map { (index, _) -> "${file.relativeTo(mainDir).invariantSeparatorsPath}:${index + 1}" }
                 }.sorted()
                 .toList()
+
+        /** Names of the allowed download files that mention upload work (tag, worker or request builder). */
+        fun uploadWorkReferences(mainDir: File): List<String> {
+            val allowed = listOf(DOWNLOAD_ENQUEUER_FILE, DOWNLOAD_NOTIFICATIONS_FILE)
+            val files =
+                mainDir
+                    .walkTopDown()
+                    .filter { file -> file.isFile && allowed.any { file.invariantSeparatorsPath.endsWith("/$it") } }
+                    .toList()
+            assertEquals("both allowed files exist", allowed.size, files.size)
+            return files
+                .filter { file ->
+                    file.readLines().filter(::isCode).any {
+                        val code = it.substringBefore("//")
+                        "photo_upload" in code || "UploadWorker" in code || "uploadWorkRequest" in code
+                    }
+                }.map { it.name }
+                .sorted()
+        }
 
         fun isCode(line: String): Boolean {
             val trimmed = line.trimStart()

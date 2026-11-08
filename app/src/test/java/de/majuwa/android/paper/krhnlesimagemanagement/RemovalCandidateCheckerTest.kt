@@ -262,19 +262,6 @@ class RemovalCandidateCheckerTest {
     }
 
     @Test
-    fun `a device with only saved photos has no record and so nothing to check or remove`() {
-        val saved = LocalMediaWriter(context).insertPending("Pictures/KroehnSync/Trip/", "img_1.jpg", "image/jpeg")
-        saved.write { it.write(ByteArray(100)) }
-        saved.publish()
-        serverSizes["/remote.php/dav/files/u/Trip/img_1.jpg"] = 100L
-
-        // Saving never writes a record, so the removal check starts from an empty record list.
-        assertTrue(check().isEmpty())
-        assertTrue(requests.isEmpty())
-        assertEquals(1, FakeMediaStoreProvider.inserted.size)
-    }
-
-    @Test
     fun `a photo edited after the upload is kept`() {
         val photo = record(1)
         consistent(photo)

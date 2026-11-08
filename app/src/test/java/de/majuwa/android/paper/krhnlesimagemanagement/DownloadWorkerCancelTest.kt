@@ -43,13 +43,13 @@ class DownloadWorkerCancelTest {
     @After
     fun tearDown() = h.tearDown()
 
-    /** Serves [name] slowly (10 bytes a second): the body stalls while the worker reads it. */
+    /** Serves [name] slowly (64 bytes a second): the body stalls while the worker reads it. */
     private fun serveStalled(name: String) {
         h.responses["/remote.php/dav/files/u/Photos/Summer/$name"] = {
             MockResponse()
-                .setBody(Buffer().write(ByteArray(5_000)))
+                .setBody(Buffer().write(DownloadHarness.imageHeader("b.jpg") + ByteArray(5_000)))
                 .setHeader("Content-Type", "image/jpeg")
-                .throttleBody(10, 1, TimeUnit.SECONDS)
+                .throttleBody(64, 1, TimeUnit.SECONDS)
         }
     }
 

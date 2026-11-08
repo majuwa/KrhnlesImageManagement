@@ -19,6 +19,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadQueue
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadQueueEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.accountFingerprint
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.downloadQueueFilesDir
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.isDownloadQueueFileName
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.parseDownloadQueue
@@ -31,7 +32,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -63,6 +63,10 @@ internal const val DOWNLOAD_BACKOFF_DELAY_SECONDS = 60L
 private const val CONFIG_READ_TIMEOUT_MS = 3_000L
 private const val SWEEP_LOOKUP_TIMEOUT_MS = 5_000L
 private const val ENQUEUE_LOCK_TIMEOUT_MS = 30_000L
+private const val SWEEP_TOTAL_TIMEOUT_MS = 60_000L
+
+/** Queue files younger than this are never swept: their work may be about to be enqueued. */
+internal const val SWEEP_GRACE_PERIOD_MS = 30_000L
 
 internal fun downloadQueueTag(queueFileName: String): String = "$DOWNLOAD_QUEUE_TAG_PREFIX$queueFileName"
 
@@ -89,7 +93,7 @@ internal fun downloadWorkRequest(queueFile: File): OneTimeWorkRequest =
  * allowed use, see `NoUploadWorkCancelOutsideCancelPathRegressionTest`) keeps a chain with a
  * cancelled predecessor usable: it never stops running work. A cancel cascades to the batches
  * queued after the cancelled one; their queue files are removed by [sweepOrphans] at the next
- * request. The sweep and the enqueue run under one [Mutex] acquired with a timeout.
+ * request. The sweep, the queue file and the enqueue run under one [Mutex]; only the wait for it is bounded.
  */
 class DownloadEnqueuer(
     private val appContext: Context,
@@ -100,6 +104,7 @@ class DownloadEnqueuer(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val sweepLookupTimeoutMs: Long = SWEEP_LOOKUP_TIMEOUT_MS,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : DownloadRequester {
     private val lock = Mutex()
 
@@ -117,9 +122,7 @@ class DownloadEnqueuer(
             }
             val started =
                 try {
-                    withTimeoutOrNull(ENQUEUE_LOCK_TIMEOUT_MS) {
-                        lock.withLock { enqueue(config, albumHref, distinct) }
-                    } == true
+                    withLockOrNull { enqueue(config, albumHref, distinct) } == true
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -138,6 +141,21 @@ class DownloadEnqueuer(
         }
     }
 
+    /**
+     * Runs [block] under [lock]; only the *wait* for the lock is bounded ([ENQUEUE_LOCK_TIMEOUT_MS]),
+     * so a stuck holder can never block requests for ever while the work itself is not cut short.
+     * Null = the lock was not acquired.
+     */
+    private suspend fun <T> withLockOrNull(block: suspend () -> T): T? {
+        val acquired = withTimeoutOrNull(ENQUEUE_LOCK_TIMEOUT_MS) { lock.lock() } != null
+        if (!acquired) return null
+        try {
+            return block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
     private suspend fun readConfig(): WebDavConfig? =
         runCatching { withTimeoutOrNull(CONFIG_READ_TIMEOUT_MS) { credentialRepository.webDavConfig.first() } }
             .onFailure { if (it is CancellationException) throw it }
@@ -150,7 +168,8 @@ class DownloadEnqueuer(
         albumHref: String,
         hrefs: List<String>,
     ): Boolean {
-        runCatching { sweepOrphans() }.onFailure {
+        // The sweep has its own bound, separate from the lock wait.
+        runCatching { withTimeoutOrNull(SWEEP_TOTAL_TIMEOUT_MS) { sweepOrphans() } }.onFailure {
             if (it is CancellationException) throw it
             Log.w(TAG, "Sweeping old download queues failed: ${it.javaClass.simpleName}")
         }
@@ -180,7 +199,13 @@ class DownloadEnqueuer(
         hrefs: List<String>,
     ): File =
         withContext(ioDispatcher) {
-            val queue = DownloadQueue(config.url, albumHref, hrefs.map { DownloadQueueEntry(it) })
+            val queue =
+                DownloadQueue(
+                    config.url,
+                    albumHref,
+                    hrefs.map { DownloadQueueEntry(it) },
+                    account = config.accountFingerprint(),
+                )
             File(
                 downloadQueueFilesDir(appContext),
                 "download_queue_${System.currentTimeMillis()}_${UUID.randomUUID()}.json",
@@ -191,12 +216,16 @@ class DownloadEnqueuer(
      * Deletes download queue files whose work is finished (cancelled with its predecessor, never
      * enqueued after a process death, pruned): work lookup bounded to [sweepLookupTimeoutMs] per
      * file and fail-closed (a timeout or error keeps the file). A recorded `pendingItem` is
-     * discarded first. Enqueued or running work is never touched.
+     * discarded first. Enqueued or running work is never touched, nor is a file younger than
+     * [SWEEP_GRACE_PERIOD_MS] (like the grace period of `recoverCancelledUploads`).
      */
     internal suspend fun sweepOrphans() {
         val files =
             withContext(ioDispatcher) {
-                downloadQueueFilesDir(appContext).listFiles().orEmpty().filter { isDownloadQueueFileName(it.name) }
+                val now = clock()
+                downloadQueueFilesDir(appContext).listFiles().orEmpty().filter {
+                    isDownloadQueueFileName(it.name) && now - it.lastModified() >= SWEEP_GRACE_PERIOD_MS
+                }
             }
         files.forEach { file ->
             val infos =

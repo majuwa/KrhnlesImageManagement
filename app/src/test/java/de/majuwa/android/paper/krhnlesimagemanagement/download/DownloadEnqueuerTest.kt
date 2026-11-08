@@ -15,6 +15,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialReposi
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaStoreProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.DownloadWorker
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.accountFingerprint
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.parseDownloadQueue
 import io.mockk.every
 import io.mockk.mockk
@@ -28,6 +29,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -208,7 +210,47 @@ class DownloadEnqueuerTest {
         val queue =
             """{"serverUrl":"${config.url}","albumHref":"$album","entries":[{"href":"${album}x.jpg"}]""" +
                 (pendingItem?.let { ""","pendingItem":"$it"""" } ?: "") + "}"
-        return File(context.noBackupFilesDir, "download_queue_1_${UUID.randomUUID()}.json").also { it.writeText(queue) }
+        return File(context.noBackupFilesDir, "download_queue_1_${UUID.randomUUID()}.json").also {
+            it.writeText(queue)
+            // Old enough for the sweep (younger files are in the grace period).
+            it.setLastModified(System.currentTimeMillis() - SWEEP_GRACE_PERIOD_MS - 60_000L)
+        }
+    }
+
+    @Test
+    fun `the sweep skips a queue file younger than the grace period`() {
+        val young = orphan().also { it.setLastModified(System.currentTimeMillis() - 5_000L) }
+        val old = orphan()
+
+        runBlocking { enqueuer().sweepOrphans() }
+
+        assertTrue("a young file may be about to be enqueued", young.exists())
+        assertFalse(old.exists())
+    }
+
+    @Test
+    fun `the queue is bound to the account by a fingerprint without the user name`() {
+        request(enqueuer(), "a.jpg")
+
+        val queue = checkNotNull(parseDownloadQueue(queueFiles().single().readText()))
+        assertEquals(config.accountFingerprint(), queue.account)
+        assertNotEquals(config.accountFingerprint(), config.copy(username = "other").accountFingerprint())
+        assertNotEquals(config.accountFingerprint(), config.copy(url = "https://x.example/").accountFingerprint())
+        assertEquals(64, queue.account?.length)
+    }
+
+    @Test
+    fun `the lock is released after a failed enqueue so the next request works`() {
+        val failing = mockk<WorkManager>()
+        every { failing.enqueueUniqueWork(any<String>(), any<ExistingWorkPolicy>(), any<OneTimeWorkRequest>()) } throws
+            IllegalStateException("WorkManager down")
+        val e = enqueuer(workManager = { failing })
+        request(e, "a.jpg")
+
+        request(e, "b.jpg")
+
+        assertTrue(queueFiles().isEmpty())
+        assertEquals("Saving could not be started. Please try again.", ShadowToast.getTextOfLatestToast())
     }
 
     @Test

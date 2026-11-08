@@ -7,7 +7,7 @@ Lets the user save photos from a remote album back to the device. Saving runs in
 ## ADDED Requirements
 
 ### Requirement: Save to device is offered in the viewer and in selection mode
-The fullscreen viewer SHALL show a "Save to device" button for the current photo in its overlay controls, and SHALL NOT show it while the current page is a video. The album detail selection top bar SHALL show a "Save to device" action that saves every selected photo and then clears the selection. Both SHALL have localized accessibility labels. The selection action SHALL be disabled while a photo deletion runs.
+The fullscreen viewer SHALL show a "Save to device" button for the current photo in its overlay controls, and SHALL NOT show it while the current page is a video. The album detail selection top bar SHALL show a "Save to device" action that saves every selected photo and then clears the selection. Both SHALL have localized accessibility labels. The selection action SHALL be disabled while a photo deletion runs. If the action requests nothing (for example the loaded album was dropped after a configuration change), the app SHALL tell the user with a localized message and SHALL keep the selection; the viewer SHALL then not mark the photo as saved. A photo already saved from the viewer SHALL expose a "Saved" state description on its disabled button.
 
 #### Scenario: Save from the viewer
 - **WHEN** the user taps "Save to device" in the viewer
@@ -24,6 +24,10 @@ The fullscreen viewer SHALL show a "Save to device" button for the current photo
 #### Scenario: Deletion running
 - **WHEN** a selection-mode deletion is running
 - **THEN** the "Save to device" action is disabled
+
+#### Scenario: Nothing could be requested
+- **WHEN** the user taps "Save to device" but no download can be requested
+- **THEN** a localized message is shown, the selection stays, and the viewer does not mark the photo as saved
 
 #### Scenario: Repeated tap in the viewer
 - **WHEN** the user taps "Save to device" again for the same photo while the viewer stays open
@@ -88,14 +92,18 @@ A photo larger than the per-file limit (200 MiB) SHALL NOT be saved. An announce
 - **THEN** the transfer stops, the partial file is removed and the photo counts as failed with the "too large" reason
 
 ### Requirement: Insufficient storage stops the batch
-If the device lacks space for a photo (the announced size does not fit the free space minus a safety margin, or a write fails because the storage is full), that photo and all later photos of the batch SHALL fail with a "storage full" reason, and nothing partial SHALL remain.
+If the device lacks space for a photo (the announced size does not fit the free space minus a safety margin, or a write fails because the storage is full), that photo and all later photos of the batch SHALL fail with a "storage full" reason, and nothing partial SHALL remain. A body of unknown length SHALL need more than the safety margin free before anything is written, and the free space SHALL be re-checked while streaming so that the device is never filled up.
+
+#### Scenario: Unknown length fills the device
+- **WHEN** a body of unknown length keeps streaming while the free space falls below the floor
+- **THEN** the transfer stops, the partial item is removed and the photo counts as failed with the "storage full" reason
 
 #### Scenario: Storage full while writing
 - **WHEN** the device runs out of space while a photo is written
 - **THEN** that photo's partial file is removed, the remaining photos are not requested and the notification names the storage reason
 
 ### Requirement: Only allow-listed image types are saved
-A photo SHALL be saved only if its file-name extension maps to an allow-listed raster image type (JPEG, PNG, GIF, WebP, HEIC, HEIF, AVIF, BMP, DNG). The saved item SHALL get that type's MIME type. Any other entry (video, SVG, TIFF, unknown extension) SHALL be skipped without a request and counted as failed with an "unsupported type" reason. A response whose `Content-Type` is present and is neither an image type nor `application/octet-stream` SHALL fail the photo.
+A photo SHALL be saved only if its file-name extension maps to an allow-listed raster image type (JPEG, PNG, GIF, WebP, HEIC, HEIF, AVIF, BMP, DNG). The saved item SHALL get that type's MIME type. Any other entry (video, SVG, TIFF, unknown extension) SHALL be skipped without a request and counted as failed with an "unsupported type" reason. A response SHALL fail the photo (fail closed, nothing stored) unless: its `Content-Type`, if present, parses and is `application/octet-stream` or an allow-listed image subtype (so `image/svg+xml` fails); its `Content-Encoding`, if present, is `identity`; with an unknown length an HTTP/1.x response is chunked (otherwise a truncation cannot be told from the end); and the first bytes of the body match the signature of the file type (JPEG, PNG, GIF, WebP, HEIC / HEIF / AVIF, BMP, DNG), checked before anything is stored.
 
 #### Scenario: Video in the album
 - **WHEN** the selection contains a video file
@@ -104,6 +112,14 @@ A photo SHALL be saved only if its file-name extension maps to an allow-listed r
 #### Scenario: SVG
 - **WHEN** the user saves `drawing.svg`
 - **THEN** it is not downloaded and counts as "unsupported type"
+
+#### Scenario: Wrong content behind an image type
+- **WHEN** the server answers a `.jpg` request with `Content-Type: image/jpeg` but an HTML body
+- **THEN** nothing is created on the device and the photo counts as rejected
+
+#### Scenario: Encoded or unparseable response
+- **WHEN** the response has `Content-Encoding: gzip` or a `Content-Type` that does not parse
+- **THEN** the photo counts as rejected and nothing is stored
 
 #### Scenario: HTML instead of an image
 - **WHEN** the server answers a `.jpg` request with 200 and `Content-Type: text/html`
@@ -121,7 +137,7 @@ Saved photos SHALL be written to the shared Pictures collection under `Pictures/
 - **THEN** those characters are replaced or a neutral fallback name is used, and the photo is still saved in a single, non-hidden folder below `Pictures/KroehnSync/`
 
 ### Requirement: Saved file names are safe and never overwrite
-The saved display name SHALL come from the decoded last path segment of the photo's href, with path separators, control and format characters and characters invalid on common file systems replaced. It SHALL be at most 255 UTF-8 bytes with the allow-listed extension kept, and a generated name SHALL be used when nothing usable remains. Saving SHALL NOT overwrite an existing file: a name already in the folder SHALL get a unique variant.
+The saved display name SHALL come from the decoded last path segment of the photo's href, with path separators, control and format characters and characters invalid on common file systems replaced. It SHALL be at most 200 UTF-8 bytes (headroom for the prefix and suffix the media provider adds) with the allow-listed extension kept, and a generated name SHALL be used when nothing usable remains. Saving SHALL NOT overwrite an existing file: a name already in the folder SHALL get a unique variant.
 
 #### Scenario: Same photo saved twice
 - **WHEN** `IMG_1.jpg` is saved twice into the same album folder
@@ -141,6 +157,13 @@ A photo SHALL become visible to other apps only after its complete body was writ
 #### Scenario: Process killed while writing
 - **WHEN** the process is killed while a photo is written and the batch is resumed later
 - **THEN** the incomplete item of that photo is removed and the photo is downloaded again
+
+### Requirement: Queue files are swept only when old
+Orphaned queue files SHALL be swept only when their work is finished or unknown and the file is older than a grace period of 30 seconds, so that a file whose work is about to be enqueued is never removed. A failed pending-item record SHALL discard the item before any byte is written, and a pending-item record SHALL be cleared only when the item was really deleted or published.
+
+#### Scenario: Young queue file
+- **WHEN** a sweep finds a queue file written a few seconds ago
+- **THEN** it is left alone
 
 ### Requirement: Downloads can be cancelled
 The progress notification's Cancel action SHALL stop the running batch and the batches queued after it. The photo being transferred SHALL be discarded, photos already saved SHALL stay, and a result notification SHALL report how many were saved before the cancellation.
@@ -175,6 +198,10 @@ When a batch ends, a result notification SHALL show the number of saved and fail
 - **WHEN** photos fail for different causes
 - **THEN** each cause is reported as one of: unsupported type, too large, storage full, not found on the server, access denied, certificate problem, connection problem, server error, rejected by the app, could not write, server configuration changed, interrupted
 
+#### Scenario: Certificate and connection problems are told apart
+- **WHEN** a transfer fails with a connection reset during a read
+- **THEN** it counts as a connection problem, and only certificate / handshake / unverified-peer failures count as a certificate problem
+
 #### Scenario: Server error text
 - **WHEN** the server answers with an error page containing text
 - **THEN** that text does not appear in any notification
@@ -198,7 +225,7 @@ Download progress and result notifications SHALL use a dedicated "Downloads" not
 - **THEN** its notification is in the "Downloads" channel with the download glyph
 
 ### Requirement: The queued download holds no credentials
-A queued download SHALL contain only the server URL, the album and photo hrefs, and per-photo progress. It SHALL never contain the username, password or token. It SHALL be stored only in the app's storage that is excluded from backup and device transfer, and a queued download SHALL be accepted only from that location under the app's own naming pattern.
+A queued download SHALL contain only the server URL, a one-way fingerprint of the account (URL and user name), the album and photo hrefs, and per-photo progress. It SHALL never contain the username, password or token. It SHALL be stored only in the app's storage that is excluded from backup and device transfer, and a queued download SHALL be accepted only from that location under the app's own naming pattern.
 
 #### Scenario: Work input
 - **WHEN** a download is enqueued
@@ -209,11 +236,22 @@ A queued download SHALL contain only the server URL, the album and photo hrefs, 
 - **THEN** nothing is downloaded
 
 ### Requirement: Configuration changes stop the download
-Before each photo, the download SHALL check that the configured server URL still equals the one the batch was queued for and that the configuration is valid. Otherwise, it SHALL send no further requests, and the remaining photos SHALL fail with the "server configuration changed" reason.
+Before each photo, the download SHALL check that the configured server URL still equals the one the batch was queued for, that the account fingerprint (when the queue has one) still matches the configured URL and user name, and that the configuration is valid. Otherwise, it SHALL send no further requests, and the remaining photos SHALL fail with the "server configuration changed" reason.
+
+#### Scenario: Another user on the same server
+- **WHEN** the configured user changes while the server URL stays the same
+- **THEN** no request is sent with the new credentials and the remaining photos fail with the "server configuration changed" reason
 
 #### Scenario: Logout during a download
 - **WHEN** the user logs out while a batch is running
 - **THEN** no further photo of that batch is requested
+
+### Requirement: A lost network pauses the batch
+A connection failure while no validated network is active SHALL NOT fail the photo. The batch SHALL end for a retry with its queue and progress kept and no interruption counted, and SHALL continue when the system runs it again. A user cancel and a system stop found at that point SHALL be handled as such.
+
+#### Scenario: Network lost mid-batch
+- **WHEN** a photo fails to connect and the device has no validated network
+- **THEN** the photo is not counted as failed, no result notification is posted and the next run downloads the remaining photos
 
 ### Requirement: Batch-wide failures stop the batch
 An authentication failure (401 / 403), a certificate failure, or 5 consecutive connection or server failures SHALL stop the batch. The remaining photos SHALL count as failed with that reason, and no further request SHALL be sent.

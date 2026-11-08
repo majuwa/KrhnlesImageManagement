@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer
 
 import android.app.Activity
 import android.view.accessibility.AccessibilityManager
+import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -56,6 +57,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -223,21 +225,19 @@ fun FullscreenViewerScreen(
 
                     // Save to device top-right: photos only, a video page has no button
                     photos.getOrNull(pagerState.currentPage)?.takeUnless { it.isVideo }?.let { current ->
-                        val alreadySaved = current.href in savedHrefs
-                        IconButton(
-                            enabled = !alreadySaved,
-                            onClick = {
-                                viewModel.saveToDevice(listOf(current))
-                                savedHrefs = savedHrefs + current.href
+                        SaveToDeviceButton(
+                            alreadySaved = current.href in savedHrefs,
+                            onSave = {
+                                // Marked saved only if a download was really requested.
+                                if (viewModel.saveToDevice(listOf(current))) {
+                                    savedHrefs = savedHrefs + current.href
+                                    true
+                                } else {
+                                    false
+                                }
                             },
-                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = stringResource(R.string.cd_save_to_device),
-                                tint = Color.White.copy(alpha = if (alreadySaved) SAVED_ICON_ALPHA else 1f),
-                            )
-                        }
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        )
                     }
 
                     // Page counter bottom-centre
@@ -268,6 +268,38 @@ fun FullscreenViewerScreen(
 }
 
 private const val SAVED_ICON_ALPHA = 0.4f
+
+/**
+ * The "Save to device" button of the overlay. [onSave] returns whether a download was requested; if
+ * not, the user is told with a toast. A saved photo's button is disabled and announces "Saved".
+ */
+@Composable
+private fun SaveToDeviceButton(
+    alreadySaved: Boolean,
+    onSave: () -> Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val savedDescription = stringResource(R.string.state_saved_to_device)
+    IconButton(
+        enabled = !alreadySaved,
+        onClick = {
+            if (!onSave()) {
+                Toast.makeText(context, R.string.download_save_unavailable, Toast.LENGTH_SHORT).show()
+            }
+        },
+        modifier =
+            modifier
+                .padding(8.dp)
+                .semantics { if (alreadySaved) stateDescription = savedDescription },
+    ) {
+        Icon(
+            imageVector = Icons.Default.Download,
+            contentDescription = stringResource(R.string.cd_save_to_device),
+            tint = Color.White.copy(alpha = if (alreadySaved) SAVED_ICON_ALPHA else 1f),
+        )
+    }
+}
 
 /** Saves the set of saved hrefs across rotation and process death as a list. */
 private val savedHrefsSaver =

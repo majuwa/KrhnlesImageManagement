@@ -62,6 +62,16 @@ class DownloadNamesTest {
     }
 
     @Test
+    fun `the name limit leaves room for a pending prefix and a uniqueness suffix`() {
+        val result = name("a".repeat(400) + ".jpeg")!!
+
+        assertEquals(200, MAX_DOWNLOAD_NAME_BYTES)
+        // MediaProvider adds ".pending-<expiry>-" in front and " (n)" before the extension.
+        val withProviderAdditions = ".pending-1700000000-" + result.removeSuffix(".jpeg") + " (99).jpeg"
+        assertTrue(withProviderAdditions.toByteArray(Charsets.UTF_8).size <= 255)
+    }
+
+    @Test
     fun `a blank or dot stem gets a generated name`() {
         assertEquals("photo_1234_${expectedHex()}.jpg", name(".jpg"))
         assertEquals("photo_1234_${expectedHex()}.jpg", name("%20%20.jpg"))

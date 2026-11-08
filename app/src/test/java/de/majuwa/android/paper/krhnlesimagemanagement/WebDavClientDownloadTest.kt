@@ -169,6 +169,76 @@ class WebDavClientDownloadTest {
             assertEquals(1_000L, read)
         }
 
+    private fun assertRejected(response: MockResponse) =
+        runBlocking {
+            server.enqueue(response)
+            var called = false
+
+            val result = client.download(url(), 1_000L) { called = true }
+
+            assertTrue(result.exceptionOrNull() is UnexpectedContentException)
+            assertFalse(called)
+        }
+
+    @Test
+    fun `svg and tiff are rejected though they are images`() {
+        assertRejected(image(ByteArray(3), "image/svg+xml"))
+        assertRejected(image(ByteArray(3), "image/tiff"))
+        assertRejected(image(ByteArray(3), "image/x-unknown"))
+    }
+
+    @Test
+    fun `allow listed image types are accepted in any case`() =
+        runTest {
+            listOf("image/jpeg", "IMAGE/PNG", "image/heic", "image/avif", "image/x-adobe-dng", "image/webp").forEach {
+                server.enqueue(image(ByteArray(3), it))
+                assertTrue(it, client.download(url(), 100L) { body -> body.stream.readBytes() }.isSuccess)
+            }
+        }
+
+    @Test
+    fun `a content type header that does not parse fails closed`() {
+        assertRejected(image(ByteArray(3), "image"))
+        assertRejected(image(ByteArray(3), "jpeg/"))
+        assertRejected(image(ByteArray(3), "not a type"))
+    }
+
+    @Test
+    fun `an encoded body is rejected and identity is accepted`() =
+        runBlocking {
+            assertRejected(image(ByteArray(3)).setHeader("Content-Encoding", "gzip"))
+            assertRejected(image(ByteArray(3)).setHeader("Content-Encoding", "br"))
+            server.enqueue(image(ByteArray(3)).setHeader("Content-Encoding", "identity"))
+
+            assertTrue(client.download(url(), 100L) { it.stream.readBytes() }.isSuccess)
+        }
+
+    @Test
+    fun `an http 1 body of unknown length that is not chunked is rejected`() {
+        // No Content-Length and no chunking: the end is the closed connection, a truncation looks the same.
+        assertRejected(
+            image(ByteArray(10))
+                .removeHeader("Content-Length")
+                .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END),
+        )
+    }
+
+    @Test
+    fun `a chunked body of unknown length is accepted`() =
+        runTest {
+            server.enqueue(
+                MockResponse()
+                    .setChunkedBody(Buffer().write(ByteArray(2_000)), 500)
+                    .setHeader("Content-Type", "image/jpeg"),
+            )
+            var received = 0
+
+            val result = client.download(url(), 10_000L) { received = it.stream.readBytes().size }
+
+            assertTrue(result.isSuccess)
+            assertEquals(2_000, received)
+        }
+
     @Test
     fun `text html is rejected before the sink`() =
         runTest {

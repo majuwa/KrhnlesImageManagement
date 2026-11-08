@@ -13,7 +13,27 @@ import java.io.File
  * `MANAGE_MEDIA` / storage permission in the manifest.
  */
 class DownloadOwnItemsOnlyRegressionTest {
-    private val resolverDelete = Regex("""[rR]esolver\.delete\(""")
+    /**
+     * Any `.delete(` with arguments (or an argument list that starts on the next line), whatever the
+     * receiver is called (`resolver`, `contentResolver`, `cr`, a client, ...): `File.delete()` has none,
+     * `ContentResolver.delete(uri, where, args)` has.
+     */
+    private val resolverDelete = Regex("""\.delete\(\s*(?:[^)\s]|$)""")
+
+    @Test
+    fun `the delete pattern matches a content resolver under any name but not a file`() {
+        listOf(
+            "resolver.delete(uri, null, null)",
+            "context.contentResolver.delete(uri, null, null)",
+            "cr.delete(u, null, null)",
+            "getContentResolver().delete(",
+            "client.delete(uri, null, null)",
+            "x.delete( uri, null, null)",
+        ).forEach { assertTrue(it, resolverDelete.containsMatchIn(it)) }
+        listOf("file.delete()", "queueTempFile(queueFile).delete()", "it.delete( )", "deleteItem(uri)").forEach {
+            assertTrue(it, !resolverDelete.containsMatchIn(it))
+        }
+    }
 
     @Test
     fun `the only resolver delete of the download path is the writer's deleteItem`() {

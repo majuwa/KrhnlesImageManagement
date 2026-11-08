@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -78,6 +79,21 @@ class AlbumDetailViewModelSaveTest {
             viewModel.saveToDevice(listOf(sunset, beach))
 
             assertEquals(listOf("/Summer/" to listOf("/Summer/sunset.jpg", "/Summer/beach.jpg")), requester.requests)
+        }
+
+    @Test
+    fun `the result tells whether a download was requested`() =
+        runTest {
+            assertFalse("not loaded", viewModel.saveToDevice(listOf(beach)))
+            loadAlbum()
+
+            assertTrue(viewModel.saveToDevice(listOf(beach)))
+            assertFalse("only stale photos", viewModel.saveToDevice(listOf(stale)))
+            assertFalse("nothing selected", viewModel.saveToDevice(emptyList()))
+            credentials.setConfig(WebDavConfig())
+            advanceUntilIdle()
+            assertFalse("after a logout", viewModel.saveToDevice(listOf(beach)))
+            assertEquals(1, requester.requests.size)
         }
 
     @Test

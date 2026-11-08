@@ -16,6 +16,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaStoreProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.MAX_DOWNLOAD_RUN_ATTEMPTS_BACKSTOP
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.parseDownloadQueue
+import de.majuwa.android.paper.krhnlesimagemanagement.worker.queueTempFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,10 +26,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.SocketPolicy
+import okio.Buffer
 import okio.ByteString.Companion.decodeHex
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -37,6 +44,8 @@ import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 
 /** The real [DownloadWorker] against MockWebServer and the fake MediaStore provider. */
 @RunWith(RobolectricTestRunner::class)
@@ -68,8 +77,8 @@ class DownloadWorkerRunTest {
         assertEquals(listOf("a.jpg", "b b.png", "c.heic"), items.map { it.displayName })
         assertEquals(listOf("image/jpeg", "image/png", "image/heic"), items.map { it.mimeType })
         assertTrue(items.all { it.relativePath == "Pictures/KroehnSync/Summer/" })
-        assertEquals(listOf(1, 2, 3), items[0].bytes.map { it.toInt() })
-        assertEquals(listOf(4, 5), items[1].bytes.map { it.toInt() })
+        assertEquals(listOf(1, 2, 3), items[0].bytes.drop(DownloadHarness.imageHeader("a.jpg").size).map { it.toInt() })
+        assertEquals(listOf(4, 5), items[1].bytes.drop(DownloadHarness.imageHeader("b.png").size).map { it.toInt() })
         assertEquals(0, FakeMediaStoreProvider.inserted.values.count { it.pending })
         assertFalse(queue.exists())
         val posted = h.resultNotifications().single()
@@ -116,7 +125,7 @@ class DownloadWorkerRunTest {
         h.responses["/remote.php/dav/files/u/Photos/Summer/big.jpg"] = {
             MockResponse()
                 .setChunkedBody(
-                    okio.Buffer().write(ByteArray(5_000)),
+                    okio.Buffer().write(DownloadHarness.imageHeader("big.jpg") + ByteArray(5_000)),
                     500,
                 ).setHeader("Content-Type", "image/jpeg")
         }
@@ -235,7 +244,10 @@ class DownloadWorkerRunTest {
         h.serve("a.jpg")
         h.responses["/remote.php/dav/files/u/Photos/Summer/b.jpg"] = {
             h.credentials.setConfig(h.config.copy(url = "https://other.example/dav/"))
-            MockResponse().setBody("b").setHeader("Content-Type", "image/jpeg")
+            MockResponse()
+                .setBody(
+                    Buffer().write(DownloadHarness.imageHeader("b.jpg") + "b".toByteArray()),
+                ).setHeader("Content-Type", "image/jpeg")
         }
         h.serve("c.jpg")
         val queue = h.queueFile("a.jpg", "b.jpg", "c.jpg")
@@ -252,7 +264,10 @@ class DownloadWorkerRunTest {
     fun `a logout stops the batch before the next request`() {
         h.responses["/remote.php/dav/files/u/Photos/Summer/a.jpg"] = {
             h.credentials.setConfig(WebDavConfig())
-            MockResponse().setBody("a").setHeader("Content-Type", "image/jpeg")
+            MockResponse()
+                .setBody(
+                    Buffer().write(DownloadHarness.imageHeader("a.jpg") + "a".toByteArray()),
+                ).setHeader("Content-Type", "image/jpeg")
         }
         h.serve("b.jpg")
         val queue = h.queueFile("a.jpg", "b.jpg")
@@ -398,6 +413,250 @@ class DownloadWorkerRunTest {
         assertSuccess(h.run(h.queueFile("a.jpg")))
 
         assertEquals(listOf<PinnedCertificate?>(pin), h.seenPins)
+    }
+
+    private fun chunked(
+        name: String,
+        size: Int,
+    ): (okhttp3.mockwebserver.RecordedRequest) -> MockResponse =
+        {
+            MockResponse()
+                .setChunkedBody(Buffer().write(DownloadHarness.imageHeader(name) + ByteArray(size)), 64 * 1024)
+                .setHeader("Content-Type", "image/jpeg")
+        }
+
+    private fun saved(queue: File) = checkNotNull(parseDownloadQueue(queue.readText()))
+
+    @Test
+    fun `a connection failure without a validated network pauses the run and keeps the queue`() {
+        h.networkAvailable = { false }
+        h.serve("a.jpg")
+        h.responses["/remote.php/dav/files/u/Photos/Summer/b.jpg"] = {
+            MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+        }
+        h.serve("c.jpg")
+        val queue = h.queueFile("a.jpg", "b.jpg", "c.jpg")
+
+        val result = h.run(queue)
+
+        assertTrue(result.toString(), result is ListenableWorker.Result.Retry)
+        assertTrue(queue.exists())
+        assertEquals(listOf(true, false, false), saved(queue).entries.map { it.downloaded })
+        assertEquals("a lost network is not an interruption", 0, saved(queue).interruptions)
+        assertNull(saved(queue).pendingItem)
+        assertTrue(h.resultNotifications().isEmpty())
+        assertEquals(listOf("a.jpg"), h.published().map { it.displayName })
+        assertTrue("c.jpg must not be requested", h.requests.none { it.endsWith("c.jpg") })
+
+        // The network is back: the re-run saves the rest.
+        h.networkAvailable = { true }
+        h.serve("b.jpg")
+        assertSuccess(h.run(queue))
+        assertEquals(listOf("a.jpg", "b.jpg", "c.jpg"), h.published().map { it.displayName }.sorted())
+        assertEquals("3 photos saved.", h.text(h.resultNotifications().single().notification))
+    }
+
+    @Test
+    fun `a connection failure with a network is a failed photo and the batch goes on`() {
+        h.networkAvailable = { true }
+        h.responses["/remote.php/dav/files/u/Photos/Summer/a.jpg"] = {
+            MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+        }
+        h.serve("b.jpg")
+        val queue = h.queueFile("a.jpg", "b.jpg")
+
+        assertSuccess(h.run(queue))
+
+        assertFalse(queue.exists())
+        assertEquals(listOf("b.jpg"), h.published().map { it.displayName })
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("could not be reached"))
+    }
+
+    @Test
+    fun `a missing network does not pause for ever`() {
+        h.networkAvailable = { false }
+        h.runAttemptCount = MAX_DOWNLOAD_RUN_ATTEMPTS_BACKSTOP
+        h.responses["/remote.php/dav/files/u/Photos/Summer/a.jpg"] = {
+            MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+        }
+        val queue = h.queueFile("a.jpg")
+
+        assertSuccess(h.run(queue))
+
+        assertFalse(queue.exists())
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("could not be reached"))
+    }
+
+    @Test
+    fun `a system stop during a refused foreground is not an interruption`() {
+        h.foregroundFailsFrom = 0
+        h.stopped = { true }
+        h.serve("a.jpg")
+        val queue = h.queueFile("a.jpg")
+
+        assertThrows(CancellationException::class.java) { h.run(queue) }
+
+        assertTrue(queue.exists())
+        assertEquals(0, saved(queue).interruptions)
+        assertTrue(h.resultNotifications().isEmpty())
+    }
+
+    @Test
+    fun `the item record is kept while the item could not be deleted and the next run deletes it`() {
+        h.maxBytes = 1_000
+        h.responses["/remote.php/dav/files/u/Photos/Summer/big.jpg"] = chunked("big.jpg", 5_000)
+        FakeMediaStoreProvider.deleteFailure = IllegalStateException("provider")
+        h.foregroundFailsFrom = 1
+        val queue = h.queueFile("big.jpg", "b.jpg")
+
+        val result = h.run(queue)
+
+        assertTrue(result is ListenableWorker.Result.Retry)
+        val leftover = FakeMediaStoreProvider.inserted.keys.single()
+        assertEquals("the record still points at the undeleted item", leftover, saved(queue).pendingItem)
+
+        FakeMediaStoreProvider.deleteFailure = null
+        h.foregroundFailsFrom = null
+        h.run(queue)
+
+        assertTrue(FakeMediaStoreProvider.deletes.contains(leftover))
+        assertNull(FakeMediaStoreProvider.inserted[leftover])
+    }
+
+    @Test
+    fun `the item record is cleared once the item was deleted`() {
+        h.maxBytes = 1_000
+        h.responses["/remote.php/dav/files/u/Photos/Summer/big.jpg"] = chunked("big.jpg", 5_000)
+        h.foregroundFailsFrom = 1
+        val queue = h.queueFile("big.jpg", "b.jpg")
+
+        h.run(queue)
+
+        assertNull(saved(queue).pendingItem)
+        assertTrue(FakeMediaStoreProvider.inserted.isEmpty())
+    }
+
+    @Test
+    fun `a provider that fails with any runtime error is a write failure not a connection failure`() {
+        h.serve("a.jpg")
+        FakeMediaStoreProvider.insertFailure = UnsupportedOperationException("provider")
+        val queue = h.queueFile("a.jpg")
+
+        assertSuccess(h.run(queue))
+
+        val text = h.text(h.resultNotifications().single().notification)
+        assertTrue(text, text.contains("could not be written"))
+        assertFalse(text, text.contains("could not be reached"))
+    }
+
+    @Test
+    fun `a body of unknown length stops when the free space runs out while streaming`() {
+        val calls = AtomicInteger()
+        // Enough for the up-front check, then nothing left.
+        h.freeBytes = { if (calls.getAndIncrement() == 0) 250L * 1024 * 1024 else 0L }
+        h.responses["/remote.php/dav/files/u/Photos/Summer/a.jpg"] = chunked("a.jpg", 10 * 1024 * 1024)
+        h.serve("b.jpg")
+        val queue = h.queueFile("a.jpg", "b.jpg")
+
+        assertSuccess(h.run(queue))
+
+        assertTrue(h.published().isEmpty())
+        assertTrue("the partial item was discarded", FakeMediaStoreProvider.inserted.isEmpty())
+        assertEquals("a full device stops the batch", 1, h.requests.size)
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("no storage space left"))
+    }
+
+    @Test
+    fun `a body of unknown length needs more than the margin free before anything is written`() {
+        h.freeBytes = { 100L * 1024 * 1024 }
+        h.responses["/remote.php/dav/files/u/Photos/Summer/a.jpg"] = chunked("a.jpg", 1_000)
+        val queue = h.queueFile("a.jpg")
+
+        assertSuccess(h.run(queue))
+
+        assertTrue(FakeMediaStoreProvider.inserted.isEmpty())
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("no storage space left"))
+    }
+
+    private fun serveRaw(
+        name: String,
+        body: ByteArray,
+        type: String = "image/jpeg",
+    ) {
+        h.responses["/remote.php/dav/files/u/Photos/Summer/$name"] = {
+            MockResponse().setBody(Buffer().write(body)).setHeader("Content-Type", type)
+        }
+    }
+
+    @Test
+    fun `a body that is not the announced image type is rejected before anything is stored`() {
+        serveRaw("html.jpg", "<html>login</html>".toByteArray())
+        serveRaw("png-as.jpg", DownloadHarness.imageHeader("x.png") + ByteArray(10))
+        serveRaw("empty.jpg", ByteArray(0))
+        serveRaw("avif-as.heic", DownloadHarness.imageHeader("x.avif") + ByteArray(10), "image/heic")
+        h.serve("ok.jpg")
+        val queue = h.queueFile("html.jpg", "png-as.jpg", "empty.jpg", "avif-as.heic", "ok.jpg")
+
+        assertSuccess(h.run(queue))
+
+        assertEquals(listOf("ok.jpg"), h.published().map { it.displayName })
+        assertEquals("nothing was ever inserted for the rejected bodies", 1, FakeMediaStoreProvider.inserted.size)
+        assertTrue(FakeMediaStoreProvider.deletes.isEmpty())
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("did not look like a photo"))
+    }
+
+    @Test
+    fun `a queue bound to one account stops when the same server has another user`() {
+        h.serve("a.jpg")
+        val queue = h.queueFile("a.jpg")
+        h.credentials.setConfig(h.config.copy(username = "mallory", password = "other"))
+
+        assertSuccess(h.run(queue))
+
+        assertTrue("no request with another account's credentials", h.requests.isEmpty())
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("server settings changed"))
+    }
+
+    @Test
+    fun `an account change in the middle of a batch stops the rest`() {
+        h.serve("a.jpg")
+        h.responses["/remote.php/dav/files/u/Photos/Summer/b.jpg"] = {
+            h.credentials.setConfig(h.config.copy(username = "mallory"))
+            MockResponse()
+                .setBody(Buffer().write(DownloadHarness.imageHeader("b.jpg") + "b".toByteArray()))
+                .setHeader("Content-Type", "image/jpeg")
+        }
+        h.serve("c.jpg")
+        val queue = h.queueFile("a.jpg", "b.jpg", "c.jpg")
+
+        assertSuccess(h.run(queue))
+
+        assertEquals(2, h.requests.size)
+    }
+
+    @Test
+    fun `a queue file without an account is bound to the server url only`() {
+        h.serve("a.jpg")
+        val queue = h.queueFile("a.jpg", account = null)
+
+        assertSuccess(h.run(queue))
+
+        assertEquals(listOf("a.jpg"), h.published().map { it.displayName })
+    }
+
+    @Test
+    fun `an item that cannot be recorded in the queue file is discarded before any byte is written`() {
+        h.serve("a.jpg")
+        val queue = h.queueFile("a.jpg")
+        // The temp file of the atomic rewrite cannot be created: a directory sits in its place.
+        assertTrue(queueTempFile(queue).mkdir())
+
+        assertSuccess(h.run(queue))
+
+        assertTrue(h.published().isEmpty())
+        assertEquals("the unrecorded item was discarded", 1, FakeMediaStoreProvider.deletes.size)
+        assertTrue(FakeMediaStoreProvider.inserted.isEmpty())
+        assertTrue(h.text(h.resultNotifications().single().notification).contains("could not be written"))
     }
 
     @Test

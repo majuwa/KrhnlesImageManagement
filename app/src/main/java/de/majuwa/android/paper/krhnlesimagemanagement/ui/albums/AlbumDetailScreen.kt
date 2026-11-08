@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 
 import android.content.res.Resources
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -86,6 +87,7 @@ fun AlbumDetailScreen(
     val isDeletingPhotos by viewModel.isDeletingPhotos.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val resources = LocalResources.current
+    val context = LocalContext.current
 
     var selectedHrefs by remember { mutableStateOf(emptySet<String>()) }
     val selectionMode = selectedHrefs.isNotEmpty()
@@ -149,8 +151,12 @@ fun AlbumDetailScreen(
                     enabled = !isDeletingPhotos,
                     onClearSelection = { selectedHrefs = emptySet() },
                     onSaveClick = {
-                        viewModel.saveToDevice(state.photos.filter { it.href in selectedHrefs })
-                        selectedHrefs = emptySet()
+                        if (viewModel.saveToDevice(state.photos.filter { it.href in selectedHrefs })) {
+                            selectedHrefs = emptySet()
+                        } else {
+                            // Nothing was requested: say so and keep the selection for another try.
+                            Toast.makeText(context, R.string.download_save_unavailable, Toast.LENGTH_SHORT).show()
+                        }
                     },
                     onDeleteClick = { showDeleteConfirmation = true },
                 )

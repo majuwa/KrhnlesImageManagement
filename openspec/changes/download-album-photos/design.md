@@ -22,7 +22,7 @@ See proposal.md (Why) for the motivation and specs/ for the behaviour. The desig
 
 **Goals:**
 - One download path for both entry points: queue file → `DownloadWorker` → `WebDavClient.download()` → `LocalMediaWriter`.
-- Every server-controlled input is re-validated in the worker at run time: hrefs, names and `Content-Type`.
+- Every server-controlled input is re-validated in the worker at run time: hrefs, names, `Content-Type`, `Content-Encoding` and the first bytes of the body.
 - Nothing partial is ever visible, nothing is overwritten, and no permission is added.
 
 **Non-Goals:**
@@ -39,7 +39,7 @@ See proposal.md (Why) for the motivation and specs/ for the behaviour. The desig
 `DownloadEnqueuer` (`download/`, owned by `KrhnlesApplication`, application scope like `UploadEnqueuer`):
 
 1. Reads the config once, under `withTimeoutOrNull(3 s)`. An invalid config shows the `download_not_configured` toast.
-2. Under a `Mutex` acquired with a timeout, sweeps orphaned queue files (see below).
+2. Under a `Mutex` (only the wait for the lock is bounded, 30 s; the sweep has its own bound of 60 s), sweeps orphaned queue files older than a 30 s grace period (see below).
 3. Writes `noBackupFilesDir/download_queue_<millis>_<uuid>.json`:
    ```json
    {"serverUrl": "...", "albumHref": "...", "entries": [{"href": "..."}], "interruptions": 0}
@@ -98,7 +98,11 @@ suspend fun download(url: HttpUrl, maxBytes: Long, sink: (DownloadBody) -> Unit)
 - Handles the response as follows:
   - non-2xx → `WebDavHttpException(code)`, and 3xx included, because redirects are never followed
   - `Content-Length > maxBytes` → `DownloadTooLargeException` before the sink is called
-  - a `Content-Type` that is present, not `image/*` and not `application/octet-stream` → `UnexpectedContentException`
+  - the response must be storable as is, otherwise `UnexpectedContentException` (fail closed):
+    - a raw `Content-Type` header that does not parse is rejected; a missing one is accepted;
+    - the type must be `application/octet-stream` or an allow-listed `image/…` subtype (jpeg, jpg, pjpeg, png, gif, webp, heic, heif, avif, bmp, x-ms-bmp, x-adobe-dng, dng, x-dcraw); `image/svg+xml`, `image/tiff` and other images are rejected;
+    - any `Content-Encoding` other than `identity` is rejected;
+    - with an unknown length (`-1`) an HTTP/1.x response must be `Transfer-Encoding: chunked`: a body delimited only by the closing connection cannot be told from a truncated one (HTTP/2 frames its streams and is accepted)
   - otherwise it calls `sink` with `contentLength` and `LimitedInputStream(body.byteStream(), maxBytes, ::DownloadTooLargeException)`
 - Never calls `body.bytes()` or `string()`.
 
@@ -130,7 +134,7 @@ PendingMediaItem.discard()                                              // conte
   - `RELATIVE_PATH` = `Pictures/KroehnSync/<albumFolderName(albumHref)>/`. `KroehnSync` is a non-localized constant, so it is unaffected by `german-translation`.
   - `DISPLAY_NAME` is sanitized and `MIME_TYPE` comes from the allow-list.
   - `insert` never overwrites: MediaProvider appends ` (1)`, ` (2)`, … to a taken name.
-- **Pending item record.** Before writing, the worker records the item uri in the queue file (`"pendingItem"`, via `rewriteQueueFile()`) and clears it after `publish()` / `discard()`.
+- **Pending item record.** Before writing, the worker records the item uri in the queue file (`"pendingItem"`, via `rewriteQueueFile()`) and clears it after `publish()`, or after a `discard()` that really deleted the item (a failed delete keeps the record, so the next run or the sweep retries). If the record cannot be saved, the item is discarded and the photo fails with `WriteFailed` before any byte is written.
 - **Discarding.** `discard()` runs in `withContext(NonCancellable)` from a `finally`, on every failure and cancellation.
 - **Resumed run.** A resumed run discards a leftover `pendingItem` first, but only if three checks pass:
   1. it passes a `validatedMediaUri()`-style check: authority `media`, `<volume>/images/media/<id>`
@@ -139,14 +143,14 @@ PendingMediaItem.discard()                                              // conte
   
   The MediaProvider also expires abandoned pending items after about 7 days.
 - **Scope of deletion.** `discard()` is the only `delete` in the download path, and it only takes uris this app inserted. It is not on the removal path that `NoHardDeleteLocalMediaRegressionTest` guards, and that test stays unchanged. A new `DownloadOwnItemsOnlyRegressionTest` pins that `LocalMediaWriter` is the only download-path file calling `delete(`, and only from `discard()`. It also pins that `createDeleteRequest`, `MANAGE_MEDIA` and storage permissions stay absent.
-- **Free space.** Before writing, an announced length larger than the primary volume's free space minus a 200 MiB margin → `StorageFull`. Free space is `StorageManager.getAllocatableBytes` for the volume uuid, falling back to `Environment.getExternalStorageDirectory().usableSpace`. An `IOException` whose cause is `ErrnoException(ENOSPC)` while writing → `StorageFull` as well.
+- **Free space.** Before writing, an announced length larger than the primary volume's free space minus a 200 MiB margin → `StorageFull`; an unknown length needs more than the margin free. While streaming, a counting output stream re-reads the free space every 4 MiB and fails with `StorageFull` once it falls to 50 MiB, so a chunked body cannot fill the device. Free space is `StorageManager.getAllocatableBytes` for the volume uuid, falling back to `Environment.getExternalStorageDirectory().usableSpace`. An `IOException` whose cause is `ErrnoException(ENOSPC)` while writing → `StorageFull` as well.
 
 **Naming** (`download/DownloadNames.kt`, pure):
-- **`DownloadImageType`.** The extension map is built from `SharedImageType`: jpg/jpeg → JPEG, png, gif, webp, heic → HEIC, heif → HEIF, avif, bmp, dng. The extension decides the type; the response `Content-Type` only vetoes (Decision 3).
+- **`DownloadImageType`.** The extension map is built from `SharedImageType`: jpg/jpeg → JPEG, png, gif, webp, heic → HEIC, heif → HEIF, avif, bmp, dng. The extension decides the type; the response `Content-Type` only vetoes (Decision 3). The first 32 bytes must also match the type's signature (`download/ImageSignature.kt`: JPEG `FF D8 FF`, PNG, `GIF87a` / `GIF89a`, `RIFF....WEBP`, ISO-BMFF `ftyp` with a HEIC / HEIF / AVIF major brand, `BM`, TIFF header for DNG) before the pending item is inserted; otherwise the photo is `Rejected` and nothing is stored.
 - **`downloadDisplayName(href)`.**
   - Takes the decoded last segment (`HttpUrl.pathSegments.last()`).
   - Replaces `/ \ : * ? " < > |`, ISO control characters and Unicode Cf / bidi / line / paragraph separators and unpaired surrogates with `_`, and trims spaces and dots at both ends. A leading dot must go: MediaProvider treats dot files and dot directories as hidden, so the saved photo would not appear in the gallery.
-  - Truncates the stem so that the whole name is ≤ 255 UTF-8 bytes with the extension kept.
+  - Truncates the stem so that the whole name is ≤ 200 UTF-8 bytes with the extension kept (headroom below the 255-byte limit for the `.pending-<expiry>-` prefix and the ` (n)` suffix MediaProvider adds).
   - A blank stem gets `photo_<millis>_<8 hex>.<ext>`.
 - **`albumFolderName(albumHref)`.** Sanitizes the same way to one segment of at most 100 UTF-8 bytes. `.`, `..` or blank → `Album`.
 - The display name from PROPFIND is not used for paths.
@@ -160,7 +164,7 @@ PendingMediaItem.discard()                                              // conte
 
 `DownloadWorker(context, params)` has a public constructor for WorkManager and an internal test constructor taking `CredentialRepository`, `TrustedCertificateRepository`, `(WebDavConfig, PinnedCertificate?) -> WebDavClient`, a `LocalMediaWriter` factory, a free-space provider and a clock. It overrides `getForegroundInfo()` like `UploadWorker`. For each pending entry, in order:
 
-1. Re-check the config. This is a bounded read (3 s) with `isValid` and `url == queue.serverUrl`; otherwise the rest fails with `ConfigurationChanged`. Re-read the pin (`pinFor(url)`) and rebuild the client when it changed, as the upload worker does.
+1. Re-check the config. This is a bounded read (3 s) with `isValid`, `url == queue.serverUrl` and, when the queue carries an `account` fingerprint (SHA-256 of URL and user name, no credential), the same fingerprint, so a changed user on the same server stops the batch; a queue file without the field (written before it existed) is bound to the URL only; otherwise the rest fails with `ConfigurationChanged`. Re-read the pin (`pinFor(url)`) and rebuild the client when it changed, as the upload worker does.
 2. Resolve the target (Decision 3), then the type and name (Decision 4).
 3. `setForegroundOrFalse(progress)`.
 4. Download into a pending item. Then publish, and mark the entry `"downloaded": true` via `rewriteQueueFile()`. A failed marker write is logged; a re-run may save that photo again as a uniquified copy (accepted).
@@ -172,19 +176,20 @@ PendingMediaItem.discard()                                              // conte
 | `UnsafeHrefException`, 3xx, `UnexpectedContentException` | `Rejected` |
 | 404 / 410 | `NotFound` |
 | 401 / 403 | `AccessDenied` |
-| SSL / `GeneralSecurityException` in the cause chain | `Certificate` |
+| `CertificateException` / `SSLHandshakeException` / `SSLPeerUnverifiedException` in the cause chain (the shared `hasCertificateFailure()`, also used by the chunked upload) | `Certificate` |
+| a plain `SSLException` (for example a connection reset during a read) | `Connection` |
 | `UnknownHost` / `Connect` / `InterruptedIOException` / other `IOException` | `Connection` |
 | other HTTP | `ServerError` |
 | `DownloadTooLargeException` | `TooLarge` |
 | ENOSPC | `StorageFull` |
-| MediaStore insert / write / update failure | `WriteFailed` |
+| MediaStore insert / write / update failure, whatever the provider throws (`LocalMediaWriteException`) | `WriteFailed` |
 
 `Unsupported`, `ConfigurationChanged` and `Interrupted` are set directly. `CancellationException` is always rethrown.
 
 Stop rules (they keep a bad batch from hammering the server):
 - `AccessDenied`, `Certificate`, `StorageFull` and `ConfigurationChanged` fail the remaining entries with the same reason.
 - `MAX_DOWNLOAD_CONSECUTIVE_SERVER_FAILURES` (5) `Connection` / `ServerError` failures in a row do the same; any success or other failure resets the count.
-- A lost network is a WorkManager constraint stop (Decision 6), not a failure.
+- A lost network is a WorkManager constraint stop (Decision 6), not a failure. A `Connection` failure while no validated network is active (`ConnectivityManager.activeNetwork` with `NET_CAPABILITY_VALIDATED`, injectable in tests) is the same: the photo is not marked failed, the run ends with `Result.retry()`, the queue and markers are kept and no interruption is counted. WorkManager's `runAttemptCount` backstop ends the pause for good.
 
 Result notification:
 - Id `DOWNLOAD_RESULT_NOTIFICATION_ID` (1005), tag = queue file name.
@@ -202,7 +207,7 @@ Notification channel and glyph:
 
 The worker body runs inside `try/finally`. On `CancellationException`, the current pending item is discarded (`NonCancellable`). Then:
 
-- **User cancel.** `isStopped && stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP` is our Cancel action, or a cascade from it. The queue file is deleted and a `download_cancelled` result with the counts is posted.
+- **User cancel.** (`WorkManager` really reports it: `DownloadWorkerCancelWorkManagerTest`.) `isStopped && stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP` is our Cancel action, or a cascade from it. The queue file is deleted and a `download_cancelled` result with the counts is posted.
 - **System stop.** For any other stop reason (constraint lost, system) the queue file, with its done markers, is kept. WorkManager re-runs the work.
 
 A refused foreground service (`setForegroundOrFalse` returns false) increments the top-level `interruptions`, which is clamped to `0..MAX_DOWNLOAD_RUN_ATTEMPTS` (5) on read, via `rewriteQueueFile()`, and the worker returns `Result.retry()`. The worker gives up in these cases:
@@ -210,7 +215,7 @@ A refused foreground service (`setForegroundOrFalse` returns false) increments t
 - when the counter cannot be persisted and `runAttemptCount >= 5`
 - always, at the backstop `runAttemptCount >= 50`
 
-Giving up ends with an `Interrupted` reason for the rest. This mirrors the upload worker, but as its own constants, so the two can evolve separately; `cancel-running-upload` / `nextcloud-chunked-upload` may touch the upload ones.
+A stop (the user's or the system's) found while handling a refused foreground service is rethrown before anything is counted. Giving up ends with an `Interrupted` reason for the rest. This mirrors the upload worker, but as its own constants, so the two can evolve separately; `cancel-running-upload` / `nextcloud-chunked-upload` may touch the upload ones.
 
 ### 7. Configuration binding without credentials
 
@@ -236,11 +241,18 @@ Reasons not to mark saved photos as uploaded:
 
 `MediaRepository` lists all images, so saved photos appear in the grid like any gallery photo, without a badge. Re-uploading them would create a server duplicate; that is the user's explicit choice, as for any re-upload. Hiding them (by `OWNER_PACKAGE_NAME`) is deferred; see Open Questions and the `new-photos-reminder` interaction in the proposal.
 
+## Review follow-up decisions
+
+- **Legacy queue files without `account`.** A queue file written before the fingerprint existed is accepted and bound to the server URL only (the previous behaviour), instead of failing closed: such a file exists only for a batch queued before the update, and failing it would silently drop the user's request, while the residual risk (same server, other user, within one batch) is what the URL check already accepted.
+- **Network pause uses `Result.retry()`.** It is the one non-interruption retry; WorkManager's back-off applies and `runAttemptCount` at the interruption backstop turns the pause into a normal failure, so a captive or never-validated network cannot retry for ever.
+- **Free-space floor while streaming.** 50 MiB (a quarter of the up-front margin), checked every 4 MiB, because the up-front margin already guarantees headroom for known lengths.
+- **Viewer / selection feedback is a toast** (like the enqueuer's own messages), not a snackbar: the viewer has no snackbar host.
+
 ## Risks / Trade-offs
 
 - [Cancel also cancels queued batches (cascade)] → stated in the spec and the notification wording; orphaned queue files are swept fail-closed at the next enqueue.
 - [Process death between `publish()` and the `downloaded` marker write] → that photo is saved again as a uniquified copy on resume. The window is tiny and the outcome is visible and harmless (no overwrite).
-- [A server serving non-image bytes under an image extension with `application/octet-stream`] → the gallery shows an undecodable item. No content sniffing is done in v1; the `Content-Type` veto catches the common HTML case (captive portal, login page).
+- [A server serving non-image bytes under an image extension with `application/octet-stream`] → the first-bytes signature check (JPEG, PNG, GIF, WebP, HEIC / HEIF / AVIF, BMP, DNG) rejects HTML, SVG and other non-images before anything is stored. It only checks the start of the file: a damaged or truncated image that starts correctly is still saved.
 - [The `dataSync` foreground budget (Android 15: 6 h / 24 h) is shared with uploads] → refusals use the interruption cap, and progress is kept for later runs.
 - [A chained batch starts while the app is in the background and the foreground start is refused] → counted as an interruption and retried with back-off, like uploads.
 - [Process death between `insert` and the `pendingItem` write] → an invisible pending item is left without a record; MediaProvider expires it (about 7 days). Accepted: it is never visible and never published.

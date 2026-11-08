@@ -7,7 +7,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
@@ -123,6 +126,21 @@ class FullscreenViewerSaveTest {
         composeTestRule.waitForIdle()
 
         assertEquals(1, requester.requests.size)
+    }
+
+    @Test
+    fun `a saved photo's button announces that it is saved`() {
+        show()
+        composeTestRule
+            .onNodeWithContentDescription("Save to device")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+
+        composeTestRule.onNodeWithContentDescription("Save to device").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule
+            .onNodeWithContentDescription("Save to device")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Saved"))
     }
 
     @Test

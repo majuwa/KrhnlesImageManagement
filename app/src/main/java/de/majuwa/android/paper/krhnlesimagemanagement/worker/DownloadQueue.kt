@@ -2,11 +2,13 @@ package de.majuwa.android.paper.krhnlesimagemanagement.worker
 
 import android.content.Context
 import android.util.Log
+import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 private const val DOWNLOAD_QUEUE_TAG = "DownloadQueue"
 private val downloadQueueFileName = Regex("download_queue_[0-9]+_[0-9a-f-]+\\.json")
@@ -18,6 +20,8 @@ private const val KEY_HREF = "href"
 private const val KEY_DOWNLOADED = "downloaded"
 private const val KEY_PENDING_ITEM = "pendingItem"
 private const val KEY_INTERRUPTIONS = "interruptions"
+private const val KEY_ACCOUNT = "account"
+private const val HEX_BYTE_FORMAT = "%02x"
 
 /**
  * Foreground-service refusals of one download queue after which it gives up (persisted as
@@ -57,9 +61,23 @@ internal data class DownloadQueueEntry(
 )
 
 /**
+ * Non-secret fingerprint of the account a batch is queued for: SHA-256 (lower-case hex) of the
+ * server URL and the user name. It holds no credential and cannot be turned back into either; the
+ * worker compares it with the current configuration so that a batch queued for one account never
+ * runs with another account's credentials (same URL, other user).
+ */
+internal fun WebDavConfig.accountFingerprint(): String =
+    MessageDigest
+        .getInstance("SHA-256")
+        .digest("$url\u0000$username".toByteArray(Charsets.UTF_8))
+        .joinToString("") { HEX_BYTE_FORMAT.format(it) }
+
+/**
  * A parsed download queue file. It holds no credentials and no user name: only the [serverUrl] the
- * batch was queued for, the [albumHref], the photo hrefs with their progress, the uri of the
- * [pendingItem] being written (so a killed run can discard it) and the [interruptions] counter.
+ * batch was queued for, the [account] fingerprint ([accountFingerprint]; `null` in a queue file
+ * written before the field existed, which is then bound to the server URL only), the [albumHref],
+ * the photo hrefs with their progress, the uri of the [pendingItem] being written (so a killed run
+ * can discard it) and the [interruptions] counter.
  */
 internal data class DownloadQueue(
     val serverUrl: String,
@@ -67,6 +85,7 @@ internal data class DownloadQueue(
     val entries: List<DownloadQueueEntry>,
     val pendingItem: String? = null,
     val interruptions: Int = 0,
+    val account: String? = null,
 ) {
     /** Indices of the entries not saved yet (by this or an earlier run). */
     val pendingIndices: List<Int>
@@ -83,6 +102,7 @@ internal data class DownloadQueue(
         JSONObject().apply {
             put(KEY_SERVER_URL, serverUrl)
             put(KEY_ALBUM_HREF, albumHref)
+            account?.let { put(KEY_ACCOUNT, it) }
             if (interruptions > 0) put(KEY_INTERRUPTIONS, interruptions)
             pendingItem?.let { put(KEY_PENDING_ITEM, it) }
             put(
@@ -104,7 +124,7 @@ internal data class DownloadQueue(
 /**
  * Parses a download queue file's JSON; null if it is malformed. `serverUrl`, `albumHref` and every
  * entry `href` must be strings (`opt` + `is String`: `org.json` would coerce numbers and `null`),
- * a present `pendingItem` must be a string, `downloaded` counts only as a JSON `true`, and
+ * a present `pendingItem` or `account` must be a string, `downloaded` counts only as a JSON `true`, and
  * `interruptions` is clamped to `0..MAX_DOWNLOAD_RUN_ATTEMPTS`.
  */
 internal fun parseDownloadQueue(json: String): DownloadQueue? =
@@ -114,6 +134,7 @@ internal fun parseDownloadQueue(json: String): DownloadQueue? =
         val albumHref = root.opt(KEY_ALBUM_HREF) as? String
         val array = root.opt(KEY_ENTRIES) as? JSONArray
         val pending = root.opt(KEY_PENDING_ITEM)
+        val account = root.opt(KEY_ACCOUNT)
         val entries =
             array?.let { a ->
                 List(a.length()) { i ->
@@ -124,7 +145,8 @@ internal fun parseDownloadQueue(json: String): DownloadQueue? =
             }
         val malformed =
             serverUrl == null || albumHref == null || entries == null || entries.any { it == null } ||
-                (root.has(KEY_PENDING_ITEM) && pending !is String)
+                (root.has(KEY_PENDING_ITEM) && pending !is String) ||
+                (root.has(KEY_ACCOUNT) && account !is String)
         if (malformed) {
             null
         } else {
@@ -133,6 +155,7 @@ internal fun parseDownloadQueue(json: String): DownloadQueue? =
                 albumHref = albumHref.orEmpty(),
                 entries = entries.orEmpty().filterNotNull(),
                 pendingItem = pending as? String,
+                account = account as? String,
                 interruptions =
                     (root.opt(KEY_INTERRUPTIONS) as? Number)
                         ?.toLong()

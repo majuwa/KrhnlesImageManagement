@@ -170,7 +170,51 @@ class LocalMediaWriterTest {
     }
 
     @Test
-    fun `free bytes is not negative`() {
-        assertTrue(writer.freeBytes() >= 0L)
+    fun `any provider failure is a write failure whatever its type`() {
+        listOf<RuntimeException>(
+            UnsupportedOperationException("no"),
+            NullPointerException("npe"),
+            ArithmeticException("x"),
+        ).forEach { failure ->
+            FakeMediaStoreProvider.insertFailure = failure
+            assertThrows(failure.toString(), LocalMediaWriteException::class.java) {
+                writer.insertPending(path, "a.jpg", "image/jpeg")
+            }
+        }
+        FakeMediaStoreProvider.insertFailure = null
+
+        val item = writer.insertPending(path, "a.jpg", "image/jpeg")
+        FakeMediaStoreProvider.updateFailure = UnsupportedOperationException("no")
+        assertThrows(LocalMediaWriteException::class.java) { item.publish() }
     }
+
+    @Test
+    fun `a destination that fails with a runtime error is a write failure`() {
+        val opening = LocalMediaWriter(context) { _, _ -> throw UnsupportedOperationException("no stream") }
+        val item = opening.insertPending(path, "a.jpg", "image/jpeg")
+        assertThrows(LocalMediaWriteException::class.java) { item.write { } }
+
+        val writing =
+            LocalMediaWriter(context) { _, _ ->
+                object : OutputStream() {
+                    override fun write(b: Int) = throw UnsupportedOperationException("provider died")
+                }
+            }
+        val second = writing.insertPending(path, "b.jpg", "image/jpeg")
+        assertThrows(LocalMediaWriteException::class.java) { second.write { it.write(1) } }
+    }
+
+    @Test
+    fun `a failing delete reports false instead of throwing`() =
+        runTest {
+            val item = writer.insertPending(path, "a.jpg", "image/jpeg")
+            FakeMediaStoreProvider.deleteFailure = IllegalStateException("provider")
+
+            assertFalse(item.discard())
+
+            FakeMediaStoreProvider.deleteFailure = UnsupportedOperationException("no")
+            assertFalse(item.discard())
+            FakeMediaStoreProvider.deleteFailure = null
+            assertTrue(item.discard())
+        }
 }

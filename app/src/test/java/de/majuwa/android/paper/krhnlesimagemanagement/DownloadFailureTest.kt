@@ -19,8 +19,11 @@ import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.security.GeneralSecurityException
 import java.security.cert.CertificateException
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlin.coroutines.cancellation.CancellationException
 
 @RunWith(RobolectricTestRunner::class)
@@ -43,6 +46,11 @@ class DownloadFailureTest {
                 http(503) to DownloadFailure.ServerError,
                 http(429) to DownloadFailure.ServerError,
                 SSLHandshakeException("untrusted") to DownloadFailure.Certificate,
+                SSLPeerUnverifiedException("pin") to DownloadFailure.Certificate,
+                // A reset during a read is not a trust problem.
+                SSLException("Connection reset") to DownloadFailure.Connection,
+                IOException("wrapped", SSLException("Read error")) to DownloadFailure.Connection,
+                GeneralSecurityException("keystore") to DownloadFailure.Connection,
                 IOException("wrapped", CertificateException("pin")) to DownloadFailure.Certificate,
                 UnknownHostException() to DownloadFailure.Connection,
                 ConnectException() to DownloadFailure.Connection,

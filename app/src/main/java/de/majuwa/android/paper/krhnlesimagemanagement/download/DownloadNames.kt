@@ -8,8 +8,11 @@ import kotlin.random.Random
 /** Folder below `Pictures/` that holds every saved album folder. Not localized on purpose. */
 internal const val DOWNLOAD_ROOT_FOLDER = "KroehnSync"
 
-/** Longest saved file name, in UTF-8 bytes (the usual file-system limit). */
-internal const val MAX_DOWNLOAD_NAME_BYTES = 255
+/**
+ * Longest saved file name, in UTF-8 bytes. Below the usual 255-byte file-system limit on purpose:
+ * MediaProvider adds ` (n)` for a taken name and `.pending-<expiry>-` while an item is pending.
+ */
+internal const val MAX_DOWNLOAD_NAME_BYTES = 200
 
 /** Longest album folder name, in UTF-8 bytes. */
 internal const val MAX_ALBUM_FOLDER_BYTES = 100

@@ -28,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.shadows.ShadowToast
 
 /** "Save to device" in the album's selection mode. */
 @OptIn(ExperimentalTestApi::class)
@@ -73,6 +74,39 @@ class AlbumDetailSaveTest {
         assertEquals(listOf("/Album/" to listOf("/Album/a.jpg", "/Album/c.jpg")), requester.requests)
         assertEquals(0, composeTestRule.onAllNodesWithContentDescription("Save to device").fetchSemanticsNodes().size)
         assertEquals(0, composeTestRule.onAllNodesWithContentDescription("Cancel selection").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `a save that requests nothing tells the user and keeps the selection`() {
+        val credentials = FakeCredentialRepository(WebDavConfig("https://cloud.example.com/dav/", "u", "p"))
+        val vm =
+            AlbumDetailViewModel(
+                application = RuntimeEnvironment.getApplication() as Application,
+                credentialRepo = credentials,
+                repoFactory = { _, _ -> repo },
+                backgroundDispatcher = Dispatchers.Unconfined,
+                trustedCertificates = FakeTrustedCertificateRepository(),
+                downloadRequester = requester,
+            )
+        composeTestRule.setContent {
+            KrhnlesImageManagementTheme { AlbumDetailScreen(vm, "/Album/", {}, {}, {}, {}) }
+        }
+        composeTestRule.waitUntil(5_000) { vm.detailState.value.thumbnailUrls.size == 3 }
+        composeTestRule.onNodeWithContentDescription("Photo 1 of 3").performTouchInput { longClick() }
+        // The configuration changes while the selection is open: the loaded album is dropped.
+        credentials.setConfig(WebDavConfig())
+        composeTestRule.waitUntil(5_000) { vm.detailState.value.error != null }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithContentDescription("Save to device").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("Nothing was requested", emptyList<Pair<String, List<String>>>(), requester.requests)
+        assertEquals(
+            "These photos cannot be saved right now. Reload the album and try again.",
+            ShadowToast.getTextOfLatestToast(),
+        )
+        assertEquals(1, composeTestRule.onAllNodesWithContentDescription("Save to device").fetchSemanticsNodes().size)
     }
 
     @Test

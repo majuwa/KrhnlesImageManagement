@@ -211,6 +211,24 @@
 
   Record the result in the PR.
 
+## 10. Review fixes
+
+- [x] 10.1 `Certificate` only for `CertificateException` / `SSLHandshakeException` / `SSLPeerUnverifiedException` (shared `hasCertificateFailure()`); a plain `SSLException` is `Connection`. `DownloadFailureTest`.
+- [x] 10.2 A `Connection` failure without a validated network ends the run with `Result.retry()`, queue and markers kept, no interruption counted (`networkAvailable` seam, backstop on `runAttemptCount`). `DownloadWorkerRunTest`.
+- [x] 10.3 `DownloadWorkerCancelWorkManagerTest`: a real user cancel (`cancelWorkById`) is recognized by the real rule and finalizes the queue; a constraint stop keeps it.
+- [x] 10.4 A pending-item record is cleared only after a real delete; `providerCall` catches every non-cancellation exception; every writer failure is a `LocalMediaWriteException`. `LocalMediaWriterTest`, `DownloadWorkerRunTest`.
+- [x] 10.5 Content checks fail closed: unparseable `Content-Type`, non-`identity` `Content-Encoding`, only allow-listed image subtypes, unknown length only when chunked (HTTP/1.x). `WebDavClientDownloadTest`.
+- [x] 10.6 File names are at most 200 bytes. `DownloadNamesTest`.
+- [x] 10.7 A stop found while handling a refused foreground service is rethrown before an interruption is counted. `DownloadWorkerRunTest`.
+- [x] 10.8 Viewer marks a photo saved only when a download was requested; both entry points tell the user when nothing was requested; the selection stays; a saved button has a "Saved" state description. `AlbumDetailViewModelSaveTest`, `AlbumDetailSaveTest`, `FullscreenViewerSaveTest`.
+- [x] 10.9 Only the lock wait is bounded (30 s), the sweep separately (60 s). `DownloadEnqueuerTest`.
+- [x] 10.10 Free space is re-checked every 4 MiB while streaming; an unknown length needs more than the margin free. `DownloadWorkerRunTest`.
+- [x] 10.11 First-bytes signature check per file type before the pending item is inserted. `ImageSignatureTest`, `DownloadWorkerRunTest`.
+- [x] 10.12 The queue carries an account fingerprint (SHA-256 of URL and user name); a mismatch fails the rest with `ConfigurationChanged`; an absent field is URL-bound (documented in the design). `DownloadQueueTest`, `DownloadEnqueuerTest`, `DownloadWorkerRunTest`.
+- [x] 10.13 The sweep skips queue files younger than 30 s. `DownloadEnqueuerTest`.
+- [x] 10.14 An unrecorded pending item is discarded and the photo fails with `WriteFailed` before any byte is written. `DownloadWorkerRunTest`.
+- [x] 10.15 Info: README notes that saved copies keep their location data; the cancel-guard test asserts the allowed files never reference upload work; `DownloadOwnItemsOnlyRegressionTest` catches a delete on any receiver name; tautological test cases removed.
+
 ## Workflow follow-up
 
 - A follow-up (not this change) may extend `DownloadImageType` with video types targeting `MediaStore.Video` and a larger cap, and then show the viewer button on video pages.
