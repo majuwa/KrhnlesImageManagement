@@ -1,5 +1,7 @@
 # Tasks
 
+> Archive note: task 9.4 (manual device check on API 35+) is intentionally left unticked; it was not run on a device before archiving and is to be done and recorded in the PR.
+
 ## 1. Pure foundations: targets, names, types, failures
 
 - [x] 1.1 Extract `baseFolderUrlOf(config): HttpUrl` from `AlbumsRepository` (config URL plus normalized base-folder segments) and use it in `AlbumsRepository`. Verify that the existing `AlbumsRepository*` / `WebDavHrefTest` suites pass unchanged.
