@@ -464,8 +464,8 @@
         <item quantity="one">%d new photo or video on this device</item>
         <item quantity="other">%d new photos and videos on this device</item>
     </plurals>
-    <plurals name="reminder_new_media_more_than">
-        <item quantity="one">More than %d new photo or video on this device</item>
-        <item quantity="other">More than %d new photos and videos on this device</item>
+    <plurals name="reminder_new_media_at_least">
+        <item quantity="one">At least %d new photo or video on this device</item>
+        <item quantity="other">At least %d new photos and videos on this device</item>
     </plurals>
 </resources>

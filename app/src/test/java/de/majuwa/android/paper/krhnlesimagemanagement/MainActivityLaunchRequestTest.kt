@@ -18,9 +18,11 @@ import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NEW_PHOTOS_REMIND
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.ACTION_SHOW_NEW_MEDIA
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.AppLaunchRequest
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.LaunchRequestViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -115,12 +117,22 @@ class MainActivityLaunchRequestTest {
     }
 
     @Test
+    fun `a launch from the recents screen offers nothing`() {
+        val controller = launch(Intent(reminderIntent).addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)).create()
+        assertNull(pendingOf(controller.get()))
+    }
+
+    @Test
     fun `a share-mode instance keeps the share and offers nothing`() {
         val controller = launch(shareIntent).create()
         val activity = controller.get()
+        val shareBefore = ViewModelProvider(activity)[ShareViewModel::class.java].uiState.value
         controller.newIntent(reminderIntent)
 
         assertNull(pendingOf(activity))
+        assertFalse(activity.isFinishing)
+        // The share screen's state is untouched by the foreign action.
+        assertEquals(shareBefore, ViewModelProvider(activity)[ShareViewModel::class.java].uiState.value)
     }
 
     @Test
@@ -144,12 +156,12 @@ class MainActivityLaunchRequestTest {
     }
 
     @Test
-    fun `a recreated activity does not reconcile again`() {
+    fun `a recreated activity still reconciles (once per process is guarded by the controller)`() {
         runBlocking { store.saveNewPhotosReminder(true, ReminderInterval.Weekly) }
 
         launch(Intent(Intent.ACTION_MAIN)).create(Bundle())
 
-        assertTrue(!waitForWork())
+        assertTrue("reconcile did not enqueue the periodic work", waitForWork())
     }
 
     private companion object {

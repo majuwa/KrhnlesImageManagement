@@ -104,15 +104,27 @@ internal class ReminderNotifier(
     ): android.app.Notification {
         val plural =
             when {
-                count.isLowerBound -> R.plurals.reminder_new_media_more_than
+                count.isLowerBound -> R.plurals.reminder_new_media_at_least
                 sinceLastUpload -> R.plurals.reminder_new_media_since_upload
                 else -> R.plurals.reminder_new_media
             }
+        val title = context.getString(R.string.reminder_notification_title)
+        val smallIcon = IconCompat.createWithResource(context, R.drawable.ic_notification_upload)
+        // The count is private (the lock screen shows only the title): a public version without it.
+        val publicVersion =
+            NotificationCompat
+                .Builder(context, REMINDER_CHANNEL_ID)
+                .setSmallIcon(smallIcon)
+                .setContentTitle(title)
+                .build()
         return NotificationCompat
             .Builder(context, REMINDER_CHANNEL_ID)
-            .setSmallIcon(IconCompat.createWithResource(context, R.drawable.ic_notification_upload))
-            .setContentTitle(context.getString(R.string.reminder_notification_title))
+            .setSmallIcon(smallIcon)
+            .setContentTitle(title)
             .setContentText(context.resources.getQuantityString(plural, count.total, count.total))
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion)
             .setAutoCancel(true)
             .setContentIntent(contentIntent())
             .build()

@@ -21,6 +21,6 @@ When at least one item is marked uploaded and no selection is active, the top ba
 - **WHEN** the filter is already on and the app is opened from the new-photos reminder
 - **THEN** the filter is still on
 
-#### Scenario: Reminder during a selection
+#### Scenario: Reminder during a selection (covered by `PhotoGridViewModelTest`)
 - **WHEN** an uploaded and a not uploaded photo are selected and the app is opened from the new-photos reminder
 - **THEN** the filter is on and only the not uploaded photo stays selected

@@ -31,8 +31,15 @@ interface NewPhotosReminderRepository {
         interval: ReminderInterval,
     )
 
-    /** Records when the last reminder was posted. */
-    suspend fun markNewPhotosReminderShown(atMillis: Long)
+    /**
+     * Records when the last reminder was posted, but only if the reminder is still on and still the one that
+     * started at [expectedSinceMillis] (one edit): a worker that finishes after a logout or a switch off / on
+     * writes nothing.
+     */
+    suspend fun markNewPhotosReminderShown(
+        atMillis: Long,
+        expectedSinceMillis: Long,
+    )
 }
 
 interface CredentialRepository : NewPhotosReminderRepository {

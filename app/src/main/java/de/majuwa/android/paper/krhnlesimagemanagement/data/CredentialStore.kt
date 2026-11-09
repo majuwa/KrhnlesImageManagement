@@ -256,8 +256,17 @@ class CredentialStore internal constructor(
         }
     }
 
-    override suspend fun markNewPhotosReminderShown(atMillis: Long) {
-        context.credentialDataStore.edit { it[KEY_REMINDER_LAST_SHOWN] = atMillis }
+    override suspend fun markNewPhotosReminderShown(
+        atMillis: Long,
+        expectedSinceMillis: Long,
+    ) {
+        context.credentialDataStore.edit {
+            val values = it.asMap()
+            val stillThisReminder =
+                values[KEY_REMINDER_ENABLED] as? Boolean == true &&
+                    (values[KEY_REMINDER_SINCE] as? Long ?: 0L) == expectedSinceMillis
+            if (stillThisReminder) it[KEY_REMINDER_LAST_SHOWN] = atMillis
+        }
     }
 
     override suspend fun clear() {

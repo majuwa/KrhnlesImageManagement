@@ -79,17 +79,22 @@ class NewPhotosReminderWorker internal constructor(
     )
 
     private suspend fun check(current: NewPhotosReminderSettings) {
+        // Taken before the query: an item added while counting is newer than this and still counts as new next time.
+        val startedAtMillis = seams.clock()
         val counted = countNew(current) ?: return
         if (counted.count.total <= 0 || !counted.count.hasNewSinceLastReminder) return
         val latest = readBounded { settings.newPhotosReminder.first() }
         // Disabled (or turned off and on again) while counting: post nothing.
         if (latest == null || !latest.enabled || latest.sinceMillis != current.sinceMillis) return
         notifier.post(counted.count, sinceLastUpload = counted.baselineMillis > current.sinceMillis)
-        runCatching { withTimeoutOrNull(STORE_READ_TIMEOUT_MS) { settings.markNewPhotosReminderShown(seams.clock()) } }
-            .onFailure {
-                if (it is CancellationException) throw it
-                Log.w(TAG, "Saving the reminder time failed: ${it.javaClass.simpleName}")
-            }
+        runCatching {
+            withTimeoutOrNull(
+                STORE_READ_TIMEOUT_MS,
+            ) { settings.markNewPhotosReminderShown(startedAtMillis, current.sinceMillis) }
+        }.onFailure {
+            if (it is CancellationException) throw it
+            Log.w(TAG, "Saving the reminder time failed: ${it.javaClass.simpleName}")
+        }
     }
 
     /** The count, or null when nothing may be queried or the answer is unreliable. */

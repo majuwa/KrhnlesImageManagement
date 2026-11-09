@@ -39,15 +39,21 @@ class NewPhotosReminderWorkerTest {
             interval: ReminderInterval,
         ) = error("the worker never saves the setting")
 
-        override suspend fun markNewPhotosReminderShown(atMillis: Long) {
+        // Like the real store: one conditional edit (still on, still the same reminder).
+        override suspend fun markNewPhotosReminderShown(
+            atMillis: Long,
+            expectedSinceMillis: Long,
+        ) {
+            val current = state.value
+            if (!current.enabled || current.sinceMillis != expectedSinceMillis) return
             shownWrites += atMillis
-            state.value = state.value.copy(lastShownMillis = atMillis)
+            state.value = current.copy(lastShownMillis = atMillis)
         }
     }
 
     private class Notifier(
         var allowed: Boolean = true,
-        val onPost: () -> Unit = {},
+        var onPost: () -> Unit = {},
     ) : ReminderNotifications {
         val posted = mutableListOf<Pair<NewMediaCount, Boolean>>()
 
@@ -85,12 +91,14 @@ class NewPhotosReminderWorkerTest {
         var calls = 0
         var lastBaseline = -1L
         var lastKinds: Set<MediaKind> = emptySet()
+        var onQuery: () -> Unit = {}
 
         override suspend fun query(
             kinds: Set<MediaKind>,
             baselineMillis: Long,
         ): NewMediaQueryResult {
             calls++
+            onQuery()
             lastKinds = kinds
             lastBaseline = baselineMillis
             return result
@@ -106,6 +114,8 @@ class NewPhotosReminderWorkerTest {
     private var access = MediaAccess(images = true, video = true, userSelected = false)
     private val query =
         Query(NewMediaQueryResult.Rows((1L..37L).map { NewMediaRow(it, 5_000L) }, capReached = false))
+
+    private var clock: () -> Long = { NOW }
 
     private fun run(): ListenableWorker.Result {
         val factory =
@@ -124,7 +134,7 @@ class NewPhotosReminderWorkerTest {
                         query,
                         notifier,
                         scheduler,
-                        ReminderWorkerSeams({ access }, { NOW }),
+                        ReminderWorkerSeams({ access }, { clock() }),
                     )
             }
         val worker = TestListenableWorkerBuilder<NewPhotosReminderWorker>(context).setWorkerFactory(factory).build()
@@ -143,6 +153,29 @@ class NewPhotosReminderWorkerTest {
         )
         assertEquals(listOf(NOW), settings.shownWrites)
         assertEquals(1_000L, query.lastBaseline)
+    }
+
+    @Test
+    fun `the reminder time is taken before the query`() {
+        val events = mutableListOf<String>()
+        clock = {
+            events += "clock"
+            NOW
+        }
+        query.onQuery = { events += "query" }
+        run()
+        assertEquals("clock", events.first())
+        assertTrue(events.indexOf("clock") < events.indexOf("query"))
+        assertEquals(listOf(NOW), settings.shownWrites)
+    }
+
+    @Test
+    fun `logout while posting writes no reminder time`() {
+        notifier.onPost = { settings.state.value = NewPhotosReminderSettings() }
+        run()
+        assertEquals(1, notifier.posted.size)
+        assertTrue(settings.shownWrites.isEmpty())
+        assertEquals(NewPhotosReminderSettings(), settings.state.value)
     }
 
     @Test
@@ -240,7 +273,7 @@ class NewPhotosReminderWorkerTest {
                         query,
                         notifier,
                         scheduler,
-                        ReminderWorkerSeams({ access }, { NOW }),
+                        ReminderWorkerSeams({ access }, { clock() }),
                     )
             }
         return TestListenableWorkerBuilder<NewPhotosReminderWorker>(context).setWorkerFactory(factory).build()
@@ -292,7 +325,7 @@ class NewPhotosReminderWorkerTest {
                         racing,
                         notifier,
                         scheduler,
-                        ReminderWorkerSeams({ access }, { NOW }),
+                        ReminderWorkerSeams({ access }, { clock() }),
                     )
             }
         val worker = TestListenableWorkerBuilder<NewPhotosReminderWorker>(context).setWorkerFactory(factory).build()

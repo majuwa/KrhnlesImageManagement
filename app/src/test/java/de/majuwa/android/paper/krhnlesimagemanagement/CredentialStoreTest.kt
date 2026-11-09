@@ -458,7 +458,7 @@ class CredentialStoreTest {
         runTest {
             store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
             val since = store.newPhotosReminder.first().sinceMillis
-            store.markNewPhotosReminderShown(since + 5)
+            store.markNewPhotosReminderShown(since + 5, since)
 
             store.saveNewPhotosReminder(true, ReminderInterval.EveryTwoWeeks)
             val changed = store.newPhotosReminder.first()
@@ -469,6 +469,32 @@ class CredentialStoreTest {
             store.saveNewPhotosReminder(false, ReminderInterval.EveryTwoWeeks)
             store.saveNewPhotosReminder(true, ReminderInterval.EveryTwoWeeks)
             assertEquals(0L, store.newPhotosReminder.first().lastShownMillis)
+        }
+
+    @Test
+    fun `marking the reminder shown is conditional on still being on and the same since`() =
+        runTest {
+            store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
+            val since = store.newPhotosReminder.first().sinceMillis
+
+            store.markNewPhotosReminderShown(9L, since + 1)
+            assertEquals("another reminder generation", 0L, store.newPhotosReminder.first().lastShownMillis)
+
+            store.markNewPhotosReminderShown(9L, since)
+            assertEquals(9L, store.newPhotosReminder.first().lastShownMillis)
+
+            store.clear()
+            store.markNewPhotosReminderShown(11L, since)
+            assertEquals(
+                "after logout nothing is written",
+                NewPhotosReminderSettings(),
+                store.newPhotosReminder.first(),
+            )
+
+            store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
+            store.saveNewPhotosReminder(false, ReminderInterval.Weekly)
+            store.markNewPhotosReminderShown(12L, store.newPhotosReminder.first().sinceMillis)
+            assertEquals("disabled", 0L, store.newPhotosReminder.first().lastShownMillis)
         }
 
     @Test
@@ -487,7 +513,7 @@ class CredentialStoreTest {
         runTest {
             store.save("https://cloud.example.com/dav/", "user", "secret")
             store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
-            store.markNewPhotosReminderShown(7L)
+            store.markNewPhotosReminderShown(7L, store.newPhotosReminder.first().sinceMillis)
             store.clear()
             assertEquals(NewPhotosReminderSettings(), store.newPhotosReminder.first())
         }
@@ -505,7 +531,7 @@ class CredentialStoreTest {
             val before = emissions.size
 
             store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
-            store.markNewPhotosReminderShown(1L)
+            store.markNewPhotosReminderShown(1L, store.newPhotosReminder.first().sinceMillis)
             store.saveBaseFolder("Photos")
             withContext(Dispatchers.Default) { delay(SETTLE_MS) }
 

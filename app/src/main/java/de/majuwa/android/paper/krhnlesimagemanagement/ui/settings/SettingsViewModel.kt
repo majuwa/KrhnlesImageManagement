@@ -29,8 +29,11 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
 import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduler
-import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduling
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.ReminderSettingsController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -111,17 +114,13 @@ class SettingsViewModel
         private val connectionTester: suspend (WebDavConfig, PinnedCertificate?) -> Result<Unit> = { config, pin ->
             WebDavClient(config, pin).testConnection()
         },
-        private val reminderScheduler: NewPhotosReminderScheduling =
-            (application as? KrhnlesApplication)?.newPhotosReminderScheduler ?: NewPhotosReminderScheduler(application),
+        /** The process-scoped reminder controller (see [defaultReminderController]). */
+        val reminder: ReminderSettingsController = defaultReminderController(application, credentialStore),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
         private var pendingBlurSaves = 0
-
-        /** The reminder switch and interval (see [ReminderSettingsController]). */
-        val reminder: ReminderSettingsController =
-            ReminderSettingsController(viewModelScope, credentialStore, reminderScheduler)
 
         /** Review confirmation and "Stop trusting" (guarded one-shots). */
         val certificateTrust: CertificateTrustController =
@@ -393,8 +392,9 @@ class SettingsViewModel
                 // Verified records first: they make local photos removable. One failing clear never
                 // skips the others.
                 clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
-                // The periodic check must not outlive the account; the credential clear resets the setting.
-                clearLogged("reminder") { reminderScheduler.cancel() }
+                // Through the controller's lock, before the credential clear: a change in flight finishes first,
+                // then the setting is stored "off" and the check cancelled.
+                clearLogged("reminder") { reminder.resetForLogout() }
                 val pinCleared = clearLogged("trusted certificate") { trustedCertificates.clear() }
                 clearLogged("credentials") { credentialStore.clear() }
                 clearLogged("uploaded markers") { uploadedPhotosRepository.clear() }
@@ -512,3 +512,19 @@ private suspend fun clearLogged(
         .onFailure { if (it is CancellationException) throw it }
         .onFailure { Log.w(TAG, "Clearing $what failed: ${it.javaClass.simpleName}") }
         .isSuccess
+
+/**
+ * The application's process-scoped controller when [store] is the application's own [CredentialStore] (the
+ * production case); otherwise (an injected store, i.e. tests) a standalone one over that store, so the setting
+ * and its schedule always belong to the same store.
+ */
+private fun defaultReminderController(
+    application: Application,
+    store: CredentialRepository,
+): ReminderSettingsController =
+    (application as? KrhnlesApplication)?.takeIf { store is CredentialStore }?.reminderController
+        ?: ReminderSettingsController(
+            CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            store,
+            NewPhotosReminderScheduler(application),
+        )

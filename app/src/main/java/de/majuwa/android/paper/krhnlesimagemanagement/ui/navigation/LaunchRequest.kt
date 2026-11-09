@@ -20,8 +20,12 @@ sealed interface AppLaunchRequest {
  * extras and data of a foreign intent are never interpreted. Share intents are checked before this.
  */
 fun launchRequestOf(intent: Intent?): AppLaunchRequest? =
-    when (intent?.action) {
-        ACTION_SHOW_NEW_MEDIA -> AppLaunchRequest.ShowNewMedia
+    when {
+        // Re-opened from the recents screen: the intent is the old one, the user did not tap the reminder.
+        intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0 -> null
+
+        intent.action == ACTION_SHOW_NEW_MEDIA -> AppLaunchRequest.ShowNewMedia
+
         else -> null
     }
 

@@ -36,9 +36,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeReminderSchedule
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.ReminderSettingsController
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.theme.KrhnlesImageManagementTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -88,7 +92,12 @@ class ReminderSettingUiTest {
                 application = app,
                 credentialStore = store,
                 trustedCertificates = FakeTrustedCertificateRepository(),
-                reminderScheduler = scheduler,
+                reminder =
+                    ReminderSettingsController(
+                        CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+                        store,
+                        scheduler,
+                    ),
             )
         val owner =
             object : ActivityResultRegistryOwner {

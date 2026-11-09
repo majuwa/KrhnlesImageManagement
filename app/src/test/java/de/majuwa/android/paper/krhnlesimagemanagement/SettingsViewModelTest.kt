@@ -848,7 +848,10 @@ class SettingsViewModelTest {
             interval: ReminderInterval,
         ) = Unit
 
-        override suspend fun markNewPhotosReminderShown(atMillis: Long) = Unit
+        override suspend fun markNewPhotosReminderShown(
+            atMillis: Long,
+            expectedSinceMillis: Long,
+        ) = Unit
 
         override suspend fun clear() = Unit
     }

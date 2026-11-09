@@ -21,6 +21,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduler
 import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduling
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.ReminderSettingsController
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.recoverCancelledUploads
 import kotlinx.coroutines.CoroutineScope
@@ -54,22 +55,17 @@ class KrhnlesApplication :
     val newPhotosReminderScheduler: NewPhotosReminderScheduling by lazy { NewPhotosReminderScheduler(this) }
 
     /**
-     * Brings the periodic reminder check in line with the stored setting, in [appScope]: the setting is read
-     * bounded (3 s); an unreadable setting changes nothing.
+     * The one writer of the reminder setting and schedule, in [appScope] (survives leaving Settings; Settings,
+     * app start and logout share its lock).
      */
-    fun reconcileInBackground(): Job =
-        appScope.launch {
-            val settings =
-                runCatching {
-                    withTimeoutOrNull(
-                        REMINDER_READ_TIMEOUT_MS,
-                    ) { CredentialStore(this@KrhnlesApplication).newPhotosReminder.first() }
-                }.onFailure {
-                    if (it is CancellationException) throw it
-                    Log.w("KrhnlesApplication", "Reading the reminder setting failed: ${it.javaClass.simpleName}")
-                }.getOrNull() ?: return@launch
-            newPhotosReminderScheduler.reconcile(settings)
-        }
+    val reminderController: ReminderSettingsController by lazy {
+        ReminderSettingsController(appScope, CredentialStore(this), newPhotosReminderScheduler)
+    }
+
+    /** Brings the periodic reminder check in line with the stored setting, once per process. */
+    fun reconcileInBackground() {
+        reminderController.reconcileOnce()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -96,7 +92,6 @@ class KrhnlesApplication :
 
     private companion object {
         val recoveryStarted = AtomicBoolean(false)
-        const val REMINDER_READ_TIMEOUT_MS = 3_000L
     }
 
     override fun newImageLoader(context: Context): ImageLoader {

@@ -79,7 +79,7 @@ Exactly one periodic background check SHALL exist while the reminder is on, repe
 - **THEN** no periodic check is scheduled
 
 ### Requirement: Schedule is reconciled with the stored setting
-On app start the scheduled check SHALL be brought in line with the stored setting without resetting the timing of an existing check: missing while on → scheduled; a different period while on → the stored interval's period; present while off → cancelled. A check that runs while the stored setting is off SHALL cancel itself without posting anything. An unreadable setting SHALL change nothing. Quick successive changes of the setting SHALL leave the check consistent with the last stored value.
+On app start the scheduled check SHALL be brought in line with the stored setting without resetting the timing of an existing check: missing while on → scheduled; a different period while on → the stored interval's period; present while off → cancelled. A check that runs while the stored setting is off SHALL cancel itself without posting anything. An unreadable setting SHALL change nothing. Quick successive changes of the setting SHALL leave the check consistent with the last stored value. Applying a change SHALL NOT depend on the Settings screen staying open, and the app-start reconcile and the logout reset SHALL be ordered with Settings changes (one lock).
 
 #### Scenario: Missing check is restored
 - **WHEN** the reminder is stored as on, no check is scheduled and the app starts
@@ -92,6 +92,18 @@ On app start the scheduled check SHALL be brought in line with the stored settin
 #### Scenario: Quick toggling
 - **WHEN** the user turns the reminder on, off and on again in quick succession
 - **THEN** the reminder is on and exactly one periodic check is scheduled
+
+#### Scenario: Leaving Settings does not lose a change
+- **WHEN** the user turns the reminder on and leaves Settings before the check is scheduled
+- **THEN** the check is still scheduled
+
+#### Scenario: Reconcile races a change
+- **WHEN** the app-start reconcile runs while a Settings change is being applied
+- **THEN** the reconcile applies the value that change stored, not the previous one
+
+#### Scenario: Logout during a change
+- **WHEN** the user logs out while a change is being applied
+- **THEN** the stored setting is off and the last scheduler action is a cancel
 
 #### Scenario: Stale check cancels itself
 - **WHEN** the check runs while the stored reminder is off
@@ -166,18 +178,22 @@ The media query SHALL read only what is needed to decide newness (no thumbnails,
 
 #### Scenario: Row cap reached
 - **WHEN** more new items exist than the row limit
-- **THEN** the notification states "more than" the counted number
+- **THEN** the notification states "At least" the counted number
 
 #### Scenario: Query times out
 - **WHEN** the media query does not finish within the time limit
 - **THEN** no notification is posted and the last-reminder time is unchanged
 
 ### Requirement: Reminder notification
-When the count is greater than 0 and at least one counted item was added after the previous reminder, the check SHALL post one notification on its own "Reminders" channel with its own id (distinct from every upload and download notification id), replacing a previous reminder. Its text SHALL use plurals: "N new photos and videos since your last upload", or a variant without "since your last upload" when no upload happened since the reminder was turned on. It SHALL then store the reminder time.
+When the count is greater than 0 and at least one counted item was added after the previous reminder, the check SHALL post one notification on its own "Reminders" channel with its own id (distinct from every upload and download notification id), replacing a previous reminder. Its text SHALL use plurals: "N new photos and videos since your last upload", or a variant without "since your last upload" when no upload happened since the reminder was turned on. It SHALL then store the reminder time, taken before the media query started, and only while the reminder is still on and unchanged (a check finishing after logout SHALL write nothing). The text SHALL read "At least N" when the count is a lower bound. The notification SHALL be private on the lock screen: its public version SHALL show the title only, never the count.
 
 #### Scenario: New items notify
 - **WHEN** the check counts 37 new items and nothing was reminded before
 - **THEN** a notification "37 new photos and videos since your last upload" is shown on the Reminders channel
+
+#### Scenario: Lock screen
+- **WHEN** the device is locked and the reminder is shown
+- **THEN** only the title is visible, not the count
 
 #### Scenario: Singular
 - **WHEN** the check counts 1 new item
@@ -207,7 +223,7 @@ The check SHALL NOT post and SHALL NOT update the last-reminder time when the no
 - **THEN** no notification is posted
 
 ### Requirement: Tapping the reminder opens the filtered photo grid
-Tapping the reminder SHALL open the app on the photo grid with the "show only new photos" filter on, whether the app was closed, in the background or showing another screen, and SHALL dismiss the notification. The request SHALL be applied once: recreating the activity SHALL NOT apply it again. The tap SHALL use an explicit, immutable pending intent to the app's main activity.
+Tapping the reminder SHALL open the app on the photo grid with the "show only new photos" filter on, whether the app was closed, in the background or showing another screen, and SHALL dismiss the notification. The request SHALL be applied once: recreating the activity SHALL NOT apply it again, and an intent re-delivered from the recents screen SHALL NOT be a request. The tap SHALL use an explicit, immutable pending intent to the app's main activity.
 
 #### Scenario: Cold start
 - **WHEN** the app is not running and the user taps the reminder

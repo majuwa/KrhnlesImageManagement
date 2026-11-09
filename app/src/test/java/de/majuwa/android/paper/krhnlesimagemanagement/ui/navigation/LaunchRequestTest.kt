@@ -26,6 +26,13 @@ class LaunchRequestTest {
     }
 
     @Test
+    fun `an intent re-delivered from the recents screen is no request`() {
+        val fromHistory = Intent(ACTION_SHOW_NEW_MEDIA).addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
+        assertNull(launchRequestOf(fromHistory))
+        assertEquals(AppLaunchRequest.ShowNewMedia, launchRequestOf(Intent(ACTION_SHOW_NEW_MEDIA)))
+    }
+
+    @Test
     fun `extras and data are ignored`() {
         val intent =
             Intent(ACTION_SHOW_NEW_MEDIA)

@@ -56,7 +56,7 @@ class ReminderNotifierTest {
         notifier.post(NewMediaCount(5, true, false), sinceLastUpload = false)
         assertEquals("5 new photos and videos on this device", text(requireNotNull(posted(1003))))
         notifier.post(NewMediaCount(50_000, true, true), sinceLastUpload = true)
-        assertEquals("More than 50000 new photos and videos on this device", text(requireNotNull(posted(1003))))
+        assertEquals("At least 50000 new photos and videos on this device", text(requireNotNull(posted(1003))))
     }
 
     @Test
@@ -74,6 +74,20 @@ class ReminderNotifierTest {
         val expectedFlags =
             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         assertEquals(expectedFlags, intent.flags and expectedFlags)
+    }
+
+    @Test
+    fun `the lock screen shows only the title, never the count`() {
+        notifier.post(NewMediaCount(37, true, false), sinceLastUpload = true)
+        val n = requireNotNull(posted(1003))
+        assertEquals(Notification.VISIBILITY_PRIVATE, n.visibility)
+        assertEquals(Notification.CATEGORY_REMINDER, n.category)
+        val public = requireNotNull(n.publicVersion)
+        assertEquals("Photos waiting for backup", public.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertNull(public.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertNull(public.extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+        assertNull(public.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+        assertNull(public.tickerText)
     }
 
     @Test

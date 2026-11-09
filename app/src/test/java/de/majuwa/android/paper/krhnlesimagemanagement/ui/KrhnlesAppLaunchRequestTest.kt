@@ -119,17 +119,22 @@ class KrhnlesAppLaunchRequestTest {
     }
 
     @Test
-    fun `recreation after consumption does not apply the request again`() {
+    fun `a filter the user cleared after the request stays off after recreation`() {
         val tester = StateRestorationTester(rule)
         requests.value = AppLaunchRequest.ShowNewMedia
         setApp(tester = tester)
         rule.waitUntilAtLeastOneExists(hasText(FILTER_ON), timeoutMillis = 5_000)
         rule.waitForIdle()
         assertEquals(1, consumed)
+        // The user turns the filter off again (the chip clears it).
+        rule.onNodeWithText(FILTER_ON).performClick()
+        rule.waitUntilDoesNotExist(hasText(FILTER_ON), timeoutMillis = 5_000)
 
         tester.emulateSavedInstanceStateRestore()
         rule.waitForIdle()
 
+        // A re-applied request would show the chip again.
+        rule.onNodeWithText(FILTER_ON).assertDoesNotExist()
         assertEquals(1, consumed)
         assertNull(requests.value)
     }
@@ -148,6 +153,9 @@ class KrhnlesAppLaunchRequestTest {
     }
 
     // ── The navigation primitive with a running album screen ────────────────
+    // Limitation: the real host cannot be used here, because KrhnlesApp creates AlbumDetailViewModel with the
+    // default factory (real repositories, no seam for a suspending deletion fake). The tests below therefore
+    // pin the navigation primitive (`openPhotosForLaunchRequest`) with a stand-in ViewModel.
 
     /** A stand-in for the album detail's ViewModel: holds a "running deletion" and records `onCleared`. */
     class DetailViewModel : ViewModel() {
@@ -159,7 +167,7 @@ class KrhnlesAppLaunchRequestTest {
     }
 
     @Test
-    fun `leaving an album through the request keeps its view model and the album is restored through the tab`() {
+    fun `navigation primitive with a stand-in view model keeps the album subtree saved and restorable`() {
         lateinit var nav: NavHostController
         var detail: DetailViewModel? = null
         rule.setContent {

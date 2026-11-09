@@ -44,10 +44,11 @@ class MainActivity : ComponentActivity() {
         } else {
             if (savedInstanceState == null) {
                 // Only a fresh start: a recreated activity (rotation, process death) must not re-apply the
-                // original intent, nor re-run the reminder reconcile.
+                // original intent.
                 launchRequestOf(intent)?.let(launchRequestViewModel::offer)
-                (application as KrhnlesApplication).reconcileInBackground()
             }
+            // Once per process (guarded in the controller), also after process death restored the activity.
+            (application as KrhnlesApplication).reconcileInBackground()
             // A running instance receives taps on the reminder here (CLEAR_TOP + SINGLE_TOP). Share-mode
             // instances never register: the share screen stays and the request is dropped.
             addOnNewIntentListener { newIntent ->

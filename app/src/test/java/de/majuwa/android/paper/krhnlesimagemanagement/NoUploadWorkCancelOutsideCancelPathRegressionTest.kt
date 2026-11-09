@@ -1,5 +1,6 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NEW_PHOTOS_REMINDER_WORK_NAME
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -209,6 +210,21 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
     }
 
     @Test
+    fun `the reminder unique work name is the literal it is allowed to cancel and declared once`() {
+        // The scan's allowance is keyed on the constant's name, so its value must stay the reminder's own name
+        // (never an upload / download work name) and it must have exactly one declaration.
+        assertEquals("new_photos_reminder", NEW_PHOTOS_REMINDER_WORK_NAME)
+        val declarations =
+            File(moduleDir, "src/main")
+                .walkTopDown()
+                .filter { it.isFile && it.extension == "kt" }
+                .flatMap { file ->
+                    file.readLines().filter { reminderNameDeclaration.containsMatchIn(it) }.map { file.name }
+                }.toList()
+        assertEquals(listOf("NewPhotosReminderScheduler.kt"), declarations)
+    }
+
+    @Test
     fun `the files with a cancel allowance never touch upload work`() {
         assertEquals(emptyList<String>(), uploadWorkReferences(File(moduleDir, "src/main")))
     }
@@ -236,6 +252,7 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
         val cancelIntentApi = Regex("""\bcreateCancelPendingIntent\b""")
         val replacePolicy = Regex("""ExistingWorkPolicy\.REPLACE\b""")
         val periodicForbiddenPolicy = Regex("""ExistingPeriodicWorkPolicy\.(CANCEL_AND_REENQUEUE|REPLACE)\b""")
+        val reminderNameDeclaration = Regex("""\bval\s+NEW_PHOTOS_REMINDER_WORK_NAME\b""")
         val reminderCancel = Regex("""\bcancelUniqueWork\(NEW_PHOTOS_REMINDER_WORK_NAME\)""")
         val appendOrReplacePolicy = Regex("""ExistingWorkPolicy\.APPEND_OR_REPLACE\b""")
 
@@ -288,7 +305,16 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
                 .filter { file ->
                     file.readLines().filter(::isCode).any {
                         val code = it.substringBefore("//")
-                        "photo_upload" in code || "UploadWorker" in code || "uploadWorkRequest" in code
+                        listOf(
+                            "photo_upload",
+                            "UploadWorker",
+                            "uploadWorkRequest",
+                            "retryWorkName",
+                            "retry_queue_",
+                        ).any {
+                            it in
+                                code
+                        }
                     }
                 }.map { it.name }
                 .sorted()

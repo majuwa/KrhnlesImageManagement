@@ -474,6 +474,37 @@ class PhotoGridViewModelTest {
             assertEquals(setOf(2L), viewModel.uiState.value.selectedPhotoIds)
         }
 
+    @Test
+    fun `an item marked uploaded while the filter is on is deselected by the marker collector`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.showOnlyNewPhotos()
+            viewModel.togglePhotoSelection(1L)
+            viewModel.togglePhotoSelection(2L)
+
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            advanceUntilIdle()
+
+            assertEquals(setOf(2L), viewModel.uiState.value.selectedPhotoIds)
+        }
+
+    @Test
+    fun `an item marked uploaded while the filter is off stays selected`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.togglePhotoSelection(1L)
+            viewModel.togglePhotoSelection(2L)
+
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            advanceUntilIdle()
+
+            assertEquals(setOf(1L, 2L), viewModel.uiState.value.selectedPhotoIds)
+        }
+
     // ── toggleShowOnlyNewPhotos ─────────────────────────────────────────────
 
     @Test

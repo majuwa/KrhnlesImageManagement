@@ -32,15 +32,6 @@ interface NewPhotosReminderScheduling {
     suspend fun reconcile(settings: NewPhotosReminderSettings)
 }
 
-/** A scheduler that does nothing; the default where no WorkManager is involved. */
-object NoNewPhotosReminderScheduling : NewPhotosReminderScheduling {
-    override suspend fun schedule(interval: ReminderInterval) = Unit
-
-    override suspend fun cancel() = Unit
-
-    override suspend fun reconcile(settings: NewPhotosReminderSettings) = Unit
-}
-
 /**
  * The WorkManager side of the reminder. Only [ExistingPeriodicWorkPolicy.UPDATE] is used: it replaces the period
  * and keeps the enqueue time and a running instance. Every call is bounded and failures (e.g. WorkManager not

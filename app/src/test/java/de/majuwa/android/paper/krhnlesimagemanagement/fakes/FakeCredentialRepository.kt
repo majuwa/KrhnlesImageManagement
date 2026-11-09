@@ -65,9 +65,18 @@ class FakeCredentialRepository(
             }
     }
 
-    override suspend fun markNewPhotosReminderShown(atMillis: Long) {
-        reminderState.value = reminderState.value.copy(lastShownMillis = atMillis)
+    override suspend fun markNewPhotosReminderShown(
+        atMillis: Long,
+        expectedSinceMillis: Long,
+    ) {
+        val current = reminderState.value
+        if (current.enabled && current.sinceMillis == expectedSinceMillis) {
+            reminderState.value = current.copy(lastShownMillis = atMillis)
+        }
     }
+
+    /** Test helper: the current stored reminder setting. */
+    fun newPhotosReminderValue(): NewPhotosReminderSettings = reminderState.value
 
     /** Test helper: replaces the stored reminder setting. */
     fun setReminder(settings: NewPhotosReminderSettings) {
