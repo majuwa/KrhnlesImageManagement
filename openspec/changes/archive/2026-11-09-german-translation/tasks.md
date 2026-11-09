@@ -1,5 +1,7 @@
 # Tasks
 
+> Archive note: tasks 4.5 (manual de-locale screen review), 5.2 (manual device check of the per-app language; its automated part is `ErrorLocalizationUiTest`) and 7.5 (re-sync with main before merging) were left unticked on purpose; they need a device / the merge moment.
+
 > Implement this change **last**. All sibling changes that add strings are merged (only the docs-only readme-roadmap-cleanup is open). Never work from a fixed string list: translate **every string present in `app/src/main/res/values/` at implementation time** (289 `<string>` / 34 `<plurals>` at review time).
 
 ## 1. Preparation
