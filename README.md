@@ -26,18 +26,21 @@ A lightweight, privacy-focused Android application designed to selectively back 
 - **Play Videos from the Album:** Tap a video in an album to open it in the fullscreen viewer and tap the play button. The video is streamed from your server only (never stored on the device, nothing is preloaded, and nothing is sent to a third party); you can pause, seek and swipe to the next item (which stops the video). Playback also stops when you log out or the server changes, pauses when the app goes to the background and keeps playing when you rotate the screen. Credentials are only sent to your configured server, redirects are never followed and a trusted self-signed certificate is honoured like everywhere else. The device decodes the video: formats it cannot play, for example some 10-bit HEVC or Dolby Vision recordings, show "This video format is not supported on this device." Streaming uses mobile data when you are not on Wi-Fi (the Wi-Fi-only setting only applies to uploads).
 - **Large Albums:** Opening an album shows how many items have been found so far while the listing loads, using little memory even for albums with tens of thousands of photos. Very large albums (more than 20,000 photos and videos together, or a 32 MiB folder listing) show only their first items together with a notice (or, if none of the part that could be loaded contains photos or videos, an explanation instead of "No photos or videos in this album."); the duplicate and blur review then warn that their results may be incomplete. A folder list that is too large to load shows an explanation instead of a partial list.
 - **Cloud Duplicate Detector:** Scan an album for near-duplicate images and bulk-delete the extras (videos in the album are ignored; the review buttons only appear when the album has photos).
+- **Blurry Photo Review:** Scan an album for blurry photos with "Find blurry" (videos in the album are ignored; the review buttons only appear when the album has photos). The flagged photos are pre-selected: tap to change the selection, long-press to preview, then delete the selected ones from the server. How strictly photos are flagged is set by Blur sensitivity in Settings (see Upload Options). Photos that could not be deleted stay in the album, which reports how many deletions failed (see Delete Photos from Album). The analysis runs on the device (see Tech Stack).
 - **Delete Photos from Album:** Long-press any photo or video in an album to enter selection mode. Select multiple items, then tap the delete icon in the top bar. A confirmation dialog is shown before any server deletion. Photos that could not be deleted stay in the album, and a snackbar on the album screen reports how many deletions failed — also after deleting from the duplicate or blur review, which return to the album once the deletion has finished. Back (and the top-bar back / cancel-selection buttons) is disabled while any deletion runs, so it always finishes. Photos that were already deleted elsewhere (server answers "not found") are treated as deleted. Logging out or switching servers while a duplicate or blur review is open stops its scan and shows an error instead of its results. Rotating the screen during a duplicate or blur scan, on its results or while deleting keeps the scan, your selection and the deletion.
 - **Search and Sort Albums:** The Albums tab has a search field that filters the album list by name while you type, ignoring case and accents ("cafe" finds "Café", "strasse" finds "Straße"); a blank search shows all albums and a search without a match says so. The search text is kept when you rotate the screen, switch tabs, refresh, rename or delete. The sort button in the top bar offers Name A–Z (default), Name Z–A, Last modified (newest first) and Last modified (oldest first); albums for which the server reports no modification date are always listed last. The modification date is the one your server reports for the folder (Nextcloud also updates it when files inside change; other servers may only update it when direct entries change). Your sort choice is remembered across restarts, reset to Name A–Z on logout and not restored from backups or on a new device. Changing the search or the sort shows the list from its first album. Only the first 255 characters of an album name are used for search and name order. A renamed album moves to the position the current sort gives it. Note: with auto date folders the albums list shows the year folders (e.g. `2026`) as top-level albums; browsing into the month / day sub-folders is not yet supported.
 - **Manage Remote Albums:** Long-press an album in the Albums tab to rename it or delete it from the server, with confirmation and inline validation. Rename never overwrites: the new name is trimmed, must not be blank, unchanged, `.` / `..` or contain `/` or `\`, and is at most 255 UTF-8 bytes; an already existing name is reported (HTTP 412). A rename that gets no answer within 30 s is cancelled and the list is reloaded because the server may still have completed it (the same happens if the server answers with an unexpected 2xx such as 207, with a note that the rename may be incomplete). Known limitation: uploads still queued or waiting for a retry keep the old folder name and may re-create the old album after a rename.
 
 ## 🔮 Future Roadmap
-- **Blurry/Bad Photo Detection:** Smart suggestions to clean up low-quality photos and save cloud space.
-- **Blurry/Bad Photo Detection:** Smart suggestions to clean up low-quality photos and save cloud space.
+- **Browse sub-folders of an album:** Open the month and day folders inside an album (for example `2026` → `05` → `14` created by auto date folders). Today the Albums tab lists only the folders directly inside the base folder.
+- **Nextcloud login for servers with a self-signed certificate:** Today such a server is set up manually (server address, username and app password, then "Test Connection"); the browser login first needs a change in the `login-flow-nextcloud` library.
 
 ## 🛠️ Tech Stack
 - **Language:** Kotlin
 - **UI:** Jetpack Compose
 - **Image Loading:** Coil
+- **Video Playback:** AndroidX Media3 ExoPlayer with the OkHttp data source (album videos are streamed from the configured server only)
+- **Blur Detection:** Google ML Kit object detection, bundled and run on the device: photos never leave the device, but the ML Kit SDK may download updates from Google and sends usage and performance metrics of the API to Google ([ML Kit terms](https://developers.google.com/ml-kit/terms))
 - **Background Processing:** Android WorkManager
 - **Networking:** OkHttp (WebDAV via PROPFIND/MKCOL/PUT)
 - **Security:** Android Keystore (AES-256-GCM) encrypted credential storage
@@ -45,8 +48,8 @@ A lightweight, privacy-focused Android application designed to selectively back 
 
 ## ⚙️ Setup & Installation
 
-1. Clone the repository
-2. Open in Android Studio (Ladybug or newer)
+1. Clone the repository with its submodule (`git clone --recurse-submodules`, or `git submodule update --init` in an existing clone); the Nextcloud login library is built from `libs/login-flow-nextcloud`
+2. Open in an Android Studio version that supports Android Gradle Plugin 9.5 (see `gradle/libs.versions.toml`)
 3. Sync Gradle and build
 4. Run on a device with Android 15+ (API 35+)
 
@@ -55,7 +58,8 @@ A lightweight, privacy-focused Android application designed to selectively back 
   - Publishing note: `READ_MEDIA_VIDEO` requires the Google Play Console "Photo and Video Permissions" declaration.
 - **ACCESS_MEDIA_LOCATION** — requested together with the media permissions (it is not needed to use the grid). With it the app uploads the original files, so backups keep the photos' location (GPS) data; without it Android hands out copies with the location removed. Such uploads still work but are never verified, so those photos are never offered by "Remove uploaded photos from device" (removing them would lose the location). Users who already granted media access are asked once; partial-access users are never asked automatically, and a denial shows no banner.
 - **INTERNET** — required for WebDAV uploads
-- **POST_NOTIFICATIONS** — for upload progress notifications
+- **POST_NOTIFICATIONS** — for upload and download progress and result notifications and the optional new-photos reminder
+- **FOREGROUND_SERVICE** and **FOREGROUND_SERVICE_DATA_SYNC** — let uploads and album downloads keep running in the background as a data-sync foreground service with their progress notification
 
 ### Configuration (Nextcloud)
 1. Open the app and tap the Settings icon in the top bar
