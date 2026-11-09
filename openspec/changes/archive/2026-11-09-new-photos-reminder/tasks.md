@@ -56,3 +56,5 @@
 
 - `german-translation` (implemented last) must translate the new strings and plurals.
 - Archive the change after review and sync the `new-photos-reminder` and `uploaded-photo-markers` specs.
+
+> Archive note: task 7.4 (manual emulator verification, API 35+) was intentionally left unticked; it must be done by hand before release.
