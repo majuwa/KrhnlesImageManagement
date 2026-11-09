@@ -97,7 +97,7 @@ German texts SHALL address the user informally ("du", lowercase) throughout, nev
 
 #### Scenario: Informal address
 - **WHEN** a German text addresses the user, for example the hint to log in again
-- **THEN** it uses "du" / "dein" and contains no formal "Sie", "Ihnen" or "Ihr" in the middle of a sentence
+- **THEN** it uses "du" / "dein" and contains no formal "Sie" in the middle of a sentence or before a formal verb, and no "Ihnen" / "Ihr…"
 
 #### Scenario: Formal address is rejected
 - **WHEN** a German text contains "Bitte prüfen Sie die Serveradresse"
@@ -130,6 +130,10 @@ Every text the app shows to the user SHALL come from a localized string resource
 - **WHEN** the app language is German and loading the local photos fails
 - **THEN** the photo grid shows a German error message and never the exception text
 
+#### Scenario: Retry after a failed photo load
+- **WHEN** loading (or refreshing) the local photos failed and the error is shown
+- **THEN** the error state offers a Retry button that loads the photos again, and the text does not tell the user to pull down
+
 #### Scenario: Hardcoded literal is rejected
-- **WHEN** a UI source file sets a content description, text or error to a string literal containing words
+- **WHEN** a UI source file sets a content description, text or error to a string literal containing words, or shows an exception message
 - **THEN** the unit tests fail and name the file and line

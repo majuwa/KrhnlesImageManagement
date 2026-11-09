@@ -195,5 +195,18 @@ class StringResourceParityTest {
         assertTrue(StringResourceScanner.addressProblems("Prüfe Dein Passwort").isNotEmpty())
         assertTrue(StringResourceScanner.addressProblems("Prüfe dein Passwort").isEmpty())
         assertTrue(StringResourceScanner.addressProblems("Dein Passwort stimmt nicht").isEmpty())
+        // possessives are rejected even at a sentence start
+        assertTrue(StringResourceScanner.addressProblems("Ihr Server antwortet nicht.").isNotEmpty())
+        assertTrue(StringResourceScanner.addressProblems("Fertig. Ihre Fotos sind hochgeladen.").isNotEmpty())
+        assertTrue(StringResourceScanner.addressProblems("Prüfe Ihren Server").isNotEmpty())
+        assertTrue(StringResourceScanner.addressProblems("Ihrem Server fehlt etwas").isNotEmpty())
+        assertTrue(StringResourceScanner.addressProblems("Ihrer Meinung nach").isNotEmpty())
+        assertTrue(StringResourceScanner.addressProblems("Ihres Servers").isNotEmpty())
+        // "Sie" before a formal verb is rejected at a sentence start, a plural "Sie wurden" stays fine
+        listOf("haben", "können", "müssen", "sind", "werden", "möchten").forEach { verb ->
+            assertTrue(StringResourceScanner.addressProblems("Fertig. Sie $verb das Foto.").isNotEmpty())
+        }
+        assertTrue(StringResourceScanner.addressProblems("Sie können das Foto wählen.").isNotEmpty())
+        assertTrue(StringResourceScanner.addressProblems("Sie wurden hochgeladen.").isEmpty())
     }
 }

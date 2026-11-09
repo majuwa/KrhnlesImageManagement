@@ -31,7 +31,7 @@
     <string name="action_show_manual_config">Manuelle WebDAV-Konfiguration</string>
     <string name="action_find_blurry">Unscharfe finden</string>
     <string name="action_find_duplicates">Duplikate finden</string>
-    <string name="action_clear_all">Alle entfernen</string>
+    <string name="action_clear_all">Alle leeren</string>
     <string name="action_show_only_new">Nur neue</string>
     <string name="action_show_all_photos">Alle Fotos</string>
 
@@ -142,7 +142,7 @@
     </plurals>
     <string name="removal_result_cancelled">Es wurde nichts in den Papierkorb verschoben.</string>
     <string name="removal_result_failed">Die Fotos konnten nicht in den Papierkorb verschoben werden.</string>
-    <string name="error_photos_load_failed">Die Fotos konnten nicht geladen werden. Zieh nach unten, um es erneut zu versuchen.</string>
+    <string name="error_photos_load_failed">Die Fotos konnten nicht geladen werden.</string>
 
     <!-- Permission -->
     <string name="permission_rationale">Zum Durchsuchen deiner Fotos und Videos wird der Zugriff darauf benötigt.</string>
@@ -164,7 +164,7 @@
     <string name="label_occasion_name">Anlass / Ordnername</string>
     <string name="dialog_clear_upload_history_title">Upload-Verlauf leeren?</string>
     <string name="dialog_clear_upload_history_message">Dadurch werden alle Einträge im Upload-Verlauf entfernt.</string>
-    <string name="dialog_auto_date_preview_title">Upload-Ordner in der Vorschau</string>
+    <string name="dialog_auto_date_preview_title">Vorschau der Upload-Ordner</string>
     <plurals name="dialog_auto_date_preview_message">
         <item quantity="one">Die ausgewählten Fotos werden in diesen Ordner hochgeladen:</item>
         <item quantity="other">Die ausgewählten Fotos werden auf %d Ordner aufgeteilt:</item>
@@ -191,7 +191,7 @@
 
     <!-- Settings screen — login -->
     <string name="title_connect_nextcloud">Mit Nextcloud verbinden</string>
-    <string name="subtitle_connect_nextcloud">Melde dich über deinen Browser an, für eine sichere Verbindung.</string>
+    <string name="subtitle_connect_nextcloud">Melde dich für eine sichere Verbindung über deinen Browser an.</string>
     <string name="label_nextcloud_url">Nextcloud-URL</string>
     <string name="status_waiting_browser">Warte auf Anmeldung im Browser …</string>
 
@@ -210,7 +210,7 @@
     <!-- Albums -->
     <string name="empty_albums">Keine Alben gefunden.</string>
     <string name="album_search_label">Alben suchen</string>
-    <string name="cd_clear_album_search">Suche löschen</string>
+    <string name="cd_clear_album_search">Suche leeren</string>
     <string name="albums_no_match">Keine Alben passen zu „%1$s“</string>
     <string name="cd_sort_albums">Alben sortieren</string>
     <string name="album_sort_name_asc">Name A–Z</string>
@@ -234,7 +234,7 @@
     <string name="albums_error_rename_timeout">Der Server hat nicht rechtzeitig geantwortet. Das Album wurde möglicherweise trotzdem umbenannt; die Liste wird aktualisiert.</string>
     <string name="albums_error_not_configured">Du bist nicht angemeldet. Melde dich in den „Einstellungen“ an, um deine Alben zu sehen.</string>
     <string name="albums_error_invalid_url">Die Serveradresse ist keine gültige URL. Prüfe sie in den „Einstellungen“ und melde dich erneut an.</string>
-    <string name="albums_error_configuration_changed">Deine Servereinstellungen haben sich geändert. Gehe zurück und öffne das Album erneut.</string>
+    <string name="albums_error_configuration_changed">Deine Servereinstellungen haben sich geändert. Geh zurück und öffne das Album erneut.</string>
     <string name="albums_error_certificate">Sichere Verbindung fehlgeschlagen: Dem Zertifikat des Servers wird nicht vertraut. Du kannst die Verbindung unter „Einstellungen“ mit „Verbindung testen“ prüfen.</string>
     <string name="albums_error_certificate_changed">Das Zertifikat des Servers hat sich geändert. Du kannst die Verbindung unter „Einstellungen“ mit „Verbindung testen“ prüfen.</string>
     <string name="albums_error_unknown_host">Server nicht gefunden. Prüfe die Serveradresse und deine Internetverbindung.</string>
@@ -273,8 +273,8 @@
     <string name="empty_blurry">In diesem Album wurden keine unscharfen Fotos erkannt.</string>
     <string name="status_scanning_blur">Suche nach unscharfen Fotos … %1$d / %2$d</string>
     <plurals name="blur_results_summary">
-        <item quantity="one">%1$d unscharfes Foto gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
-        <item quantity="other">%1$d unscharfe Fotos gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
+        <item quantity="one">%1$d unscharfes Foto gefunden. Tippen zum Auswählen · Lange drücken für die Vorschau.</item>
+        <item quantity="other">%1$d unscharfe Fotos gefunden. Tippen zum Auswählen · Lange drücken für die Vorschau.</item>
     </plurals>
     <plurals name="delete_n_photos">
         <item quantity="one">%d Foto löschen</item>
@@ -286,8 +286,8 @@
     <string name="empty_duplicates">In diesem Album wurden keine Duplikate gefunden.</string>
     <string name="status_analyzing">Fotos werden analysiert … %1$d / %2$d</string>
     <plurals name="duplicates_results_summary">
-        <item quantity="one">%1$d Duplikatgruppe gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
-        <item quantity="other">%1$d Duplikatgruppen gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
+        <item quantity="one">%1$d Duplikatgruppe gefunden. Tippen zum Auswählen · Lange drücken für die Vorschau.</item>
+        <item quantity="other">%1$d Duplikatgruppen gefunden. Tippen zum Auswählen · Lange drücken für die Vorschau.</item>
     </plurals>
     <plurals name="group_label">
         <item quantity="one">Gruppe %1$d — %2$d ähnliches Foto</item>
@@ -314,8 +314,8 @@
         <item quantity="other">%1$d Fotos wurden übersprungen, weil sie nicht gelesen werden konnten oder größer als %2$d MB sind.</item>
     </plurals>
     <plurals name="share_over_share_limit">
-        <item quantity="one">%1$d Foto wurde nicht hochgeladen, weil eine Freigabe höchstens %2$d MB umfassen kann.</item>
-        <item quantity="other">%1$d Fotos wurden nicht hochgeladen, weil eine Freigabe höchstens %2$d MB umfassen kann.</item>
+        <item quantity="one">%1$d Foto wurde nicht hochgeladen, weil auf einmal höchstens %2$d MB geteilt werden können.</item>
+        <item quantity="other">%1$d Fotos wurden nicht hochgeladen, weil auf einmal höchstens %2$d MB geteilt werden können.</item>
     </plurals>
     <string name="share_reading_title">Geteilte Fotos werden gelesen …</string>
     <string name="share_preparing_title">Fotos werden vorbereitet</string>
@@ -416,11 +416,11 @@
     <string name="onboarding_connect_body">Öffne die „Einstellungen“ und melde dich mit deinem Nextcloud-Konto an, oder gib deine WebDAV-Adresse und dein App-Passwort ein. Du kannst das überspringen und später einrichten.</string>
     <string name="certificate_review_title">Serverzertifikat</string>
     <string name="certificate_review_fingerprint">SHA-256-Fingerabdruck</string>
-    <string name="certificate_review_previous_fingerprint">Zuvor vertrauter Fingerabdruck</string>
+    <string name="certificate_review_previous_fingerprint">Bisher als vertrauenswürdig gespeicherter Fingerabdruck</string>
     <string name="certificate_review_subject">Inhaber</string>
     <string name="certificate_review_issuer">Aussteller</string>
-    <string name="certificate_review_validity">Gültig von %1$s bis %2$s</string>
-    <string name="certificate_review_origin">Würde nur für %1$s vertraut</string>
+    <string name="certificate_review_validity">Gültig vom %1$s bis %2$s</string>
+    <string name="certificate_review_origin">Das Vertrauen gilt nur für %1$s</string>
     <string name="certificate_review_warning">Jeder, der den privaten Schlüssel dieses Zertifikats besitzt, kann alles mitlesen, was du an diesen Server sendest. Vertraue ihm nur, wenn der Fingerabdruck mit dem auf deinem Server übereinstimmt.</string>
     <string name="certificate_review_changed_warning">Wenn du das Serverzertifikat nicht selbst ersetzt hast, wird die Verbindung möglicherweise abgehört. Vertraue ihm nur, wenn du dir sicher bist.</string>
     <string name="certificate_review_key">Öffentlicher Schlüssel: %1$s, %2$d Bit</string>
@@ -430,10 +430,10 @@
     <string name="action_trust_certificate">Diesem Zertifikat vertrauen</string>
     <string name="certificate_trust_dialog_title">Diesem Zertifikat vertrauen?</string>
     <string name="certificate_trust_dialog_body">Fingerabdruck:\n%1$s\n\nServer: %2$s\n\nVergleiche den Fingerabdruck mit dem auf deinem Server angezeigten, zum Beispiel mit: openssl x509 -noout -fingerprint -sha256</string>
-    <string name="certificate_trust_dialog_changed_body">Zuvor vertrauter Fingerabdruck:\n%1$s\n\nNeuer Fingerabdruck:\n%2$s\n\nServer: %3$s\n\nVergleiche den neuen Fingerabdruck mit dem auf deinem Server angezeigten, zum Beispiel mit: openssl x509 -noout -fingerprint -sha256</string>
-    <string name="error_trusted_certificate_clear_failed">Das vertraute Zertifikat konnte nicht entfernt werden. Es wird bei deiner nächsten Anmeldung entfernt, oder verwende „Nicht mehr vertrauen“.</string>
+    <string name="certificate_trust_dialog_changed_body">Bisher als vertrauenswürdig gespeicherter Fingerabdruck:\n%1$s\n\nNeuer Fingerabdruck:\n%2$s\n\nServer: %3$s\n\nVergleiche den neuen Fingerabdruck mit dem auf deinem Server angezeigten, zum Beispiel mit: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="error_trusted_certificate_clear_failed">Das als vertrauenswürdig gespeicherte Zertifikat konnte nicht entfernt werden. Es wird bei deiner nächsten Anmeldung entfernt, oder verwende „Nicht mehr vertrauen“.</string>
     <string name="certificate_trust_save_failed">Das Zertifikat konnte nicht gespeichert werden. Bitte versuche es erneut.</string>
-    <string name="certificate_trusted_title">Vertrautes Zertifikat</string>
+    <string name="certificate_trusted_title">Vertrauenswürdiges Zertifikat</string>
     <string name="certificate_trusted_until">SHA-256 %1$s, gültig bis %2$s</string>
     <string name="action_stop_trusting">Nicht mehr vertrauen</string>
     <!-- New-photos reminder (opt-in, local only) -->

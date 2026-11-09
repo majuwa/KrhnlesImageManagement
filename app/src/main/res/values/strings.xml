@@ -148,7 +148,7 @@
     <string name="removal_result_cancelled">Nothing was moved to the trash.</string>
     <string name="removal_result_failed">The photos could not be moved to the trash.</string>
 
-    <string name="error_photos_load_failed">The photos could not be loaded. Pull down to try again.</string>
+    <string name="error_photos_load_failed">The photos could not be loaded.</string>
 
     <!-- Permission -->
     <string name="permission_rationale">Photo and video access is required to browse your photos and videos.</string>

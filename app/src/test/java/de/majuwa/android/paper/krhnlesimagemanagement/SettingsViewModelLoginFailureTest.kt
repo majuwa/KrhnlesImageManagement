@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
+import de.majuwa.android.nextcloudlogin.LoginFlowState
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -8,13 +9,12 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,33 +40,28 @@ class SettingsViewModelLoginFailureTest {
         Dispatchers.resetMain()
     }
 
-    @Test
-    fun `failed login flow maps to the generic typed error`() =
-        runTest {
-            val server = MockWebServer()
-            server.enqueue(MockResponse().setResponseCode(500))
-            server.start()
-            try {
-                val viewModel =
-                    SettingsViewModel(
-                        application = RuntimeEnvironment.getApplication() as Application,
-                        credentialStore =
-                            FakeCredentialRepository(
-                                WebDavConfig("https://c.example.com/dav/", "u", "p"),
-                            ),
-                        trustedCertificates = FakeTrustedCertificateRepository(),
-                    )
-                viewModel.onServerUrlChange(server.url("/").toString())
-                viewModel.startLoginFlow()
-                val deadline = System.nanoTime() + 10_000_000_000L
-                while (viewModel.uiState.value.error == null && System.nanoTime() < deadline) {
-                    advanceUntilIdle()
-                    Thread.sleep(20)
-                }
-                assertEquals(SettingsError.LoginFailed, viewModel.uiState.value.error)
-                assertFalse(viewModel.uiState.value.isLoading)
-            } finally {
-                server.shutdown()
-            }
+    private fun viewModel(state: LoginFlowState) =
+        SettingsViewModel(
+            application = RuntimeEnvironment.getApplication() as Application,
+            credentialStore = FakeCredentialRepository(WebDavConfig("https://c.example.com/dav/", "u", "p")),
+            loginFlow = { flowOf(state) },
+            trustedCertificates = FakeTrustedCertificateRepository(),
+        )
+
+    private fun failWith(message: String) =
+        runTest(dispatcher) {
+            val vm = viewModel(LoginFlowState.Failed(message))
+            vm.onServerUrlChange("https://c.example.com")
+            vm.startLoginFlow()
+            advanceUntilIdle()
+            assertEquals(SettingsError.LoginFailed, vm.uiState.value.error)
+            assertFalse(vm.uiState.value.isLoading)
+            assertFalse(vm.uiState.value.isWaitingForBrowser)
         }
+
+    @Test
+    fun `failed login flow maps to the generic typed error`() = failWith("Server responded 500")
+
+    @Test
+    fun `login flow timeout maps to the generic typed error`() = failWith("Login timed out. Please try again.")
 }

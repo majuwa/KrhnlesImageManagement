@@ -16,7 +16,7 @@ Today every German-speaking user sees an English UI, and nothing stops a future 
 - Add `res/xml/locales_config.xml` (`en`, `de`) and `android:localeConfig` in the manifest so the app appears in the Android per-app language settings.
 - Move the remaining hardcoded / raw user-facing texts into string resources (typed errors resolved in Compose), so the German UI contains no English leftovers.
 - Add source-scanning unit tests (via `krhnles.moduleDir`): resource key parity incl. plural quantities and identical format placeholders between `values` and `values-de`, no translations of non-translatable strings, informal-address check, locale config in sync with the `values-*` folders, no hardcoded UI literals; plus a Robolectric test that formats every German string / plural with dummy arguments under the `de` locale.
-- Android lint (`MissingTranslation`, `ExtraTranslation`, `Untranslatable`, `StringFormatMatches`, `StringFormatCount`, `StringFormatInvalid`, `MissingQuantity`, `UnusedQuantity`, `ImpliedQuantity`, `Typos`, `TypographyEllipsis`) must pass with zero issues and no new suppressions.
+- Android lint (`MissingTranslation`, `ExtraTranslation`, `Untranslatable`, `StringFormatMatches`, `StringFormatCount`, `StringFormatInvalid`, `MissingQuantity`, `UnusedQuantity`, `ImpliedQuantity`, `Typos`, `TypographyEllipsis`) must report no finding except the 3 known unrelated "newer version available" errors (Gradle / AGP / spotless versions, not bumped here), and no new suppressions.
 - Update README.md, CLAUDE.md (new rule: every new string needs a German translation), docs/architecture.md and docs/requirements.md.
 
 No breaking changes: English stays the default (`values/`) and the fallback for every other locale.

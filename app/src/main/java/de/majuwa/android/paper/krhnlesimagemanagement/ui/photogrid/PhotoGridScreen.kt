@@ -240,6 +240,7 @@ fun PhotoGridScreen(
                     onPhotoClick = { viewModel.togglePhotoSelection(it) },
                     onDateHeaderClick = { viewModel.toggleDateSelection(it) },
                     onRefresh = { viewModel.refreshPhotos() },
+                    onRetry = { viewModel.loadPhotos() },
                 )
             }
         }
@@ -465,6 +466,7 @@ private fun InnerContent(
     onPhotoClick: (Long) -> Unit,
     onDateHeaderClick: (LocalDate) -> Unit,
     onRefresh: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     when {
         !hasPermission -> {
@@ -481,16 +483,17 @@ private fun InnerContent(
         }
 
         uiState.error != null -> {
-            PullToRefreshBox(
-                isRefreshing = uiState.isRefreshing,
-                onRefresh = onRefresh,
+            Column(
                 modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = stringResource(uiState.error.messageRes),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                Text(
+                    text = stringResource(uiState.error.messageRes),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.action_retry))
                 }
             }
         }

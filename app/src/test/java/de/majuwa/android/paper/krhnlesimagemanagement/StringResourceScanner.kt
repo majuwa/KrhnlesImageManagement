@@ -111,14 +111,19 @@ object StringResourceScanner {
         return problems
     }
 
-    private val FORMAL = Regex("""\b(Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres)\b""")
-    private val FORMAL_ALWAYS = Regex("""\bIhnen\b""")
+    private val FORMAL = Regex("""\bSie\b""")
+    private val FORMAL_ALWAYS = Regex("""\b(Ihnen|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres)\b""")
+    private val FORMAL_VERB = Regex("""\bSie\s+(haben|können|müssen|sind|werden|möchten)\b""")
     private val CAPITAL_DU = Regex("""\b(Du|Dich|Dir|Dein|Deine|Deinen|Deinem|Deiner|Deines)\b""")
 
-    /** Formal address ("Sie", "Ihnen") or capitalised "du" forms in the middle of a sentence. */
+    /**
+     * Formal address ("Sie" mid-sentence or before a formal verb, "Ihnen" / "Ihr…" anywhere) or
+     * capitalised "du" forms in the middle of a sentence.
+     */
     fun addressProblems(text: String): List<String> {
         val problems = mutableListOf<String>()
-        if (FORMAL_ALWAYS.containsMatchIn(text)) problems += "formal 'Ihnen'"
+        for (match in FORMAL_ALWAYS.findAll(text)) problems += "formal '${match.value}'"
+        for (match in FORMAL_VERB.findAll(text)) problems += "formal '${match.value}'"
         for (match in FORMAL.findAll(text)) {
             if (!atSentenceStart(text, match.range.first)) problems += "formal '${match.value}'"
         }

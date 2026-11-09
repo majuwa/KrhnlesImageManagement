@@ -30,19 +30,42 @@ class LocaleConfigTest {
     }
 
     @Test
-    fun `manifest references the locales config`() {
+    fun `manifest application element references the locales config`() {
         val manifest = File(moduleDir, "src/main/AndroidManifest.xml")
         assertTrue("Missing ${manifest.path}", manifest.isFile)
-        assertTrue(
-            "<application> must set android:localeConfig=\"@xml/locales_config\"",
-            manifest.readText().contains("android:localeConfig=\"@xml/locales_config\""),
-        )
+        assertEquals("@xml/locales_config", localeConfigAttribute(manifest.readText()))
+    }
+
+    @Test
+    fun `attribute outside the application element is not accepted`() {
+        val misplaced =
+            """<manifest xmlns:android="$NS" android:localeConfig="@xml/locales_config"><application/></manifest>"""
+        assertEquals("", localeConfigAttribute(misplaced))
+        val inComment =
+            """<manifest xmlns:android="$NS"><!-- android:localeConfig="@xml/locales_config" -->""" +
+                "<application/></manifest>"
+        assertEquals("", localeConfigAttribute(inComment))
+        val wrongValue =
+            """<manifest xmlns:android="$NS"><application android:localeConfig="@xml/other"/></manifest>"""
+        assertEquals("@xml/other", localeConfigAttribute(wrongValue))
+    }
+
+    private fun localeConfigAttribute(manifestXml: String): String {
+        val factory = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+        val doc = factory.newDocumentBuilder().parse(manifestXml.byteInputStream())
+        val applications = doc.documentElement.getElementsByTagName("application")
+        assertEquals("exactly one <application> element", 1, applications.length)
+        return (applications.item(0) as org.w3c.dom.Element).getAttributeNS(NS, "localeConfig")
     }
 
     @Test
     fun `qualifier conversion handles language and region folders`() {
         assertEquals("de", toLanguageTag("de"))
         assertEquals("de-CH", toLanguageTag("de-rCH"))
+    }
+
+    private companion object {
+        const val NS = "http://schemas.android.com/apk/res/android"
     }
 
     private fun toLanguageTag(qualifier: String): String = qualifier.replace("-r", "-")

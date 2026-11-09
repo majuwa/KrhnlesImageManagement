@@ -36,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -115,8 +116,7 @@ class SettingsViewModel
         application: Application,
         private val credentialStore: CredentialRepository =
             CredentialStore(application),
-        private val authRepository: NextcloudLoginFlow =
-            NextcloudLoginFlow(),
+        private val loginFlow: (String) -> Flow<LoginFlowState> = { url -> NextcloudLoginFlow().loginFlow(url) },
         private val uploadedPhotosRepository: UploadedPhotosRepositoryContract =
             UploadedPhotosStore(application),
         private val verifiedUploadsRepository: VerifiedUploadsRepositoryContract =
@@ -286,7 +286,7 @@ class SettingsViewModel
             }
             viewModelScope.launch {
                 _uiState.update { it.copy(isLoading = true, error = null) }
-                authRepository.loginFlow(state.serverUrl).collect { loginState ->
+                loginFlow(state.serverUrl).collect { loginState ->
                     when (loginState) {
                         is LoginFlowState.WaitingForBrowser -> {
                             _uiState.update { it.copy(isLoading = false, isWaitingForBrowser = true) }
