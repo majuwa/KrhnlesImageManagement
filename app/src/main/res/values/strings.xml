@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">Kröhnle\'s Image Management</string>
+    <string name="app_name" translatable="false">Kröhnle\'s Image Management</string>
 
     <!-- Common actions -->
     <string name="action_clear">Clear</string>
@@ -47,8 +47,8 @@
     <string name="cd_pause_video">Pause video</string>
     <string name="cd_video_seek">Video position</string>
     <string name="video_position_state">%1$s of %2$s</string>
-    <string name="video_elapsed_of_total">%1$s / %2$s</string>
-    <string name="viewer_page_counter">%1$d / %2$d</string>
+    <string name="video_elapsed_of_total" translatable="false">%1$s / %2$s</string>
+    <string name="viewer_page_counter" translatable="false">%1$d / %2$d</string>
     <string name="video_error_unsupported_format">This video format is not supported on this device.</string>
     <string name="video_error_redirected">The server redirected the video request, which is not followed. Check the server address in Settings.</string>
     <string name="cd_video_position">Video %1$d of %2$d</string>
@@ -148,6 +148,8 @@
     <string name="removal_result_cancelled">Nothing was moved to the trash.</string>
     <string name="removal_result_failed">The photos could not be moved to the trash.</string>
 
+    <string name="error_photos_load_failed">The photos could not be loaded. Pull down to try again.</string>
+
     <!-- Permission -->
     <string name="permission_rationale">Photo and video access is required to browse your photos and videos.</string>
     <string name="banner_media_partial_access">Only the photos and videos you selected are shown.</string>
@@ -173,14 +175,14 @@
         <item quantity="one">The selected photos will upload to this folder:</item>
         <item quantity="other">The selected photos will be split into %d folders:</item>
     </plurals>
-    <string name="preview_upload_path">• %s</string>
+    <string name="preview_upload_path" translatable="false">• %s</string>
 
     <!-- Settings screen — logged-in -->
     <string name="status_connected">Connected</string>
     <string name="label_user">User: %s</string>
     <string name="label_webdav_url">WebDAV: %s</string>
     <string name="label_base_folder">Base upload folder</string>
-    <string name="placeholder_base_folder">Photos/KrohnSync</string>
+    <string name="placeholder_base_folder" translatable="false">Photos/KrohnSync</string>
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
     <string name="label_wifi_only">Upload on Wi-Fi only</string>
     <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
@@ -199,17 +201,20 @@
     <string name="title_connect_nextcloud">Connect to Nextcloud</string>
     <string name="subtitle_connect_nextcloud">Sign in via your browser for a secure connection.</string>
     <string name="label_nextcloud_url">Nextcloud URL</string>
-    <string name="placeholder_nextcloud_url">https://nextcloud.example.com</string>
+    <string name="placeholder_nextcloud_url" translatable="false">https://nextcloud.example.com</string>
     <string name="status_waiting_browser">Waiting for browser login…</string>
 
     <!-- Settings screen — manual config -->
     <string name="label_webdav_url_input">WebDAV URL</string>
-    <string name="placeholder_webdav_url">https://cloud.example.com/remote.php/dav/files/user/</string>
+    <string name="placeholder_webdav_url" translatable="false">https://cloud.example.com/remote.php/dav/files/user/</string>
     <string name="label_username">Username</string>
     <string name="label_password">Password / App Token</string>
     <string name="error_credentials_key_invalidated">Your stored credentials could not be decrypted because the device security settings changed. Please log in again.</string>
     <string name="error_credentials_unreadable">Your stored credentials could not be read and have been ignored. Please log in again.</string>
     <string name="error_credentials_save_failed">Your credentials could not be stored securely on this device. Please try again.</string>
+    <string name="error_server_url_required">Server URL is required.</string>
+    <string name="error_fill_all_fields">Please fill in all fields.</string>
+    <string name="error_login_failed">Login failed. Check the server address and try again.</string>
     <string name="warning_http_insecure">Insecure connection — credentials will be sent in plaintext. Use HTTPS.</string>
 
     <!-- Albums -->
@@ -337,7 +342,7 @@
     <string name="notification_preparing">Preparing…</string>
     <string name="notification_uploading_title">Uploading photos and videos</string>
     <!-- Batch progress and the share of the file uploaded in chunks, e.g. "1 / 3 · 50 %" -->
-    <string name="notification_uploading_file_progress">%1$d / %2$d · %3$d %%</string>
+    <string name="notification_uploading_file_progress" translatable="false">%1$d / %2$d · %3$d %%</string>
     <string name="notification_upload_complete">Upload complete</string>
     <plurals name="notification_upload_success">
         <item quantity="one">%d item uploaded successfully.</item>
@@ -365,7 +370,7 @@
     <string name="upload_failure_storage_full">The server storage is full.</string>
     <string name="upload_failure_interrupted">The system stopped the upload repeatedly. Retry it later.</string>
     <!-- Result notification text: %1$s = counts (or a first reason), %2$s = the (next) failure reason. -->
-    <string name="notification_text_with_reason">%1$s %2$s</string>
+    <string name="notification_text_with_reason" translatable="false">%1$s %2$s</string>
     <string name="upload_error_generic">something went wrong. Please try again later.</string>
     <string name="error_invalid_occasion_name">Use a name without slashes or backslashes that is not just dots.</string>
     <string name="channel_name_uploads">Uploads</string>

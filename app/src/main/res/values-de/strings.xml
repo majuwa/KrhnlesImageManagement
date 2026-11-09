@@ -1,0 +1,462 @@
+<resources>
+    <!-- Common actions -->
+    <string name="action_clear">Auswahl aufheben</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_delete">Löschen</string>
+    <string name="action_upload">Hochladen</string>
+    <string name="action_retry">Erneut versuchen</string>
+    <string name="action_configure">Einrichten</string>
+    <string name="action_rename">Umbenennen</string>
+    <string name="action_setup_later">Später einrichten</string>
+    <string name="action_grant_permission">Zugriff erlauben</string>
+    <string name="action_save_folder">Ordner speichern</string>
+    <string name="action_test_connection">Verbindung testen</string>
+    <string name="connection_test_success">Verbindung erfolgreich!</string>
+    <string name="connection_test_not_configured">Nicht eingerichtet.</string>
+    <string name="connection_test_error_certificate">Sichere Verbindung fehlgeschlagen: Dem Zertifikat des Servers wird nicht vertraut (es ist möglicherweise selbstsigniert oder abgelaufen).</string>
+    <string name="connection_test_error_certificate_untrusted">Dem Zertifikat des Servers wird nicht vertraut (es ist möglicherweise selbstsigniert oder abgelaufen). Sieh es dir unten an und entscheide, ob du ihm vertrauen möchtest.</string>
+    <string name="connection_test_error_certificate_changed">Das Zertifikat des Servers hat sich geändert, seit du ihm vertraut hast. Sieh es dir unten an.</string>
+    <string name="connection_test_error_unknown_host">Server nicht gefunden. Prüfe die Serveradresse und deine Internetverbindung.</string>
+    <string name="connection_test_error_unreachable">Der Server ist nicht erreichbar. Prüfe die Adresse und ob der Server online ist.</string>
+    <string name="connection_test_error_timeout">Der Server hat nicht rechtzeitig geantwortet. Bitte versuche es erneut.</string>
+    <string name="connection_test_error_auth">Zugriff verweigert. Prüfe deinen Benutzernamen und dein App-Passwort und melde dich dann erneut an.</string>
+    <string name="connection_test_error_not_found">WebDAV-Ordner auf dem Server nicht gefunden. Prüfe die Serveradresse.</string>
+    <string name="connection_test_error_http">Der Server hat mit einem Fehler geantwortet (HTTP %1$d). Bitte versuche es später erneut.</string>
+    <string name="connection_test_error_invalid_url">Die Serveradresse ist keine gültige URL. Prüfe sie und melde dich erneut an.</string>
+    <string name="connection_test_error_unknown">Verbindungstest fehlgeschlagen. Bitte versuche es erneut.</string>
+    <string name="action_disconnect">Trennen</string>
+    <string name="action_connect_browser">Über Browser verbinden</string>
+    <string name="action_save_connect">Speichern &amp; Verbinden</string>
+    <string name="action_hide_manual_config">Manuelle Konfiguration ausblenden</string>
+    <string name="action_show_manual_config">Manuelle WebDAV-Konfiguration</string>
+    <string name="action_find_blurry">Unscharfe finden</string>
+    <string name="action_find_duplicates">Duplikate finden</string>
+    <string name="action_clear_all">Alle entfernen</string>
+    <string name="action_show_only_new">Nur neue</string>
+    <string name="action_show_all_photos">Alle Fotos</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_settings">Einstellungen</string>
+    <string name="cd_upload">Hochladen</string>
+    <string name="cd_back">Zurück</string>
+    <string name="cd_reload">Neu laden</string>
+    <string name="cd_photo_position">Foto %1$d von %2$d</string>
+    <string name="cd_play_video">Video abspielen</string>
+    <string name="cd_pause_video">Video pausieren</string>
+    <string name="cd_video_seek">Videoposition</string>
+    <string name="video_position_state">%1$s von %2$s</string>
+    <string name="video_error_unsupported_format">Dieses Videoformat wird auf diesem Gerät nicht unterstützt.</string>
+    <string name="video_error_redirected">Der Server hat die Videoanfrage weitergeleitet; Weiterleitungen werden nicht befolgt. Prüfe die Serveradresse in den „Einstellungen“.</string>
+    <string name="cd_video_position">Video %1$d von %2$d</string>
+    <string name="cd_photo_position_taken_on">Foto %1$d von %2$d, aufgenommen am %3$s</string>
+    <string name="cd_photo_position_date_unknown">Foto %1$d von %2$d, Datum unbekannt</string>
+    <string name="cd_video_position_duration_taken_on">Video %1$d von %2$d, %3$s, aufgenommen am %4$s</string>
+    <string name="cd_video_position_duration_date_unknown">Video %1$d von %2$d, %3$s, Datum unbekannt</string>
+    <string name="cd_video_position_taken_on">Video %1$d von %2$d, aufgenommen am %3$s</string>
+    <string name="cd_video_position_date_unknown">Video %1$d von %2$d, Datum unbekannt</string>
+    <plurals name="duration_hours">
+        <item quantity="one">%d Stunde</item>
+        <item quantity="other">%d Stunden</item>
+    </plurals>
+    <plurals name="duration_minutes">
+        <item quantity="one">%d Minute</item>
+        <item quantity="other">%d Minuten</item>
+    </plurals>
+    <plurals name="duration_seconds">
+        <item quantity="one">%d Sekunde</item>
+        <item quantity="other">%d Sekunden</item>
+    </plurals>
+    <string name="cd_photo_state_uploaded">%1$s, bereits hochgeladen</string>
+    <string name="date_unknown">Unbekanntes Datum</string>
+    <string name="action_select_photo">Auswählen</string>
+    <string name="action_deselect_photo">Auswahl aufheben</string>
+    <string name="action_select_day">Alle Elemente dieses Tages auswählen</string>
+    <string name="action_deselect_day">Auswahl aller Elemente dieses Tages aufheben</string>
+    <string name="cd_selected">Ausgewählt</string>
+    <string name="cd_not_selected">Nicht ausgewählt</string>
+    <string name="cd_cancel_selection">Auswahl abbrechen</string>
+    <string name="cd_delete_selected">Ausgewählte löschen</string>
+    <string name="cd_selected_for_deletion">Zum Löschen ausgewählt</string>
+    <string name="cd_marked_for_deletion">Zum Löschen markiert</string>
+    <string name="cd_close_preview">Vorschau schließen</string>
+    <string name="cd_upload_history">Upload-Verlauf</string>
+    <string name="cd_clear_upload_history">Upload-Verlauf leeren</string>
+    <string name="cd_delete_upload_history_entry">Eintrag im Upload-Verlauf entfernen</string>
+
+    <!-- Navigation labels -->
+    <string name="nav_photos">Fotos</string>
+    <string name="nav_albums">Alben</string>
+
+    <!-- Titles -->
+    <string name="title_settings">Einstellungen</string>
+    <string name="title_albums">Alben</string>
+    <string name="title_album_default">Album</string>
+    <string name="title_blurry_photos">Unscharfe Fotos</string>
+    <string name="title_find_duplicates">Duplikate finden</string>
+    <string name="title_upload_history">Upload-Verlauf</string>
+
+    <!-- Format strings -->
+    <plurals name="selected_count">
+        <item quantity="one">%d ausgewählt</item>
+        <item quantity="other">%d ausgewählt</item>
+    </plurals>
+    <plurals name="item_count">
+        <item quantity="one">%d Element</item>
+        <item quantity="other">%d Elemente</item>
+    </plurals>
+    <string name="upload_progress">Lade %1$d / %2$d hoch</string>
+    <string name="action_cancel_upload">Upload abbrechen</string>
+    <string name="upload_history_counts">%1$d erfolgreich · %2$d fehlgeschlagen</string>
+    <plurals name="upload_history_counts_cancelled">
+        <item quantity="one">Abgebrochen · %1$d hochgeladen · %2$d nicht hochgeladen</item>
+        <item quantity="other">Abgebrochen · %1$d hochgeladen · %2$d nicht hochgeladen</item>
+    </plurals>
+    <plurals name="toast_upload_started">
+        <item quantity="one">%1$d Upload für %2$s eingeplant.</item>
+        <item quantity="other">%1$d Uploads für %2$s eingeplant.</item>
+    </plurals>
+
+    <!-- Remove uploaded photos from the device -->
+    <string name="cd_more_options">Weitere Optionen</string>
+    <string name="action_remove_uploaded">Hochgeladene Fotos vom Gerät entfernen</string>
+    <string name="action_move_to_trash">In den Papierkorb verschieben</string>
+    <plurals name="removal_checking_progress">
+        <item quantity="one">%1$d von %2$d Foto oder Video wird geprüft …</item>
+        <item quantity="other">%1$d von %2$d Fotos und Videos werden geprüft …</item>
+    </plurals>
+    <string name="removal_checking_preparing">Wird vorbereitet …</string>
+    <plurals name="removal_confirm_title">
+        <item quantity="one">%d Foto oder Video in den Papierkorb verschieben?</item>
+        <item quantity="other">%d Fotos und Videos in den Papierkorb verschieben?</item>
+    </plurals>
+    <string name="removal_confirm_message">Diese Kopien wurden hochgeladen, mit dem Server abgeglichen und sind unverändert. Sie kommen in den Papierkorb des Systems, wo du sie etwa 30 Tage lang wiederherstellen kannst. Android bittet dich noch einmal um Bestätigung. Auf dem Server bleibt alles erhalten.</string>
+    <string name="removal_nothing_title">Nichts zu entfernen</string>
+    <string name="removal_nothing_message">Nur Fotos und Videos, deren Upload geprüft wurde, die auf diesem Gerät unverändert sind und sich noch auf dem Server befinden, können entfernt werden. Fotos, die vor dieser Funktion hochgeladen wurden, geteilte Fotos und Fotos, die nicht geprüft werden konnten, bleiben erhalten.</string>
+    <string name="removal_not_configured_message">Verbinde dich zuerst in den „Einstellungen“ mit deinem Server. Die Fotos werden mit ihm abgeglichen, bevor etwas entfernt wird.</string>
+    <string name="removal_server_unreachable_title">Server nicht erreichbar</string>
+    <string name="removal_server_unreachable_message">Der Server hat mehrmals hintereinander nicht geantwortet, deshalb wurde die Prüfung beendet. Es wurde kein Foto entfernt. Versuche es später erneut oder prüfe deine Verbindung.</string>
+    <string name="removal_trashing">Wird in den Papierkorb verschoben …</string>
+    <plurals name="removal_result_trashed">
+        <item quantity="one">%d Foto oder Video in den Papierkorb verschoben.</item>
+        <item quantity="other">%d Fotos und Videos in den Papierkorb verschoben.</item>
+    </plurals>
+    <string name="removal_result_cancelled">Es wurde nichts in den Papierkorb verschoben.</string>
+    <string name="removal_result_failed">Die Fotos konnten nicht in den Papierkorb verschoben werden.</string>
+    <string name="error_photos_load_failed">Die Fotos konnten nicht geladen werden. Zieh nach unten, um es erneut zu versuchen.</string>
+
+    <!-- Permission -->
+    <string name="permission_rationale">Zum Durchsuchen deiner Fotos und Videos wird der Zugriff darauf benötigt.</string>
+    <string name="banner_media_partial_access">Es werden nur die Fotos und Videos angezeigt, die du ausgewählt hast.</string>
+    <string name="action_select_more_media">Weitere Fotos und Videos auswählen</string>
+    <string name="banner_video_access_missing">Videos werden nicht angezeigt, da der Zugriff auf Videos nicht erlaubt ist.</string>
+    <string name="action_grant_video_access">Videos erlauben</string>
+    <string name="action_open_app_settings">Einstellungen öffnen</string>
+
+    <!-- No-server dialog -->
+    <string name="dialog_no_server_title">Kein Server eingerichtet</string>
+    <string name="dialog_no_server_message">Du hast noch keinen WebDAV- oder Nextcloud-Server verbunden. Richte jetzt einen ein, um Fotos hochzuladen.</string>
+
+    <!-- Upload dialog -->
+    <string name="dialog_upload_title">Fotos hochladen</string>
+    <string name="dialog_upload_message">Gib den Anlass oder Ordnernamen für den Upload ein:</string>
+    <string name="occasion_suggestions_heading">Vorschläge</string>
+    <string name="occasion_suggestion_use_label">Als Ordnernamen verwenden</string>
+    <string name="label_occasion_name">Anlass / Ordnername</string>
+    <string name="dialog_clear_upload_history_title">Upload-Verlauf leeren?</string>
+    <string name="dialog_clear_upload_history_message">Dadurch werden alle Einträge im Upload-Verlauf entfernt.</string>
+    <string name="dialog_auto_date_preview_title">Upload-Ordner in der Vorschau</string>
+    <plurals name="dialog_auto_date_preview_message">
+        <item quantity="one">Die ausgewählten Fotos werden in diesen Ordner hochgeladen:</item>
+        <item quantity="other">Die ausgewählten Fotos werden auf %d Ordner aufgeteilt:</item>
+    </plurals>
+
+    <!-- Settings screen — logged-in -->
+    <string name="status_connected">Verbunden</string>
+    <string name="label_user">Benutzer: %s</string>
+    <string name="label_webdav_url">WebDAV: %s</string>
+    <string name="label_base_folder">Basisordner für Uploads</string>
+    <string name="hint_base_folder">Alle Uploads landen in diesem Ordner. Leer lassen für den Stammordner.</string>
+    <string name="label_wifi_only">Nur über WLAN hochladen</string>
+    <string name="hint_wifi_only">Uploads im Hintergrund auf nicht getaktete Verbindungen (WLAN) beschränken.</string>
+    <string name="label_verify_by_download">Durch erneutes Herunterladen prüfen</string>
+    <string name="hint_verify_by_download">Lädt jedes hochgeladene Foto und Video noch einmal herunter, um zu prüfen, ob es unversehrt angekommen ist. Verbraucht zusätzliche Daten. Nur nötig für Server, die Uploads nicht selbst prüfen können (nicht bei Nextcloud mit Hash-Unterstützung).</string>
+    <string name="label_auto_date_folders">Automatische Datumsordner</string>
+    <string name="hint_auto_date_folders">Überspringt den Anlass-Dialog und lädt jede Auswahl in einem Upload in Ordner im Format JJJJ/MM/TT hoch, abhängig vom Aufnahmetag jedes Fotos (zum Beispiel 2026/05/14).</string>
+    <string name="label_blur_sensitivity">Unschärfe-Empfindlichkeit</string>
+    <string name="hint_blur_sensitivity">Bei „Hoch“ werden mehr Fotos als unscharf markiert, bei „Niedrig“ nur eindeutig unscharfe. Gilt für die nächste Unschärfe-Suche.</string>
+    <string name="error_blur_sensitivity_save_failed">Die Unschärfe-Empfindlichkeit konnte nicht gespeichert werden. Die vorherige Stufe wurde wiederhergestellt.</string>
+    <string name="blur_sensitivity_low">Niedrig</string>
+    <string name="blur_sensitivity_medium">Mittel</string>
+    <string name="blur_sensitivity_high">Hoch</string>
+
+    <!-- Settings screen — login -->
+    <string name="title_connect_nextcloud">Mit Nextcloud verbinden</string>
+    <string name="subtitle_connect_nextcloud">Melde dich über deinen Browser an, für eine sichere Verbindung.</string>
+    <string name="label_nextcloud_url">Nextcloud-URL</string>
+    <string name="status_waiting_browser">Warte auf Anmeldung im Browser …</string>
+
+    <!-- Settings screen — manual config -->
+    <string name="label_webdav_url_input">WebDAV-URL</string>
+    <string name="label_username">Benutzername</string>
+    <string name="label_password">Passwort / App-Token</string>
+    <string name="error_credentials_key_invalidated">Deine gespeicherten Zugangsdaten konnten nicht entschlüsselt werden, weil sich die Sicherheitseinstellungen des Geräts geändert haben. Bitte melde dich erneut an.</string>
+    <string name="error_credentials_unreadable">Deine gespeicherten Zugangsdaten konnten nicht gelesen werden und wurden ignoriert. Bitte melde dich erneut an.</string>
+    <string name="error_credentials_save_failed">Deine Zugangsdaten konnten nicht sicher auf diesem Gerät gespeichert werden. Bitte versuche es erneut.</string>
+    <string name="error_server_url_required">Die Serveradresse ist erforderlich.</string>
+    <string name="error_fill_all_fields">Bitte fülle alle Felder aus.</string>
+    <string name="error_login_failed">Anmeldung fehlgeschlagen. Prüfe die Serveradresse und versuche es erneut.</string>
+    <string name="warning_http_insecure">Unsichere Verbindung — Zugangsdaten werden im Klartext gesendet. Verwende HTTPS.</string>
+
+    <!-- Albums -->
+    <string name="empty_albums">Keine Alben gefunden.</string>
+    <string name="album_search_label">Alben suchen</string>
+    <string name="cd_clear_album_search">Suche löschen</string>
+    <string name="albums_no_match">Keine Alben passen zu „%1$s“</string>
+    <string name="cd_sort_albums">Alben sortieren</string>
+    <string name="album_sort_name_asc">Name A–Z</string>
+    <string name="album_sort_name_desc">Name Z–A</string>
+    <string name="album_sort_modified_newest">Zuletzt geändert (neueste zuerst)</string>
+    <string name="album_sort_modified_oldest">Zuletzt geändert (älteste zuerst)</string>
+    <string name="empty_upload_history">Noch kein Upload-Verlauf.</string>
+    <string name="dialog_delete_album_title">Album löschen?</string>
+    <string name="dialog_delete_album_message">Das Album „%1$s“ und alle seine Fotos und Videos endgültig vom Server löschen? Das kann nicht rückgängig gemacht werden.</string>
+    <string name="dialog_rename_album_title">Album umbenennen</string>
+    <string name="label_album_name">Albumname</string>
+    <string name="error_album_name_blank">Bitte gib einen Albumnamen ein.</string>
+    <string name="error_album_name_unchanged">Bitte wähle einen anderen Albumnamen.</string>
+    <string name="snackbar_delete_album_failed">Das Album „%1$s“ konnte nicht gelöscht werden.</string>
+    <string name="error_album_name_invalid">Der Name darf weder / noch \\ enthalten und nicht „.“ oder „..“ lauten.</string>
+    <string name="error_album_name_too_long">Der Name ist zu lang (höchstens 255 Bytes).</string>
+    <string name="albums_error_rename_partial">Der Server hat unerwartet geantwortet; die Umbenennung ist möglicherweise unvollständig. Die Liste wird aktualisiert.</string>
+    <string name="albums_error_already_exists">Ein Album mit diesem Namen existiert bereits. Bitte wähle einen anderen Namen.</string>
+    <string name="albums_error_album_gone">Dieses Album existiert auf dem Server nicht mehr. Aktualisiere die Albumliste.</string>
+    <string name="albums_error_rename_rejected">Der Server hat diesen Namen abgelehnt, oder du darfst Alben nicht umbenennen.</string>
+    <string name="albums_error_rename_timeout">Der Server hat nicht rechtzeitig geantwortet. Das Album wurde möglicherweise trotzdem umbenannt; die Liste wird aktualisiert.</string>
+    <string name="albums_error_not_configured">Du bist nicht angemeldet. Melde dich in den „Einstellungen“ an, um deine Alben zu sehen.</string>
+    <string name="albums_error_invalid_url">Die Serveradresse ist keine gültige URL. Prüfe sie in den „Einstellungen“ und melde dich erneut an.</string>
+    <string name="albums_error_configuration_changed">Deine Servereinstellungen haben sich geändert. Gehe zurück und öffne das Album erneut.</string>
+    <string name="albums_error_certificate">Sichere Verbindung fehlgeschlagen: Dem Zertifikat des Servers wird nicht vertraut. Du kannst die Verbindung unter „Einstellungen“ mit „Verbindung testen“ prüfen.</string>
+    <string name="albums_error_certificate_changed">Das Zertifikat des Servers hat sich geändert. Du kannst die Verbindung unter „Einstellungen“ mit „Verbindung testen“ prüfen.</string>
+    <string name="albums_error_unknown_host">Server nicht gefunden. Prüfe die Serveradresse und deine Internetverbindung.</string>
+    <string name="albums_error_unreachable">Der Server ist nicht erreichbar. Prüfe deine Internetverbindung und ob der Server online ist.</string>
+    <string name="albums_error_timeout">Der Server hat nicht rechtzeitig geantwortet. Bitte versuche es erneut.</string>
+    <string name="albums_error_auth">Zugriff verweigert. Prüfe deinen Benutzernamen und dein App-Passwort und melde dich dann erneut an.</string>
+    <string name="albums_error_not_found">Das Album wurde auf dem Server nicht gefunden. Es wurde möglicherweise verschoben oder gelöscht.</string>
+    <string name="albums_error_http">Der Server hat mit einem Fehler geantwortet (HTTP %1$d). Bitte versuche es später erneut.</string>
+    <string name="albums_error_listing_too_large">Dieser Ordner enthält zu viele Elemente zum Laden. Teile ihn auf dem Server in kleinere Ordner auf.</string>
+    <string name="albums_error_unknown">Bei der Kommunikation mit dem Server ist etwas schiefgelaufen. Bitte versuche es erneut.</string>
+
+    <!-- Album detail -->
+    <string name="empty_album_photos">Keine Fotos oder Videos in diesem Album.</string>
+    <plurals name="album_loading_photos">
+        <item quantity="one">Wird geladen … %d Element gefunden</item>
+        <item quantity="other">Wird geladen … %d Elemente gefunden</item>
+    </plurals>
+    <plurals name="album_truncated_notice">
+        <item quantity="one">Dieses Album ist zu groß, um es vollständig anzuzeigen. Nur das erste %d Element wird angezeigt.</item>
+        <item quantity="other">Dieses Album ist zu groß, um es vollständig anzuzeigen. Nur die ersten %d Elemente werden angezeigt.</item>
+    </plurals>
+    <string name="album_truncated_empty_notice">Dieses Album ist zu groß, um es vollständig zu laden, und im ladbaren Teil wurden keine Fotos oder Videos gefunden.</string>
+    <string name="review_truncated_notice">Dieses Album ist zu groß, um es vollständig zu laden, daher sind die Ergebnisse möglicherweise unvollständig.</string>
+    <string name="status_deleting_photos">Wird gelöscht …</string>
+    <string name="dialog_delete_photos_title">Aus dem Album löschen?</string>
+    <plurals name="dialog_delete_photos_message">
+        <item quantity="one">%1$d Element endgültig vom Server löschen? Das kann nicht rückgängig gemacht werden.</item>
+        <item quantity="other">%1$d Elemente endgültig vom Server löschen? Das kann nicht rückgängig gemacht werden.</item>
+    </plurals>
+    <plurals name="snackbar_delete_failures">
+        <item quantity="one">%d Element konnte nicht gelöscht werden.</item>
+        <item quantity="other">%d Elemente konnten nicht gelöscht werden.</item>
+    </plurals>
+
+    <!-- Blur review -->
+    <string name="empty_blurry">In diesem Album wurden keine unscharfen Fotos erkannt.</string>
+    <string name="status_scanning_blur">Suche nach unscharfen Fotos … %1$d / %2$d</string>
+    <plurals name="blur_results_summary">
+        <item quantity="one">%1$d unscharfes Foto gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
+        <item quantity="other">%1$d unscharfe Fotos gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
+    </plurals>
+    <plurals name="delete_n_photos">
+        <item quantity="one">%d Foto löschen</item>
+        <item quantity="other">%d Fotos löschen</item>
+    </plurals>
+    <string name="nothing_selected">Nichts ausgewählt</string>
+
+    <!-- Duplicate review -->
+    <string name="empty_duplicates">In diesem Album wurden keine Duplikate gefunden.</string>
+    <string name="status_analyzing">Fotos werden analysiert … %1$d / %2$d</string>
+    <plurals name="duplicates_results_summary">
+        <item quantity="one">%1$d Duplikatgruppe gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
+        <item quantity="other">%1$d Duplikatgruppen gefunden. Tippen zum Umschalten · Lange drücken für die Vorschau.</item>
+    </plurals>
+    <plurals name="group_label">
+        <item quantity="one">Gruppe %1$d — %2$d ähnliches Foto</item>
+        <item quantity="other">Gruppe %1$d — %2$d ähnliche Fotos</item>
+    </plurals>
+    <string name="hint_pinch_drag">Zum Zoomen zusammen- oder auseinanderziehen · Zum Verschieben ziehen</string>
+    <string name="hint_pinch_tap">Zum Zoomen zusammen- oder auseinanderziehen · Zum Schließen außerhalb tippen</string>
+
+    <!-- Share target -->
+    <plurals name="share_upload_message">
+        <item quantity="one">%1$d Foto auf deinen Server hochladen. Gib einen Anlass oder Ordnernamen ein:</item>
+        <item quantity="other">%1$d Fotos auf deinen Server hochladen. Gib einen Anlass oder Ordnernamen ein:</item>
+    </plurals>
+    <plurals name="share_skipped_photos">
+        <item quantity="one">%1$d Element wurde übersprungen, weil es kein unterstütztes Foto ist oder nicht gelesen werden konnte.</item>
+        <item quantity="other">%1$d Elemente wurden übersprungen, weil sie keine unterstützten Fotos sind oder nicht gelesen werden konnten.</item>
+    </plurals>
+    <plurals name="share_too_many_photos">
+        <item quantity="one">Es können höchstens %2$d Fotos auf einmal geteilt werden; %1$d Foto wurde nicht berücksichtigt.</item>
+        <item quantity="other">Es können höchstens %2$d Fotos auf einmal geteilt werden; %1$d Fotos wurden nicht berücksichtigt.</item>
+    </plurals>
+    <plurals name="share_copy_skipped">
+        <item quantity="one">%1$d Foto wurde übersprungen, weil es nicht gelesen werden konnte oder größer als %2$d MB ist.</item>
+        <item quantity="other">%1$d Fotos wurden übersprungen, weil sie nicht gelesen werden konnten oder größer als %2$d MB sind.</item>
+    </plurals>
+    <plurals name="share_over_share_limit">
+        <item quantity="one">%1$d Foto wurde nicht hochgeladen, weil eine Freigabe höchstens %2$d MB umfassen kann.</item>
+        <item quantity="other">%1$d Fotos wurden nicht hochgeladen, weil eine Freigabe höchstens %2$d MB umfassen kann.</item>
+    </plurals>
+    <string name="share_reading_title">Geteilte Fotos werden gelesen …</string>
+    <string name="share_preparing_title">Fotos werden vorbereitet</string>
+    <string name="share_preparing">%1$d von %2$d wird vorbereitet …</string>
+    <string name="share_no_photos">Es wurde kein unterstütztes Foto empfangen.</string>
+    <string name="share_nothing_copied">Keines der geteilten Fotos konnte gelesen werden, daher wurde nichts hochgeladen. Bitte teile sie erneut.</string>
+    <string name="share_copy_failed">Die Fotos konnten nicht für den Upload vorbereitet werden. Gib etwas Speicherplatz frei und teile sie erneut.</string>
+    <string name="share_enqueue_failed">Der Upload konnte nicht gestartet werden. Bitte teile die Fotos erneut.</string>
+    <string name="share_not_configured_title">Server nicht eingerichtet</string>
+    <string name="share_not_configured_message">Richte deinen WebDAV- oder Nextcloud-Server in der App ein, bevor du Fotos dorthin teilst.</string>
+    <string name="share_not_configured_open_app">App öffnen</string>
+
+    <!-- Notifications (UploadWorker) -->
+    <string name="notification_preparing">Wird vorbereitet …</string>
+    <string name="notification_uploading_title">Fotos und Videos werden hochgeladen</string>
+    <string name="notification_upload_complete">Upload abgeschlossen</string>
+    <plurals name="notification_upload_success">
+        <item quantity="one">%d Element erfolgreich hochgeladen.</item>
+        <item quantity="other">%d Elemente erfolgreich hochgeladen.</item>
+    </plurals>
+    <plurals name="notification_upload_partial">
+        <item quantity="one">%1$d hochgeladen, %2$d fehlgeschlagen.</item>
+        <item quantity="other">%1$d hochgeladen, %2$d fehlgeschlagen.</item>
+    </plurals>
+    <string name="notification_upload_failed">Upload fehlgeschlagen</string>
+    <string name="notification_create_folder_failed">Ordner konnte nicht erstellt werden: %1$s</string>
+    <string name="notification_retry_failed">Erneut versuchen (%d)</string>
+    <string name="notification_action_cancel">Abbrechen</string>
+    <string name="notification_upload_cancelled">Upload abgebrochen</string>
+    <plurals name="notification_upload_cancelled_counts">
+        <item quantity="one">%1$d hochgeladen, %2$d nicht hochgeladen.</item>
+        <item quantity="other">%1$d hochgeladen, %2$d nicht hochgeladen.</item>
+    </plurals>
+    <string name="upload_error_invalid_folder_name">der Ordnername ist ungültig. Verwende einen Namen ohne Schrägstriche oder Backslashes, der nicht nur aus Punkten besteht.</string>
+    <string name="upload_error_folder_unavailable">der Ordner wurde nicht gefunden, oder du darfst ihn auf dem Server nicht erstellen.</string>
+    <string name="upload_error_not_configured">es ist kein Server eingerichtet. Öffne die „Einstellungen“ und verbinde zuerst deinen Server.</string>
+    <string name="upload_failure_too_large">Eine Datei ist für den Server zu groß.</string>
+    <string name="upload_failure_verification">Eine Datei konnte auf dem Server nicht geprüft werden.</string>
+    <string name="upload_failure_certificate_changed">Das Zertifikat des Servers hat sich geändert. Du kannst die Verbindung unter „Einstellungen“ mit „Verbindung testen“ prüfen.</string>
+    <string name="upload_failure_storage_full">Der Speicher auf dem Server ist voll.</string>
+    <string name="upload_failure_interrupted">Das System hat den Upload wiederholt gestoppt. Versuche es später erneut.</string>
+    <string name="upload_error_generic">etwas ist schiefgelaufen. Bitte versuche es später erneut.</string>
+    <string name="error_invalid_occasion_name">Verwende einen Namen ohne Schrägstriche oder Backslashes, der nicht nur aus Punkten besteht.</string>
+    <string name="channel_name_uploads">Uploads</string>
+    <string name="channel_desc_uploads">Zeigt den Fortschritt beim Sichern von Fotos und Videos</string>
+
+    <!-- Saving album photos to the device (DownloadWorker) -->
+    <string name="cd_save_to_device">Auf dem Gerät speichern</string>
+    <string name="state_saved_to_device">Gespeichert</string>
+    <string name="download_save_unavailable">Diese Fotos können gerade nicht gespeichert werden. Lade das Album neu und versuche es erneut.</string>
+    <plurals name="download_saving">
+        <item quantity="one">%d Foto wird im Hintergrund gespeichert.</item>
+        <item quantity="other">%d Fotos werden im Hintergrund gespeichert.</item>
+    </plurals>
+    <string name="download_not_configured">Es ist kein Server eingerichtet. Öffne die „Einstellungen“ und verbinde zuerst deinen Server.</string>
+    <string name="download_enqueue_failed">Das Speichern konnte nicht gestartet werden. Bitte versuche es erneut.</string>
+    <string name="download_notification_title">Fotos werden auf dem Gerät gespeichert</string>
+    <string name="action_cancel_download">Abbrechen</string>
+    <string name="download_complete">Fotos gespeichert</string>
+    <string name="download_partial">Fotos teilweise gespeichert</string>
+    <string name="download_failed">Speichern fehlgeschlagen</string>
+    <string name="download_cancelled">Speichern abgebrochen</string>
+    <plurals name="download_saved_count">
+        <item quantity="one">%d Foto gespeichert.</item>
+        <item quantity="other">%d Fotos gespeichert.</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%d Foto konnte nicht gespeichert werden.</item>
+        <item quantity="other">%d Fotos konnten nicht gespeichert werden.</item>
+    </plurals>
+    <plurals name="download_cancelled_counts">
+        <item quantity="one">%1$d von %2$d Foto vor dem Abbruch gespeichert.</item>
+        <item quantity="other">%1$d von %2$d Fotos vor dem Abbruch gespeichert.</item>
+    </plurals>
+    <string name="download_failure_unsupported">Es können nur Fotos gespeichert werden, keine Videos oder anderen Dateitypen.</string>
+    <string name="download_failure_too_large">Eine Datei ist zu groß zum Speichern (Limit 200 MB).</string>
+    <string name="download_failure_storage_full">Auf diesem Gerät ist kein Speicherplatz mehr frei.</string>
+    <string name="download_failure_not_found">Eine Datei wurde auf dem Server nicht mehr gefunden.</string>
+    <string name="download_failure_access_denied">Der Server hat den Zugriff verweigert. Prüfe deine Anmeldung in den „Einstellungen“.</string>
+    <string name="download_failure_certificate">Dem Zertifikat des Servers wird nicht vertraut. Du kannst die Verbindung unter „Einstellungen“ mit „Verbindung testen“ prüfen.</string>
+    <string name="download_failure_connection">Der Server konnte nicht erreicht werden.</string>
+    <string name="download_failure_server_error">Der Server hat einen Fehler gemeldet.</string>
+    <string name="download_failure_rejected">Eine Datei wurde nicht akzeptiert, weil sie nicht wie ein Foto aus diesem Album aussah.</string>
+    <string name="download_failure_write_failed">Ein Foto konnte nicht auf diesem Gerät gespeichert werden.</string>
+    <string name="download_failure_configuration_changed">Die Servereinstellungen haben sich während des Speicherns geändert.</string>
+    <string name="download_failure_interrupted">Das System hat das Speichern wiederholt gestoppt. Versuche es später erneut.</string>
+    <string name="channel_name_downloads">Downloads</string>
+    <string name="channel_desc_downloads">Zeigt den Fortschritt beim Speichern von Fotos auf diesem Gerät</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_step_indicator">Schritt %1$d von %2$d</string>
+    <string name="onboarding_action_next">Weiter</string>
+    <string name="onboarding_action_skip">Überspringen</string>
+    <string name="onboarding_action_connect_now">Jetzt verbinden</string>
+    <string name="onboarding_overview_title">Sichere deine Fotos auf deine Art</string>
+    <string name="onboarding_overview_body">Wähle die Fotos aus, die du behalten möchtest, gib ihnen einen Anlass und lade sie auf deinen eigenen Nextcloud- oder WebDAV-Server hoch. Uploads laufen im Hintergrund weiter.</string>
+    <string name="onboarding_connect_title">Verbinde deinen Server</string>
+    <string name="onboarding_connect_body">Öffne die „Einstellungen“ und melde dich mit deinem Nextcloud-Konto an, oder gib deine WebDAV-Adresse und dein App-Passwort ein. Du kannst das überspringen und später einrichten.</string>
+    <string name="certificate_review_title">Serverzertifikat</string>
+    <string name="certificate_review_fingerprint">SHA-256-Fingerabdruck</string>
+    <string name="certificate_review_previous_fingerprint">Zuvor vertrauter Fingerabdruck</string>
+    <string name="certificate_review_subject">Inhaber</string>
+    <string name="certificate_review_issuer">Aussteller</string>
+    <string name="certificate_review_validity">Gültig von %1$s bis %2$s</string>
+    <string name="certificate_review_origin">Würde nur für %1$s vertraut</string>
+    <string name="certificate_review_warning">Jeder, der den privaten Schlüssel dieses Zertifikats besitzt, kann alles mitlesen, was du an diesen Server sendest. Vertraue ihm nur, wenn der Fingerabdruck mit dem auf deinem Server übereinstimmt.</string>
+    <string name="certificate_review_changed_warning">Wenn du das Serverzertifikat nicht selbst ersetzt hast, wird die Verbindung möglicherweise abgehört. Vertraue ihm nur, wenn du dir sicher bist.</string>
+    <string name="certificate_review_key">Öffentlicher Schlüssel: %1$s, %2$d Bit</string>
+    <string name="certificate_review_key_unknown">Öffentlicher Schlüssel: %1$s (nicht unterstützter Typ oder nicht unterstützte Größe)</string>
+    <string name="certificate_review_weak_key">Dieses Zertifikat verwendet einen schwachen öffentlichen Schlüssel (weniger als RSA 2048 oder EC 256 Bit), daher kann ihm nicht vertraut werden.</string>
+    <string name="certificate_review_not_valid">Dieses Zertifikat ist abgelaufen oder noch nicht gültig, daher kann ihm nicht vertraut werden.</string>
+    <string name="action_trust_certificate">Diesem Zertifikat vertrauen</string>
+    <string name="certificate_trust_dialog_title">Diesem Zertifikat vertrauen?</string>
+    <string name="certificate_trust_dialog_body">Fingerabdruck:\n%1$s\n\nServer: %2$s\n\nVergleiche den Fingerabdruck mit dem auf deinem Server angezeigten, zum Beispiel mit: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="certificate_trust_dialog_changed_body">Zuvor vertrauter Fingerabdruck:\n%1$s\n\nNeuer Fingerabdruck:\n%2$s\n\nServer: %3$s\n\nVergleiche den neuen Fingerabdruck mit dem auf deinem Server angezeigten, zum Beispiel mit: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="error_trusted_certificate_clear_failed">Das vertraute Zertifikat konnte nicht entfernt werden. Es wird bei deiner nächsten Anmeldung entfernt, oder verwende „Nicht mehr vertrauen“.</string>
+    <string name="certificate_trust_save_failed">Das Zertifikat konnte nicht gespeichert werden. Bitte versuche es erneut.</string>
+    <string name="certificate_trusted_title">Vertrautes Zertifikat</string>
+    <string name="certificate_trusted_until">SHA-256 %1$s, gültig bis %2$s</string>
+    <string name="action_stop_trusting">Nicht mehr vertrauen</string>
+    <!-- New-photos reminder (opt-in, local only) -->
+    <string name="label_new_photos_reminder">An neue Fotos erinnern</string>
+    <string name="hint_new_photos_reminder">Du erhältst gelegentlich eine Benachrichtigung, wenn Fotos oder Videos auf diesem Gerät noch nicht gesichert sind. Die Prüfung läuft nur auf diesem Gerät und benötigt Zugriff auf deine Fotos und Videos.</string>
+    <string name="reminder_interval_weekly">Wöchentlich</string>
+    <string name="reminder_interval_every_two_weeks">Alle 2 Wochen</string>
+    <string name="reminder_interval_monthly">Monatlich</string>
+    <string name="reminder_notifications_off_hint">Benachrichtigungen sind für diese App oder für Erinnerungen ausgeschaltet, daher kann keine Erinnerung angezeigt werden.</string>
+    <string name="action_open_notification_settings">Benachrichtigungseinstellungen öffnen</string>
+    <string name="reminder_channel_name">Erinnerungen</string>
+    <string name="reminder_channel_desc">Gelegentliche Erinnerungen an Fotos und Videos, die noch nicht gesichert sind</string>
+    <string name="reminder_notification_title">Fotos warten auf die Sicherung</string>
+    <plurals name="reminder_new_media_since_upload">
+        <item quantity="one">%d neues Foto oder Video seit deinem letzten Upload</item>
+        <item quantity="other">%d neue Fotos und Videos seit deinem letzten Upload</item>
+    </plurals>
+    <plurals name="reminder_new_media">
+        <item quantity="one">%d neues Foto oder Video auf diesem Gerät</item>
+        <item quantity="other">%d neue Fotos und Videos auf diesem Gerät</item>
+    </plurals>
+    <plurals name="reminder_new_media_at_least">
+        <item quantity="one">Mindestens %d neues Foto oder Video auf diesem Gerät</item>
+        <item quantity="other">Mindestens %d neue Fotos und Videos auf diesem Gerät</item>
+    </plurals>
+</resources>

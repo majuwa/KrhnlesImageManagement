@@ -2,6 +2,7 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.settings
 
 import android.app.Application
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.nextcloudlogin.LoginFlowState
@@ -45,6 +46,17 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString
 import kotlin.coroutines.cancellation.CancellationException
 
+/** A user-facing Settings error; resolved to a string in Compose so a language switch re-renders it. */
+enum class SettingsError(
+    @StringRes val messageRes: Int,
+) {
+    ServerUrlRequired(R.string.error_server_url_required),
+    FillAllFields(R.string.error_fill_all_fields),
+    CredentialsSaveFailed(R.string.error_credentials_save_failed),
+    TrustedCertificateClearFailed(R.string.error_trusted_certificate_clear_failed),
+    LoginFailed(R.string.error_login_failed),
+}
+
 data class SettingsUiState(
     val autoDateFoldersEnabled: Boolean = false,
     val blurSensitivity: BlurSensitivity = BlurSensitivity.DEFAULT,
@@ -58,7 +70,7 @@ data class SettingsUiState(
     val isWaitingForBrowser: Boolean = false,
     val isTesting: Boolean = false,
     val testResult: ConnectionTestResult? = null,
-    val error: String? = null,
+    val error: SettingsError? = null,
     val useManualConfig: Boolean = false,
     val manualUrl: String = "",
     val manualUsername: String = "",
@@ -269,7 +281,7 @@ class SettingsViewModel
         fun startLoginFlow() {
             val state = _uiState.value
             if (state.serverUrl.isBlank()) {
-                _uiState.update { it.copy(error = "Server URL is required") }
+                _uiState.update { it.copy(error = SettingsError.ServerUrlRequired) }
                 return
             }
             viewModelScope.launch {
@@ -296,11 +308,13 @@ class SettingsViewModel
                         }
 
                         is LoginFlowState.Failed -> {
+                            // The library message is never shown or logged (English, untyped).
+                            Log.w(TAG, "Login flow failed")
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
                                     isWaitingForBrowser = false,
-                                    error = loginState.message,
+                                    error = SettingsError.LoginFailed,
                                 )
                             }
                         }
@@ -334,7 +348,7 @@ class SettingsViewModel
             val normalizedUrl = normalizeUrl(state.manualUrl)
             val config = WebDavConfig(normalizedUrl, state.manualUsername, state.manualPassword)
             if (!config.isValid) {
-                _uiState.update { it.copy(error = "Please fill in all fields.") }
+                _uiState.update { it.copy(error = SettingsError.FillAllFields) }
                 return
             }
             viewModelScope.launch {
@@ -404,12 +418,8 @@ class SettingsViewModel
             }
         }
 
-        private fun pinClearError(cleared: Boolean): String? =
-            if (cleared) {
-                null
-            } else {
-                getApplication<Application>().getString(R.string.error_trusted_certificate_clear_failed)
-            }
+        private fun pinClearError(cleared: Boolean): SettingsError? =
+            if (cleared) null else SettingsError.TrustedCertificateClearFailed
 
         /**
          * Saves credentials; on failure shows a user-facing error and returns false instead of crashing.
@@ -443,7 +453,7 @@ class SettingsViewModel
             } catch (e: CredentialSaveException) {
                 Log.w(TAG, "Saving credentials failed", e)
                 _uiState.update {
-                    it.copy(error = getApplication<Application>().getString(R.string.error_credentials_save_failed))
+                    it.copy(error = SettingsError.CredentialsSaveFailed)
                 }
                 false
             }

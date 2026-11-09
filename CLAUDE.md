@@ -70,6 +70,7 @@ After adding a feature or making any code change:
 - All user-facing strings are in `app/src/main/res/values/strings.xml` — never hardcode strings in Kotlin/Compose.
 - Use `pluralStringResource(R.plurals.xxx, count, count)` for count-dependent text (e.g. "1 photo" / "3 photos").
 - In non-Composable contexts (workers, callbacks), use `resources.getQuantityString(R.plurals.xxx, count, count)`.
+- **German translation:** every new or changed `<string>` / `<plurals>` / `<string-array>` needs a German translation in `values-de/strings.xml` in the same change (informal "du", glossary in `docs/architecture.md`, identical placeholders, same plural quantities); texts that must be identical (brand, example URLs, word-free templates) get `translatable="false"` instead of a copy; new locales also go into `res/xml/locales_config.xml`. No user-facing text from exception / library messages or literals (typed `SettingsError` / `PhotoGridError`, `LoginFlowState.Failed` always maps to `error_login_failed`). Guarded by `StringResourceParityTest`, `GermanStringsFormatTest`, `LocaleConfigTest`, `NoHardcodedUiStringRegressionTest`.
 - In Compose callbacks, use `LocalResources.current` (not `LocalContext.current.resources`) to ensure Configuration-change awareness.
 
 ## Coding Guidelines

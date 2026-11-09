@@ -11,7 +11,7 @@ The app SHALL show its entire user interface in German when the effective app la
 
 #### Scenario: German device language
 - **WHEN** the device language is German (Germany) and the user opens the photo grid, Settings, Albums or the onboarding
-- **THEN** every label, button, dialog, banner, error message and content description is shown in German
+- **THEN** every label, button, dialog, banner, error message and content description is shown in German, except the non-translatable texts (app name, example URLs and paths, product and protocol names)
 
 #### Scenario: Regional German variant
 - **WHEN** the device language is German (Austria) or German (Switzerland)
@@ -22,15 +22,23 @@ The app SHALL show its entire user interface in German when the effective app la
 - **THEN** the app shows its English texts
 
 ### Requirement: Localized background texts
-Upload notifications, their actions, the upload notification channel name and description, and texts shown by the share target SHALL use the effective app language at the time they are shown or the channel is (re)created.
+Upload, download and reminder notifications, their actions, the names and descriptions of their notification channels, toasts, and texts shown by the share target SHALL use the effective app language at the time they are shown or the channel is (re)created.
 
 #### Scenario: Upload result notification in German
 - **WHEN** the app language is German and a background upload finishes with failures
 - **THEN** the result notification title, text, failure reasons and the retry action are German
 
+#### Scenario: Cancelled upload in German
+- **WHEN** the app language is German and the user cancels a running upload
+- **THEN** the cancelled notification and its retry action are German and do not call the cancelled items failed
+
 #### Scenario: Channel name follows the language
-- **WHEN** the app language changes from English to German and a new upload starts
-- **THEN** the upload notification channel is shown with its German name in the system notification settings
+- **WHEN** the app language changes from English to German and a new upload, album save or reminder posts a notification
+- **THEN** that notification channel is shown with its German name in the system notification settings
+
+#### Scenario: Error shown before a language switch
+- **WHEN** Settings shows an error and the user switches the app language to German
+- **THEN** the error is shown in German after the switch
 
 ### Requirement: Per-app language selection
 The app SHALL declare its supported languages (English and German) to the system so that the user can choose the app language independently of the device language in the Android per-app language settings.
@@ -97,7 +105,15 @@ German texts SHALL address the user informally ("du", lowercase) throughout, nev
 
 #### Scenario: Local removal is not called deleting
 - **WHEN** the user opens "Remove uploaded photos from device" in German
-- **THEN** the texts speak of "entfernen" and "Papierkorb", while the album photo deletion on the server speaks of "löschen"
+- **THEN** the texts speak of "entfernen" and "Papierkorb" and never of "löschen", while the album photo deletion on the server speaks of "löschen"
+
+#### Scenario: Deleting wording in the removal flow is rejected
+- **WHEN** a German text of the local removal flow contains "löschen" or "gelöscht"
+- **THEN** the unit tests fail and name the text
+
+#### Scenario: Referenced labels match
+- **WHEN** a German text tells the user to use another control, for example "Test Connection" in Settings
+- **THEN** it names that control with exactly its German label
 
 ### Requirement: No user-facing text outside string resources
 Every text the app shows to the user SHALL come from a localized string resource. Raw exception messages, server or library messages and hardcoded literals SHALL NOT be shown.

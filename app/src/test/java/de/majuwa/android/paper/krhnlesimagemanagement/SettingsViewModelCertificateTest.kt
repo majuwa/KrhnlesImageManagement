@@ -13,6 +13,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRe
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.ConnectionTestResult
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -412,11 +413,7 @@ class SettingsViewModelCertificateTest {
             advanceUntilIdle()
             vm.logout()
             advanceUntilIdle()
-            val application = RuntimeEnvironment.getApplication()
-            assertEquals(
-                application.getString(R.string.error_trusted_certificate_clear_failed),
-                vm.uiState.value.error,
-            )
+            assertEquals(SettingsError.TrustedCertificateClearFailed, vm.uiState.value.error)
             // The next sign-in has no previous configuration and clears the leftover pin first.
             trusted.failure = null
             vm.onManualUrlChange(url)
@@ -439,10 +436,7 @@ class SettingsViewModelCertificateTest {
             vm.onManualPasswordChange("p")
             vm.saveManualConfig()
             advanceUntilIdle()
-            assertEquals(
-                RuntimeEnvironment.getApplication().getString(R.string.error_trusted_certificate_clear_failed),
-                vm.uiState.value.error,
-            )
+            assertEquals(SettingsError.TrustedCertificateClearFailed, vm.uiState.value.error)
             assertEquals("https://other.example/dav/", credentials.webDavConfig.first().url)
         }
 }

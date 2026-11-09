@@ -13,6 +13,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | G-002 | The app must target Android 15+ (`minSdk` 35) and handle granular media permissions: `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO` and partial access (`READ_MEDIA_VISUAL_USER_SELECTED`) are requested together; photos stay usable without video access, upgrade users are asked for video access at most once and partial-access users never automatically (issues #15 / #34). | Implemented |
 | G-003 | All UI must be built with Jetpack Compose (no XML layouts).                                     | Implemented |
 | G-004 | All async and background work must use Kotlin Coroutines / Flow.                                | Implemented |
+| G-005 | The UI must be available in English and German (informal "du", all regions); the app language can be chosen per app on Android 13+ and other languages fall back to English (issue #76). | Implemented |
 
 ---
 
@@ -107,3 +108,4 @@ implemented behaviour, user feedback, and explicit feature requests.
 | N-004 | The app must not suppress lint/detekt warnings without justification.                           | Policy      |
 | N-005 | Saving album photos never requests a storage permission, never deletes anything but the app's own incomplete items and never creates an uploaded marker or a verified-upload record. | Policy      |
 | N-006 | The reminder check never uses the network, never reads credentials, never starts or cancels uploads or downloads and only reads ids and add dates of the media index (bounded rows and time). | Policy      |
+| N-007 | Every new or changed user-facing string, plural and string array has a German translation in `values-de` in the same change (identical placeholders, same plural quantities); non-translatable texts are marked `translatable="false"`. | Policy      |

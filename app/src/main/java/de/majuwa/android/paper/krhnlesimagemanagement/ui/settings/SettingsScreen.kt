@@ -461,7 +461,7 @@ private fun LoginContent(
     uiState.error?.let { error ->
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = error,
+            text = stringResource(error.messageRes),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
         )

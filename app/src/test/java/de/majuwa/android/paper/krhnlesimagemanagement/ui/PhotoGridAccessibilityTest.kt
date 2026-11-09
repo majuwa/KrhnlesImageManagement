@@ -26,6 +26,7 @@ import coil3.ColorImage
 import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
@@ -41,6 +42,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.time.LocalDate
 import java.util.Locale
@@ -320,12 +322,13 @@ class PhotoGridAccessibilityTest {
     fun `grid renders the date in the device locale`() {
         setGrid({ emptySet() }, {}, mapOf(may1 to listOf(photo(1))))
 
-        assertEquals(listOf("1. Mai 2026", "1 item"), composeTestRule.onAllNodes(clickable)[0].texts())
-        assertTrue(
-            (composeTestRule.onAllNodes(clickable)[1].config()[SemanticsProperties.ContentDescription])
-                .single()
-                .endsWith("taken on 1. Mai 2026"),
-        )
+        val resources = RuntimeEnvironment.getApplication().resources
+        val itemCount = resources.getQuantityString(R.plurals.item_count, 1, 1)
+        val taken = resources.getString(R.string.cd_photo_position_taken_on, 1, 1, "1. Mai 2026")
+        assertEquals(listOf("1. Mai 2026", itemCount), composeTestRule.onAllNodes(clickable)[0].texts())
+        val description = composeTestRule.onAllNodes(clickable)[1].config()[SemanticsProperties.ContentDescription]
+        assertEquals(listOf(taken), description)
+        assertFalse("German resources are used", itemCount == "1 item")
     }
 
     @Test

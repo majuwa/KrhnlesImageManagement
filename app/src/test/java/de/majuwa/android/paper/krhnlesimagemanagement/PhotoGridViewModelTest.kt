@@ -9,6 +9,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -114,7 +115,7 @@ class PhotoGridViewModelTest {
 
             val state = viewModel.uiState.value
             assertFalse(state.isLoading)
-            assertEquals("No permission", state.error)
+            assertEquals(PhotoGridError.LoadFailed, state.error)
         }
 
     // ── togglePhotoSelection ────────────────────────────────────────────────
@@ -316,7 +317,7 @@ class PhotoGridViewModelTest {
 
             val state = viewModel.uiState.value
             assertFalse(state.isRefreshing)
-            assertEquals("disk error", state.error)
+            assertEquals(PhotoGridError.LoadFailed, state.error)
         }
 
     // ── dismissDialogs ──────────────────────────────────────────────────────

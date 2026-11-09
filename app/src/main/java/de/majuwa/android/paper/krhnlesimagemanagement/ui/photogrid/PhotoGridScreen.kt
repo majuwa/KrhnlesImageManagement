@@ -488,7 +488,7 @@ private fun InnerContent(
             ) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = uiState.error,
+                        text = stringResource(uiState.error.messageRes),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }

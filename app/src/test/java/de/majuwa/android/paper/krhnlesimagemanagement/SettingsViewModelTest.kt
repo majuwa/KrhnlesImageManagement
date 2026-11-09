@@ -17,6 +17,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSet
 import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.ConnectionTestResult
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -111,7 +112,7 @@ class SettingsViewModelTest {
             viewModel.startLoginFlow()
             advanceUntilIdle()
 
-            assertEquals("Server URL is required", viewModel.uiState.value.error)
+            assertEquals(SettingsError.ServerUrlRequired, viewModel.uiState.value.error)
         }
 
     @Test
@@ -150,7 +151,7 @@ class SettingsViewModelTest {
             viewModel.saveManualConfig()
             advanceUntilIdle()
 
-            assertEquals("Please fill in all fields.", viewModel.uiState.value.error)
+            assertEquals(SettingsError.FillAllFields, viewModel.uiState.value.error)
         }
 
     @Test
@@ -713,8 +714,7 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             val state = viewModel.uiState.value
-            val expected = RuntimeEnvironment.getApplication().getString(R.string.error_credentials_save_failed)
-            assertEquals(expected, state.error)
+            assertEquals(SettingsError.CredentialsSaveFailed, state.error)
             assertFalse(state.isLoggedIn)
 
             // Retrying after the failure is possible and succeeds once the store works again.
