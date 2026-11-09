@@ -18,6 +18,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -425,6 +427,89 @@ class CredentialStoreTest {
             withContext(Dispatchers.Default) { delay(SETTLE_MS) }
 
             assertEquals("non-credential writes must not re-emit (base folder did)", before + 1, emissions.size)
+            job.cancel()
+        }
+
+    // ── New-photos reminder (issue #75) ──────────────────────────────────────
+
+    @Test
+    fun `reminder defaults to off and Weekly`() =
+        runTest {
+            assertEquals(
+                NewPhotosReminderSettings(false, ReminderInterval.Weekly, 0L, 0L),
+                store.newPhotosReminder.first(),
+            )
+        }
+
+    @Test
+    fun `reminder persists across store instances and enabling records since`() =
+        runTest {
+            val before = System.currentTimeMillis()
+            store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
+            val reread = CredentialStore(context, CredentialCipher(keys)).newPhotosReminder.first()
+            assertTrue(reread.enabled)
+            assertEquals(ReminderInterval.Monthly, reread.interval)
+            assertTrue(reread.sinceMillis >= before)
+            assertEquals(0L, reread.lastShownMillis)
+        }
+
+    @Test
+    fun `interval change keeps since and last shown, enabling again resets them`() =
+        runTest {
+            store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
+            val since = store.newPhotosReminder.first().sinceMillis
+            store.markNewPhotosReminderShown(since + 5)
+
+            store.saveNewPhotosReminder(true, ReminderInterval.EveryTwoWeeks)
+            val changed = store.newPhotosReminder.first()
+            assertEquals(since, changed.sinceMillis)
+            assertEquals(since + 5, changed.lastShownMillis)
+            assertEquals(ReminderInterval.EveryTwoWeeks, changed.interval)
+
+            store.saveNewPhotosReminder(false, ReminderInterval.EveryTwoWeeks)
+            store.saveNewPhotosReminder(true, ReminderInterval.EveryTwoWeeks)
+            assertEquals(0L, store.newPhotosReminder.first().lastShownMillis)
+        }
+
+    @Test
+    fun `wrong-typed stored reminder values read as defaults`() =
+        runTest {
+            context.credentialDataStore.edit {
+                it[intPreferencesKey("new_photos_reminder_interval")] = 3
+                it[stringPreferencesKey("new_photos_reminder_enabled")] = "true"
+                it[stringPreferencesKey("new_photos_reminder_since")] = "x"
+            }
+            assertEquals(NewPhotosReminderSettings(), store.newPhotosReminder.first())
+        }
+
+    @Test
+    fun `logout resets the reminder`() =
+        runTest {
+            store.save("https://cloud.example.com/dav/", "user", "secret")
+            store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
+            store.markNewPhotosReminderShown(7L)
+            store.clear()
+            assertEquals(NewPhotosReminderSettings(), store.newPhotosReminder.first())
+        }
+
+    @Test
+    fun `reminder writes do not re-emit the credential flows`() =
+        runTest {
+            store.save("https://cloud.example.com/dav/", "user", "secret")
+            val emissions = mutableListOf<CredentialState>()
+            val job =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    store.credentialState.collect { emissions += it }
+                }
+            withContext(Dispatchers.Default) { withTimeout(AWAIT_TIMEOUT_MS) { while (emissions.isEmpty()) delay(10) } }
+            val before = emissions.size
+
+            store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
+            store.markNewPhotosReminderShown(1L)
+            store.saveBaseFolder("Photos")
+            withContext(Dispatchers.Default) { delay(SETTLE_MS) }
+
+            assertEquals("reminder writes must not re-emit (base folder did)", before + 1, emissions.size)
             job.cancel()
         }
 

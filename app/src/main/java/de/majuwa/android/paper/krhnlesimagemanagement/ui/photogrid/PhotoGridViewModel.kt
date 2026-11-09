@@ -86,6 +86,8 @@ class PhotoGridViewModel
                             state.copy(
                                 uploadedPhotoIds = ids,
                                 photosByDate = computeDisplayedPhotos(allPhotosByDate, ids, state.showOnlyNewPhotos),
+                                // With the filter on, an item that is now hidden is never left selected.
+                                selectedPhotoIds = selectionVisibleUnder(state, ids),
                             )
                         }
                     }
@@ -262,6 +264,21 @@ class PhotoGridViewModel
             }
         }
 
+        /**
+         * Turns the filter on (never off; idempotent) when the app is opened from the new-photos reminder, and
+         * deselects the items it now hides: the toggle is not offered during a selection, but the reminder can
+         * arrive during one.
+         */
+        fun showOnlyNewPhotos() {
+            _uiState.update { state ->
+                state.copy(
+                    showOnlyNewPhotos = true,
+                    photosByDate = computeDisplayedPhotos(allPhotosByDate, state.uploadedPhotoIds, true),
+                    selectedPhotoIds = state.selectedPhotoIds - state.uploadedPhotoIds,
+                )
+            }
+        }
+
         /** Called when the FAB is tapped. Shows occasion dialog or not-configured dialog. */
         fun onUploadRequested() {
             if (isConfigured.value) {
@@ -323,6 +340,11 @@ class PhotoGridViewModel
                 .flatten()
                 .filter { it.id in state.selectedPhotoIds }
         }
+
+        private fun selectionVisibleUnder(
+            state: PhotoGridUiState,
+            uploadedIds: Set<Long>,
+        ): Set<Long> = if (state.showOnlyNewPhotos) state.selectedPhotoIds - uploadedIds else state.selectedPhotoIds
 
         private fun computeDisplayedPhotos(
             allPhotos: Map<LocalDate, List<Photo>>,

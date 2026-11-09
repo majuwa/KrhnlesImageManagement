@@ -20,6 +20,13 @@ import java.io.File
  * never used by upload work) and WorkManager's `createCancelPendingIntent` only in
  * `worker/DownloadNotifications.kt` (it cancels the download work by its own id; download work never
  * carries the `photo_upload` tag).
+ *
+ * A third narrow allowance serves the new-photos reminder (`new-photos-reminder`, decision confirmed by the
+ * user): exactly one `cancelUniqueWork(NEW_PHOTOS_REMINDER_WORK_NAME)`, only in
+ * `reminder/NewPhotosReminderScheduler.kt` (a periodic work never ends on its own, so opting out needs a
+ * cancel; the unique name is never used by upload work). That file must never reference upload work, and
+ * `ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE` / `REPLACE` (they stop a running instance) are
+ * forbidden everywhere.
  */
 class NoUploadWorkCancelOutsideCancelPathRegressionTest {
     @get:Rule
@@ -126,6 +133,82 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
     }
 
     @Test
+    fun `the reminder scheduler may cancel its own unique work exactly once`() {
+        val copy = tmp.newFolder("main")
+        val scheduler = File(copy, "java/de/x/$REMINDER_SCHEDULER_FILE")
+        checkNotNull(scheduler.parentFile).mkdirs()
+        scheduler.writeText("fun c(m: WorkManager) { m.cancelUniqueWork(NEW_PHOTOS_REMINDER_WORK_NAME) }\n")
+        assertEquals(emptyList<String>(), violations(copy))
+
+        scheduler.writeText(
+            "fun c(m: WorkManager) { m.cancelUniqueWork(NEW_PHOTOS_REMINDER_WORK_NAME) }\n" +
+                "fun d(m: WorkManager) { m.cancelUniqueWork(NEW_PHOTOS_REMINDER_WORK_NAME) }\n",
+        )
+        assertEquals(listOf("java/de/x/$REMINDER_SCHEDULER_FILE:2"), violations(copy))
+    }
+
+    @Test
+    fun `other cancel apis or arguments in the reminder scheduler are violations`() {
+        val copy = tmp.newFolder("main")
+        val scheduler = File(copy, "java/de/x/$REMINDER_SCHEDULER_FILE")
+        checkNotNull(scheduler.parentFile).mkdirs()
+        scheduler.writeText(
+            "fun a(m: WorkManager) { m.cancelAllWorkByTag(\"photo_upload\") }\n" +
+                "fun b(m: WorkManager) { m.cancelUniqueWork(\"photo_download\") }\n" +
+                "fun c(m: WorkManager) { m.cancelAllWork() }\n" +
+                "fun d(m: WorkManager) { m.cancelWorkById(id) }\n",
+        )
+        assertEquals(
+            (1..4).map { "java/de/x/$REMINDER_SCHEDULER_FILE:$it" },
+            violations(copy),
+        )
+    }
+
+    @Test
+    fun `the reminder unique work cancel is a violation in any other file`() {
+        val copy = tmp.newFolder("main")
+        File(copy, "java/de/x/reminder/NewPhotosReminderWorker.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("fun c(m: WorkManager) { m.cancelUniqueWork(NEW_PHOTOS_REMINDER_WORK_NAME) }\n")
+        File(copy, "java/de/x/worker/UploadWorker.kt")
+            .also { checkNotNull(it.parentFile).mkdirs() }
+            .writeText("fun c(m: WorkManager) { m.cancelUniqueWork(NEW_PHOTOS_REMINDER_WORK_NAME) }\n")
+
+        assertEquals(
+            listOf("java/de/x/reminder/NewPhotosReminderWorker.kt:1", "java/de/x/worker/UploadWorker.kt:1"),
+            violations(copy),
+        )
+    }
+
+    @Test
+    fun `periodic cancel and re-enqueue and replace policies are forbidden everywhere`() {
+        val copy = tmp.newFolder("main")
+        File(copy, "java").mkdirs()
+        File(copy, "java/A.kt").writeText("val p = ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE\n")
+        File(copy, "java/B.kt").writeText("val p = ExistingPeriodicWorkPolicy.REPLACE\n")
+        val scheduler = File(copy, "java/de/x/$REMINDER_SCHEDULER_FILE")
+        checkNotNull(scheduler.parentFile).mkdirs()
+        scheduler.writeText(
+            "val p = ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE\nval q = ExistingPeriodicWorkPolicy.UPDATE\n",
+        )
+
+        assertEquals(
+            listOf("java/A.kt:1", "java/B.kt:1", "java/de/x/$REMINDER_SCHEDULER_FILE:1"),
+            violations(copy),
+        )
+    }
+
+    @Test
+    fun `a reference to upload work in the reminder scheduler is found in a copy of the tree`() {
+        val copy = tmp.newFolder("main")
+        File(moduleDir, "src/main").copyRecursively(copy)
+        val scheduler = copy.walkTopDown().single { it.invariantSeparatorsPath.endsWith("/$REMINDER_SCHEDULER_FILE") }
+        scheduler.appendText("\nval tag = \"photo_upload\"\n")
+
+        assertEquals(listOf("NewPhotosReminderScheduler.kt"), uploadWorkReferences(copy))
+    }
+
+    @Test
     fun `the files with a cancel allowance never touch upload work`() {
         assertEquals(emptyList<String>(), uploadWorkReferences(File(moduleDir, "src/main")))
     }
@@ -147,10 +230,13 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
         const val CANCEL_PATH_FILE = "worker/UploadCancellation.kt"
         const val DOWNLOAD_ENQUEUER_FILE = "download/DownloadEnqueuer.kt"
         const val DOWNLOAD_NOTIFICATIONS_FILE = "worker/DownloadNotifications.kt"
+        const val REMINDER_SCHEDULER_FILE = "reminder/NewPhotosReminderScheduler.kt"
 
         val cancelApis = Regex("""\b(cancelWorkById|cancelAllWorkByTag|cancelUniqueWork|cancelAllWork)\b""")
         val cancelIntentApi = Regex("""\bcreateCancelPendingIntent\b""")
         val replacePolicy = Regex("""ExistingWorkPolicy\.REPLACE\b""")
+        val periodicForbiddenPolicy = Regex("""ExistingPeriodicWorkPolicy\.(CANCEL_AND_REENQUEUE|REPLACE)\b""")
+        val reminderCancel = Regex("""\bcancelUniqueWork\(NEW_PHOTOS_REMINDER_WORK_NAME\)""")
         val appendOrReplacePolicy = Regex("""ExistingWorkPolicy\.APPEND_OR_REPLACE\b""")
 
         fun violations(mainDir: File): List<String> =
@@ -162,15 +248,28 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
                     val inCancelPath = path.endsWith("/$CANCEL_PATH_FILE")
                     val inEnqueuer = path.endsWith("/$DOWNLOAD_ENQUEUER_FILE")
                     val inDownloadNotifications = path.endsWith("/$DOWNLOAD_NOTIFICATIONS_FILE")
+                    val inReminderScheduler = path.endsWith("/$REMINDER_SCHEDULER_FILE")
+                    var reminderCancels = 0
                     file
                         .readLines()
                         .withIndex()
                         .filter { (_, line) -> isCode(line) }
                         .filter { (_, line) ->
                             val code = line.substringBefore("//")
+                            // The one allowed reminder cancel is removed first; anything else on the line,
+                            // or a second one in the file, is still a violation.
+                            val remaining =
+                                if (inReminderScheduler && reminderCancel.containsMatchIn(code) &&
+                                    ++reminderCancels == 1
+                                ) {
+                                    reminderCancel.replace(code, "")
+                                } else {
+                                    code
+                                }
                             replacePolicy.containsMatchIn(code) ||
+                                periodicForbiddenPolicy.containsMatchIn(code) ||
                                 (!inEnqueuer && appendOrReplacePolicy.containsMatchIn(code)) ||
-                                (!inCancelPath && cancelApis.containsMatchIn(code)) ||
+                                (!inCancelPath && cancelApis.containsMatchIn(remaining)) ||
                                 (!inDownloadNotifications && cancelIntentApi.containsMatchIn(code))
                         }.map { (index, _) -> "${file.relativeTo(mainDir).invariantSeparatorsPath}:${index + 1}" }
                 }.sorted()
@@ -178,13 +277,13 @@ class NoUploadWorkCancelOutsideCancelPathRegressionTest {
 
         /** Names of the allowed download files that mention upload work (tag, worker or request builder). */
         fun uploadWorkReferences(mainDir: File): List<String> {
-            val allowed = listOf(DOWNLOAD_ENQUEUER_FILE, DOWNLOAD_NOTIFICATIONS_FILE)
+            val allowed = listOf(DOWNLOAD_ENQUEUER_FILE, DOWNLOAD_NOTIFICATIONS_FILE, REMINDER_SCHEDULER_FILE)
             val files =
                 mainDir
                     .walkTopDown()
                     .filter { file -> file.isFile && allowed.any { file.invariantSeparatorsPath.endsWith("/$it") } }
                     .toList()
-            assertEquals("both allowed files exist", allowed.size, files.size)
+            assertEquals("all allowed files exist", allowed.size, files.size)
             return files
                 .filter { file ->
                     file.readLines().filter(::isCode).any {

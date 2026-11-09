@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import android.content.ContentProvider
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.res.AssetFileDescriptor
 import android.database.Cursor
@@ -62,10 +63,94 @@ class FakeMediaStoreProvider : ContentProvider() {
         queryArgs: Bundle?,
         cancellationSignal: CancellationSignal?,
     ): Cursor? {
+        if (queryArgs?.containsKey(ContentResolver.QUERY_ARG_SQL_SELECTION) == true &&
+            (uri == MediaStore.Images.Media.EXTERNAL_CONTENT_URI || uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        ) {
+            return collectionQuery(uri, projection, queryArgs, cancellationSignal)
+        }
         val row =
             itemRows[uri.toString()] ?: inserted[uri.toString()]?.toRow()
                 ?: return super.query(uri, projection, queryArgs, cancellationSignal)
         return itemCursor(uri, projection, row)
+    }
+
+    /**
+     * A collection query with a selection (the new-photos reminder): the configured [newMediaImageRows] /
+     * [newMediaVideoRows] are loaded into an in-memory SQLite table with the MediaStore column names and the
+     * recorded selection, args, sort order and limit are evaluated by SQLite itself, NULLs included.
+     * Projection, query args and signal are recorded; [blockQueries] holds the call until released.
+     */
+    private fun collectionQuery(
+        uri: Uri,
+        projection: Array<String>?,
+        queryArgs: Bundle,
+        signal: CancellationSignal?,
+    ): Cursor? {
+        collectionQueries += CollectionQuery(uri, projection?.toList(), Bundle(queryArgs), signal)
+        blockQueries?.let { latch ->
+            while (!latch.await(BLOCK_POLL_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (signal?.isCanceled == true) throw android.os.OperationCanceledException()
+            }
+        }
+        if (uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI) videoFailure?.let { throw it }
+        val rows = if (uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI) newMediaVideoRows else newMediaImageRows
+        val db =
+            android.database.sqlite.SQLiteDatabase
+                .create(null)
+        try {
+            loadMediaTable(db, rows)
+            val limit = queryArgs.getInt(ContentResolver.QUERY_ARG_LIMIT, -1).takeIf { it >= 0 }?.toString()
+            val result =
+                android.database.sqlite.SQLiteQueryBuilder().apply { tables = "media" }.query(
+                    db,
+                    projection,
+                    queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SELECTION),
+                    queryArgs.getStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS),
+                    null,
+                    null,
+                    queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER),
+                    limit,
+                )
+            return result.use(::copyOut)
+        } finally {
+            db.close()
+        }
+    }
+
+    private fun loadMediaTable(
+        db: android.database.sqlite.SQLiteDatabase,
+        rows: List<Map<String, Any?>>,
+    ) {
+        db.execSQL(
+            "CREATE TABLE media (_id INTEGER, date_added INTEGER, is_pending INTEGER, is_trashed INTEGER, " +
+                "owner_package_name TEXT, relative_path TEXT, _display_name TEXT, _size INTEGER, _data TEXT)",
+        )
+        rows.forEach { row ->
+            db.execSQL(
+                "INSERT INTO media VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf(
+                    row["_id"],
+                    row["date_added"],
+                    row["is_pending"] ?: 0,
+                    row["is_trashed"] ?: 0,
+                    row["owner_package_name"],
+                    row["relative_path"],
+                    row["_display_name"],
+                    row["_size"],
+                    row["_data"],
+                ),
+            )
+        }
+    }
+
+    /** Copies the rows out so the in-memory database can be closed. */
+    private fun copyOut(result: Cursor): Cursor {
+        val columns = result.columnNames
+        return MatrixCursor(columns).also { copy ->
+            while (result.moveToNext()) {
+                copy.addRow(columns.indices.map { i -> if (result.isNull(i)) null else result.getString(i) })
+            }
+        }
     }
 
     private fun InsertedItem.toRow(): Map<String, Any?> =
@@ -209,7 +294,17 @@ class FakeMediaStoreProvider : ContentProvider() {
         val bytes: ByteArray get() = file.readBytes()
     }
 
+    /** One recorded collection query with a selection. */
+    class CollectionQuery(
+        val uri: Uri,
+        val projection: List<String>?,
+        val args: Bundle,
+        val signal: CancellationSignal?,
+    )
+
     companion object {
+        private const val BLOCK_POLL_MS = 10L
+
         const val AUTHORITY = MediaStore.AUTHORITY
 
         private val ALL_COLUMNS =
@@ -263,6 +358,38 @@ class FakeMediaStoreProvider : ContentProvider() {
         @Volatile
         var videoFailure: RuntimeException? = null
 
+        /** Rows for collection queries with a selection (keys are MediaStore column names). */
+        @Volatile
+        var newMediaImageRows: List<Map<String, Any?>> = emptyList()
+
+        @Volatile
+        var newMediaVideoRows: List<Map<String, Any?>> = emptyList()
+
+        /** Collection queries with a selection, in order. */
+        val collectionQueries: MutableList<CollectionQuery> = java.util.Collections.synchronizedList(mutableListOf())
+
+        /** While non-null, collection queries with a selection block until it is counted down. */
+        @Volatile
+        var blockQueries: java.util.concurrent.CountDownLatch? = null
+
+        /** A new-media row for [newMediaImageRows] / [newMediaVideoRows]. */
+        fun newMediaRow(
+            id: Long,
+            dateAddedSeconds: Long?,
+            owner: String? = null,
+            relativePath: String? = null,
+            pending: Boolean = false,
+            trashed: Boolean = false,
+        ): Map<String, Any?> =
+            mapOf(
+                "_id" to id,
+                "date_added" to dateAddedSeconds,
+                "is_pending" to if (pending) 1 else 0,
+                "is_trashed" to if (trashed) 1 else 0,
+                "owner_package_name" to owner,
+                "relative_path" to relativePath,
+            )
+
         /** Thrown by the item query of a uri (e.g. a crashed provider for one item). */
         val itemFailures = java.util.concurrent.ConcurrentHashMap<String, RuntimeException>()
 
@@ -284,6 +411,11 @@ class FakeMediaStoreProvider : ContentProvider() {
             imageRows = emptyList()
             videoRows = emptyList()
             videoFailure = null
+            newMediaImageRows = emptyList()
+            newMediaVideoRows = emptyList()
+            collectionQueries.clear()
+            blockQueries?.countDown()
+            blockQueries = null
         }
 
         /** The per-item row for [itemRows]: the values the upload / removal checks read. */

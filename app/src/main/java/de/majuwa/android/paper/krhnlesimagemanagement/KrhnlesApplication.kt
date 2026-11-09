@@ -19,15 +19,20 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
 import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduler
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduling
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.recoverCancelledUploads
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Credentials
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -44,6 +49,27 @@ class KrhnlesApplication :
 
     /** Enqueues saving album photos to the device in [appScope], so it survives the screen being left. */
     val downloadEnqueuer: DownloadEnqueuer by lazy { DownloadEnqueuer(this, CredentialStore(this), appScope) }
+
+    /** The one scheduler of the new-photos reminder (stateless; Settings and app start share it). */
+    val newPhotosReminderScheduler: NewPhotosReminderScheduling by lazy { NewPhotosReminderScheduler(this) }
+
+    /**
+     * Brings the periodic reminder check in line with the stored setting, in [appScope]: the setting is read
+     * bounded (3 s); an unreadable setting changes nothing.
+     */
+    fun reconcileInBackground(): Job =
+        appScope.launch {
+            val settings =
+                runCatching {
+                    withTimeoutOrNull(
+                        REMINDER_READ_TIMEOUT_MS,
+                    ) { CredentialStore(this@KrhnlesApplication).newPhotosReminder.first() }
+                }.onFailure {
+                    if (it is CancellationException) throw it
+                    Log.w("KrhnlesApplication", "Reading the reminder setting failed: ${it.javaClass.simpleName}")
+                }.getOrNull() ?: return@launch
+            newPhotosReminderScheduler.reconcile(settings)
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -70,6 +96,7 @@ class KrhnlesApplication :
 
     private companion object {
         val recoveryStarted = AtomicBoolean(false)
+        const val REMINDER_READ_TIMEOUT_MS = 3_000L
     }
 
     override fun newImageLoader(context: Context): ImageLoader {

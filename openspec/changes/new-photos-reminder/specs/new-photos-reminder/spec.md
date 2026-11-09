@@ -45,7 +45,7 @@ Turning the reminder on SHALL request the notification permission if it is not g
 
 #### Scenario: Permission asked on enable
 - **WHEN** the notification permission is not granted and the user turns the reminder on
-- **THEN** the system permission request is shown and the reminder is on
+- **THEN** the notification permission is requested from the system and the reminder is on
 
 #### Scenario: Denied permission shows hint
 - **WHEN** the user denies the notification permission
@@ -79,25 +79,41 @@ Exactly one periodic background check SHALL exist while the reminder is on, repe
 - **THEN** no periodic check is scheduled
 
 ### Requirement: Schedule is reconciled with the stored setting
-On app start the scheduled check SHALL be brought in line with the stored setting without resetting the timing of an existing check: missing while on → scheduled; present while off → cancelled. A check that runs while the stored setting is off SHALL cancel itself without posting anything. An unreadable setting SHALL change nothing.
+On app start the scheduled check SHALL be brought in line with the stored setting without resetting the timing of an existing check: missing while on → scheduled; a different period while on → the stored interval's period; present while off → cancelled. A check that runs while the stored setting is off SHALL cancel itself without posting anything. An unreadable setting SHALL change nothing. Quick successive changes of the setting SHALL leave the check consistent with the last stored value.
 
 #### Scenario: Missing check is restored
 - **WHEN** the reminder is stored as on, no check is scheduled and the app starts
 - **THEN** the periodic check is scheduled
+
+#### Scenario: Drifted period is repaired
+- **WHEN** the reminder is stored as on with Monthly, the scheduled check has a 7-day period and the app starts
+- **THEN** there is still exactly one periodic check, with the same identity and a 30-day period
+
+#### Scenario: Quick toggling
+- **WHEN** the user turns the reminder on, off and on again in quick succession
+- **THEN** the reminder is on and exactly one periodic check is scheduled
 
 #### Scenario: Stale check cancels itself
 - **WHEN** the check runs while the stored reminder is off
 - **THEN** it posts nothing and the periodic check is cancelled
 
 ### Requirement: Reminder check is local only
-The check SHALL NOT access the network, SHALL NOT start or enqueue uploads, SHALL NOT read or decrypt credentials and SHALL NOT modify media. It SHALL only read the media index, the uploaded-photos set, the upload history and the reminder setting, and SHALL only write the time of the last reminder.
+The check SHALL NOT access the network, SHALL NOT start, enqueue or cancel uploads or downloads, SHALL NOT read or decrypt credentials and SHALL NOT modify media. It SHALL only read the media index, the uploaded-photos set, the upload history and the reminder setting, and SHALL only write the time of the last reminder. Scheduling and cancelling the check SHALL NOT affect any upload or download work.
 
 #### Scenario: No upload and no network
 - **WHEN** the check runs and finds new photos
 - **THEN** no upload work is enqueued and no network request is made
 
+#### Scenario: Turning the reminder off during an upload
+- **WHEN** an upload is running and the user turns the reminder off
+- **THEN** the upload continues and is not reported as cancelled
+
 ### Requirement: New items are counted since the last upload
-An item SHALL be counted as new when it was added to the device after the baseline and is not in the uploaded-photos set. The baseline SHALL be the later of the time the reminder was turned on and the time of the newest upload run that uploaded at least one file. Pending and trashed items SHALL NOT be counted. Images and videos with the same raw id SHALL be told apart by their media id.
+An item SHALL be counted as new when it was added to the device after the baseline and is not in the uploaded-photos set. The baseline SHALL be the later of the time the reminder was turned on and the time of the newest upload run (including a cancelled one) that uploaded at least one file. Pending and trashed items SHALL NOT be counted. Images and videos with the same raw id SHALL be told apart by their media id.
+
+#### Scenario: Pending and trashed items
+- **WHEN** a pending item and a trashed item were added after the baseline
+- **THEN** neither is counted
 
 #### Scenario: Marked items are not counted
 - **WHEN** 5 photos were added after the baseline and 2 of them are marked uploaded
@@ -116,14 +132,22 @@ An item SHALL be counted as new when it was added to the device after the baseli
 - **THEN** the baseline is the previous run that uploaded a file, or the time the reminder was turned on
 
 ### Requirement: Items created by the app are not counted
-Media the app itself added to the device (for example photos downloaded from an album) SHALL NOT be counted as new, both while the app owns them and in the app's download folder.
+Media the app itself added to the device (photos saved from an album) SHALL NOT be counted as new, both while the app owns them and, after ownership was lost (reinstall), when they are in the app's save folder `Pictures/KroehnSync/`. Items without a recorded owner or folder SHALL still be counted. Saved photos SHALL stay visible under "show only new photos" (unchanged); the reminder's count MAY therefore be lower than what the filtered grid shows.
 
 #### Scenario: Own download excluded
 - **WHEN** the app saved a downloaded album photo to the device after the baseline
 - **THEN** it is not counted
 
+#### Scenario: Saved photo after a reinstall
+- **WHEN** a photo in `Pictures/KroehnSync/` has no owner (the app was reinstalled) and was added after the baseline
+- **THEN** it is not counted
+
+#### Scenario: Item without owner or folder
+- **WHEN** a photo of another app without a recorded owner and without a recorded folder was added after the baseline
+- **THEN** it is counted
+
 ### Requirement: Count respects media access
-The check SHALL count only the media kinds the app can currently read: images with image access, videos with video access, and only the user-selected items with partial (selected photos) access. Without any media access the check SHALL post nothing. A media query that is refused SHALL count as zero for that kind.
+The check SHALL count only the media kinds the app can currently read: images with image access, videos with video access, and the user-selected images and videos with selected-photos access. Without any media access the check SHALL post nothing. A media query that is refused SHALL count as zero for that kind.
 
 #### Scenario: No media permission
 - **WHEN** the check runs and no media permission is granted
@@ -149,7 +173,7 @@ The media query SHALL read only what is needed to decide newness (no thumbnails,
 - **THEN** no notification is posted and the last-reminder time is unchanged
 
 ### Requirement: Reminder notification
-When the count is greater than 0 and at least one counted item was added after the previous reminder, the check SHALL post one notification on its own "Reminders" channel with its own id, replacing a previous reminder. Its text SHALL use plurals: "N new photos and videos since your last upload", or a variant without "since your last upload" when no upload happened since the reminder was turned on. It SHALL then store the reminder time.
+When the count is greater than 0 and at least one counted item was added after the previous reminder, the check SHALL post one notification on its own "Reminders" channel with its own id (distinct from every upload and download notification id), replacing a previous reminder. Its text SHALL use plurals: "N new photos and videos since your last upload", or a variant without "since your last upload" when no upload happened since the reminder was turned on. It SHALL then store the reminder time.
 
 #### Scenario: New items notify
 - **WHEN** the check counts 37 new items and nothing was reminded before
@@ -168,7 +192,7 @@ When the count is greater than 0 and at least one counted item was added after t
 - **THEN** no notification is posted
 
 #### Scenario: Separate from upload notifications
-- **WHEN** an upload result notification and a reminder are both shown
+- **WHEN** an upload or download result notification and a reminder are both shown
 - **THEN** neither replaces the other
 
 ### Requirement: No reminder when notifications are not allowed
@@ -196,6 +220,14 @@ Tapping the reminder SHALL open the app on the photo grid with the "show only ne
 #### Scenario: Applied once
 - **WHEN** the grid was opened from the reminder, the user turns the filter off and rotates the device
 - **THEN** the filter stays off
+
+#### Scenario: Album photo deletion running
+- **WHEN** an album shows a running photo deletion and the user taps the reminder
+- **THEN** the photo grid is shown with the filter on, the deletion is not interrupted and its result is shown when the user returns to the album through the Albums tab
+
+#### Scenario: Share screen in the app's task
+- **WHEN** the share screen of the app is the screen the tap reaches
+- **THEN** the share screen stays and the request is dropped
 
 #### Scenario: First-run onboarding pending
 - **WHEN** the start destination is the onboarding

@@ -25,7 +25,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificat
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.data.toDownloadFailure
-import de.majuwa.android.paper.krhnlesimagemanagement.download.DOWNLOAD_ROOT_FOLDER
+import de.majuwa.android.paper.krhnlesimagemanagement.download.DOWNLOAD_RELATIVE_ROOT
 import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadImageType
 import de.majuwa.android.paper.krhnlesimagemanagement.download.SIGNATURE_BYTES
 import de.majuwa.android.paper.krhnlesimagemanagement.download.albumFolderName
@@ -273,7 +273,7 @@ class DownloadWorker internal constructor(
             }
 
             else -> {
-                val folder = "Pictures/$DOWNLOAD_ROOT_FOLDER/${albumFolderName(queue.albumHref)}/"
+                val folder = "$DOWNLOAD_RELATIVE_ROOT${albumFolderName(queue.albumHref)}/"
                 download(queueFile, run.client, target, Destination(folder, name, type), index)
             }
         }

@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.LaunchRequestViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.launchRequestOf
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareFinish
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareRoute
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
@@ -21,6 +23,7 @@ class MainActivity : ComponentActivity() {
         get() = (application as KrhnlesApplication).uploadEnqueuer
 
     private val shareViewModel: ShareViewModel by viewModels()
+    private val launchRequestViewModel: LaunchRequestViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,9 +42,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
         } else {
+            if (savedInstanceState == null) {
+                // Only a fresh start: a recreated activity (rotation, process death) must not re-apply the
+                // original intent, nor re-run the reminder reconcile.
+                launchRequestOf(intent)?.let(launchRequestViewModel::offer)
+                (application as KrhnlesApplication).reconcileInBackground()
+            }
+            // A running instance receives taps on the reminder here (CLEAR_TOP + SINGLE_TOP). Share-mode
+            // instances never register: the share screen stays and the request is dropped.
+            addOnNewIntentListener { newIntent ->
+                if (!isShareIntent(newIntent)) launchRequestOf(newIntent)?.let(launchRequestViewModel::offer)
+            }
             setContent {
                 KrhnlesImageManagementTheme {
-                    KrhnlesApp(onStartUpload = { batches -> uploadEnqueuer.enqueue(batches) })
+                    KrhnlesApp(
+                        onStartUpload = { batches -> uploadEnqueuer.enqueue(batches) },
+                        launchRequests = launchRequestViewModel.pending,
+                        onLaunchRequestConsumed = { launchRequestViewModel.consume() },
+                    )
                 }
             }
         }

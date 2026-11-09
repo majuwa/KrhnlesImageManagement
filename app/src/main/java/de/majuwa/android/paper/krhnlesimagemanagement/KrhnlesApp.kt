@@ -43,6 +43,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicateReviewScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.AppLaunchRequest
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.rememberParentEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingExit
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingScreen
@@ -59,6 +60,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHis
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.uploadhistory.UploadHistoryViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.FullscreenViewerScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 internal const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_UPLOAD_HISTORY = "photos/history"
@@ -80,6 +83,8 @@ private const val ROUTE_BLUR = "albums/blur"
 fun KrhnlesApp(
     onStartUpload: (batches: List<UploadBatch>) -> Unit,
     startupViewModel: StartupViewModel = viewModel(),
+    launchRequests: StateFlow<AppLaunchRequest?> = NO_LAUNCH_REQUESTS,
+    onLaunchRequestConsumed: () -> Unit = {},
 ) {
     val resolved by startupViewModel.destination.collectAsStateWithLifecycle()
     var savedStart by rememberSaveable { mutableStateOf<String?>(null) }
@@ -90,9 +95,45 @@ fun KrhnlesApp(
     if (startRoute == null) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
     } else {
-        KrhnlesNavigation(startRoute, onStartUpload)
+        KrhnlesNavigation(startRoute, onStartUpload, launchRequests, onLaunchRequestConsumed)
     }
 }
+
+private val NO_LAUNCH_REQUESTS: StateFlow<AppLaunchRequest?> = MutableStateFlow(null)
+
+/**
+ * Leaves the current screen for the photo grid to apply a launch request, never through the graph start
+ * (it may be onboarding), like the Photos tab:
+ *  - the Albums subtree is on the back stack: the Photos-tab navigation *without* `restoreState` (it would
+ *    restore the just-saved subtree right back on top of the grid). The subtree is *saved*, not
+ *    destroyed, so a running photo deletion (which blocks Back) keeps running in its retained
+ *    `AlbumDetailViewModel` and its outcome is shown when the user returns through the Albums tab;
+ *  - otherwise (Settings / Upload history above the grid, or the grid itself): pop to the grid without
+ *    saving, like Back (saving Settings would retain a ViewModel under a key that is never restored).
+ */
+internal fun NavController.openPhotosForLaunchRequest() {
+    // The Albums list is the bottom of the Albums subtree, so its entry is on the back stack iff the subtree is.
+    if (isOnBackStack(ROUTE_ALBUMS)) {
+        navigate(ROUTE_PHOTOS) {
+            launchSingleTop = true
+            popUpTo(ROUTE_PHOTOS) { saveState = true }
+        }
+    } else {
+        popBackStack(ROUTE_PHOTOS, inclusive = false)
+    }
+}
+
+/** True while the onboarding is on the back stack: a launch request is dropped then. */
+private fun NavController.isOnboardingShown(): Boolean = isOnBackStack(ROUTE_ONBOARDING)
+
+/** Whether an entry of [route] is on the back stack (`getBackStackEntry` throws for a missing one). */
+private fun NavController.isOnBackStack(route: String): Boolean =
+    try {
+        getBackStackEntry(route)
+        true
+    } catch (_: IllegalArgumentException) {
+        false
+    }
 
 /**
  * Leaves onboarding: the photo grid becomes the root of the back stack (onboarding is removed) and,
@@ -107,8 +148,16 @@ internal fun NavController.completeOnboarding(exit: OnboardingExit) {
 private fun KrhnlesNavigation(
     startRoute: String,
     onStartUpload: (batches: List<UploadBatch>) -> Unit,
+    launchRequests: StateFlow<AppLaunchRequest?>,
+    onLaunchRequestConsumed: () -> Unit,
 ) {
     val navController = rememberNavController()
+    val pendingRequest by launchRequests.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingRequest) {
+        if (pendingRequest == null) return@LaunchedEffect
+        // The photo grid applies and consumes the request; during onboarding there is nothing to apply it to.
+        if (navController.isOnboardingShown()) onLaunchRequestConsumed() else navController.openPhotosForLaunchRequest()
+    }
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
 
@@ -164,6 +213,13 @@ private fun KrhnlesNavigation(
 
             composable(ROUTE_PHOTOS) {
                 val vm: PhotoGridViewModel = viewModel()
+                // Applied only here, so the filter is never lost when navigation and composition race.
+                LaunchedEffect(pendingRequest) {
+                    if (pendingRequest == AppLaunchRequest.ShowNewMedia) {
+                        vm.showOnlyNewPhotos()
+                        onLaunchRequestConsumed()
+                    }
+                }
                 PhotoGridScreen(
                     viewModel = vm,
                     onNavigateToSettings = { navController.navigate(ROUTE_SETTINGS) },

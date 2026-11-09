@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
@@ -12,7 +14,28 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
 import okhttp3.Call
 
-interface CredentialRepository {
+/**
+ * The new-photos reminder setting, stored next to the other non-credential preferences. Kept separate from
+ * the credential members so the reminder worker can be given exactly this and nothing credential-related.
+ */
+interface NewPhotosReminderRepository {
+    /** The setting; off / Weekly while unset or unreadable. */
+    val newPhotosReminder: Flow<NewPhotosReminderSettings>
+
+    /**
+     * Stores the reminder setting. Turning it on from off also records the time (`since`) and forgets the
+     * last reminder in the same edit; an interval change keeps both.
+     */
+    suspend fun saveNewPhotosReminder(
+        enabled: Boolean,
+        interval: ReminderInterval,
+    )
+
+    /** Records when the last reminder was posted. */
+    suspend fun markNewPhotosReminderShown(atMillis: Long)
+}
+
+interface CredentialRepository : NewPhotosReminderRepository {
     val autoDateFoldersEnabled: Flow<Boolean>
     val isConfigured: Flow<Boolean>
 

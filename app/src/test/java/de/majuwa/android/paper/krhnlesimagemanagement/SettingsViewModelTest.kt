@@ -13,6 +13,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.ConnectionTestResult
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
@@ -807,6 +809,8 @@ class SettingsViewModelTest {
 
         override val albumSort: Flow<AlbumSort> = flow { emit(AlbumSort.DEFAULT) }
 
+        override val newPhotosReminder: Flow<NewPhotosReminderSettings> = flow { emit(NewPhotosReminderSettings()) }
+
         override val isConfigured: Flow<Boolean> =
             flow {
                 emit(false)
@@ -838,6 +842,13 @@ class SettingsViewModelTest {
         override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) = Unit
 
         override suspend fun saveAlbumSort(sort: AlbumSort) = Unit
+
+        override suspend fun saveNewPhotosReminder(
+            enabled: Boolean,
+            interval: ReminderInterval,
+        ) = Unit
+
+        override suspend fun markNewPhotosReminderShown(atMillis: Long) = Unit
 
         override suspend fun clear() = Unit
     }

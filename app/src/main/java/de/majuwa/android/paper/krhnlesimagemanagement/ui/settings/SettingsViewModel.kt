@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.majuwa.android.nextcloudlogin.LoginFlowState
 import de.majuwa.android.nextcloudlogin.NextcloudLoginFlow
+import de.majuwa.android.paper.krhnlesimagemanagement.KrhnlesApplication
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
@@ -25,7 +26,10 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduler
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduling
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +66,8 @@ data class SettingsUiState(
     val wifiOnly: Boolean = false,
     /** True when every upload is also verified by downloading it again (extra data). */
     val verifyByDownload: Boolean = false,
+    /** The stored new-photos reminder setting (off / Weekly by default). */
+    val newPhotosReminder: NewPhotosReminderSettings = NewPhotosReminderSettings(),
     /** Non-null when credentials are stored but cannot be decrypted; the UI explains why the user must log in again. */
     val credentialProblem: CredentialCorruption? = null,
     /** The trusted (pinned) certificate of the configured origin, if any. */
@@ -105,11 +111,17 @@ class SettingsViewModel
         private val connectionTester: suspend (WebDavConfig, PinnedCertificate?) -> Result<Unit> = { config, pin ->
             WebDavClient(config, pin).testConnection()
         },
+        private val reminderScheduler: NewPhotosReminderScheduling =
+            (application as? KrhnlesApplication)?.newPhotosReminderScheduler ?: NewPhotosReminderScheduler(application),
     ) : AndroidViewModel(application) {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
         private var pendingBlurSaves = 0
+
+        /** The reminder switch and interval (see [ReminderSettingsController]). */
+        val reminder: ReminderSettingsController =
+            ReminderSettingsController(viewModelScope, credentialStore, reminderScheduler)
 
         /** Review confirmation and "Stop trusting" (guarded one-shots). */
         val certificateTrust: CertificateTrustController =
@@ -164,6 +176,11 @@ class SettingsViewModel
             viewModelScope.launch {
                 credentialStore.wifiOnly.collect { value ->
                     _uiState.update { it.copy(wifiOnly = value) }
+                }
+            }
+            viewModelScope.launch {
+                credentialStore.newPhotosReminder.collect { value ->
+                    _uiState.update { it.copy(newPhotosReminder = value) }
                 }
             }
             viewModelScope.launch {
@@ -376,6 +393,8 @@ class SettingsViewModel
                 // Verified records first: they make local photos removable. One failing clear never
                 // skips the others.
                 clearLogged("verified uploads") { verifiedUploadsRepository.clear() }
+                // The periodic check must not outlive the account; the credential clear resets the setting.
+                clearLogged("reminder") { reminderScheduler.cancel() }
                 val pinCleared = clearLogged("trusted certificate") { trustedCertificates.clear() }
                 clearLogged("credentials") { credentialStore.clear() }
                 clearLogged("uploaded markers") { uploadedPhotosRepository.clear() }

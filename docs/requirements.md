@@ -93,6 +93,7 @@ implemented behaviour, user feedback, and explicit feature requests.
 | S-003 | Credentials are stored encrypted using `androidx.security:security-crypto`.                    | Implemented |
 | S-004 | Nextcloud Login Flow v2 is supported as an alternative to manual credential entry.              | Implemented |
 | S-005 | Users can trust one self-signed server certificate for the configured server after reviewing and confirming its SHA-256 fingerprint; the trust is scoped to that host and port, can be withdrawn ("Stop trusting"), is removed on logout or server change and is never backed up. | Implemented |
+| S-006 | Users can opt in (off by default) to a periodic reminder (Weekly / Every 2 weeks / Monthly) about photos and videos added since the last upload that are not marked uploaded; it asks for the notification permission when turned on, needs photo access, opens the filtered photo grid when tapped, is reset on logout and is never backed up. | Implemented |
 
 ---
 
@@ -105,3 +106,4 @@ implemented behaviour, user feedback, and explicit feature requests.
 | N-003 | No new detekt issues may be introduced without explicit approval.                               | Policy      |
 | N-004 | The app must not suppress lint/detekt warnings without justification.                           | Policy      |
 | N-005 | Saving album photos never requests a storage permission, never deletes anything but the app's own incomplete items and never creates an uploaded marker or a verified-upload record. | Policy      |
+| N-006 | The reminder check never uses the network, never reads credentials, never starts or cancels uploads or downloads and only reads ids and add dates of the media index (bounded rows and time). | Policy      |

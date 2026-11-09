@@ -445,4 +445,27 @@
     <string name="certificate_trusted_title">Trusted certificate</string>
     <string name="certificate_trusted_until">SHA-256 %1$s, valid until %2$s</string>
     <string name="action_stop_trusting">Stop trusting</string>
+    <!-- New-photos reminder (opt-in, local only) -->
+    <string name="label_new_photos_reminder">Remind me about new photos</string>
+    <string name="hint_new_photos_reminder">Get an occasional notification when photos or videos on this device are not backed up yet. The check runs on this device only and needs access to your photos and videos.</string>
+    <string name="reminder_interval_weekly">Weekly</string>
+    <string name="reminder_interval_every_two_weeks">Every 2 weeks</string>
+    <string name="reminder_interval_monthly">Monthly</string>
+    <string name="reminder_notifications_off_hint">Notifications are turned off for this app or for reminders, so no reminder can be shown.</string>
+    <string name="action_open_notification_settings">Open notification settings</string>
+    <string name="reminder_channel_name">Reminders</string>
+    <string name="reminder_channel_desc">Occasional reminders about photos and videos that are not backed up yet</string>
+    <string name="reminder_notification_title">Photos waiting for backup</string>
+    <plurals name="reminder_new_media_since_upload">
+        <item quantity="one">%d new photo or video since your last upload</item>
+        <item quantity="other">%d new photos and videos since your last upload</item>
+    </plurals>
+    <plurals name="reminder_new_media">
+        <item quantity="one">%d new photo or video on this device</item>
+        <item quantity="other">%d new photos and videos on this device</item>
+    </plurals>
+    <plurals name="reminder_new_media_more_than">
+        <item quantity="one">More than %d new photo or video on this device</item>
+        <item quantity="other">More than %d new photos and videos on this device</item>
+    </plurals>
 </resources>

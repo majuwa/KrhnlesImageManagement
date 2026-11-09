@@ -399,6 +399,81 @@ class PhotoGridViewModelTest {
             assertTrue(5L in viewModel.uiState.value.uploadedPhotoIds)
         }
 
+    // ── showOnlyNewPhotos (opened from the new-photos reminder) ──────────────
+
+    @Test
+    fun `showOnlyNewPhotos turns the filter on and hides uploaded photos`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.showOnlyNewPhotos()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.showOnlyNewPhotos)
+            assertEquals(
+                listOf(2L),
+                state.photosByDate.values
+                    .flatten()
+                    .map { it.id },
+            )
+        }
+
+    @Test
+    fun `showOnlyNewPhotos keeps an active filter on and is idempotent`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.toggleShowOnlyNewPhotos()
+
+            viewModel.showOnlyNewPhotos()
+            viewModel.showOnlyNewPhotos()
+
+            assertTrue(viewModel.uiState.value.showOnlyNewPhotos)
+            assertEquals(
+                listOf(2L),
+                viewModel.uiState.value.photosByDate.values
+                    .flatten()
+                    .map { it.id },
+            )
+        }
+
+    @Test
+    fun `showOnlyNewPhotos with no markers hides nothing`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.showOnlyNewPhotos()
+
+            assertEquals(
+                2,
+                viewModel.uiState.value.photosByDate.values
+                    .flatten()
+                    .size,
+            )
+        }
+
+    @Test
+    fun `showOnlyNewPhotos deselects hidden items and keeps the new selected one`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.togglePhotoSelection(1L)
+            viewModel.togglePhotoSelection(2L)
+
+            viewModel.showOnlyNewPhotos()
+
+            assertEquals(setOf(2L), viewModel.uiState.value.selectedPhotoIds)
+        }
+
     // ── toggleShowOnlyNewPhotos ─────────────────────────────────────────────
 
     @Test

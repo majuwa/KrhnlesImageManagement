@@ -16,6 +16,8 @@ import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -70,6 +72,10 @@ class CredentialStore internal constructor(
         val KEY_BLUR_SENSITIVITY = stringPreferencesKey("blur_sensitivity")
         val KEY_ALBUM_SORT = stringPreferencesKey("album_sort")
         val KEY_VERIFY_BY_DOWNLOAD = booleanPreferencesKey("verify_by_download")
+        val KEY_REMINDER_ENABLED = booleanPreferencesKey("new_photos_reminder_enabled")
+        val KEY_REMINDER_INTERVAL = stringPreferencesKey("new_photos_reminder_interval")
+        val KEY_REMINDER_SINCE = longPreferencesKey("new_photos_reminder_since")
+        val KEY_REMINDER_LAST_SHOWN = longPreferencesKey("new_photos_reminder_last_shown")
 
         /**
          * Bumped in every DataStore edit that accompanies a change of the encrypted prefs, so that the
@@ -133,6 +139,18 @@ class CredentialStore internal constructor(
     override val blurSensitivity: Flow<BlurSensitivity> =
         context.credentialDataStore.data.map {
             BlurSensitivity.fromStored(it.asMap()[KEY_BLUR_SENSITIVITY] as? String)
+        }
+
+    /** Type-safe through `asMap()`: a value of another type reads as the default (off / Weekly / 0). */
+    override val newPhotosReminder: Flow<NewPhotosReminderSettings> =
+        context.credentialDataStore.data.map {
+            val values = it.asMap()
+            NewPhotosReminderSettings(
+                enabled = values[KEY_REMINDER_ENABLED] as? Boolean ?: false,
+                interval = ReminderInterval.fromStored(values[KEY_REMINDER_INTERVAL] as? String),
+                sinceMillis = values[KEY_REMINDER_SINCE] as? Long ?: 0L,
+                lastShownMillis = values[KEY_REMINDER_LAST_SHOWN] as? Long ?: 0L,
+            )
         }
 
     override val albumSort: Flow<AlbumSort> =
@@ -221,6 +239,25 @@ class CredentialStore internal constructor(
 
     override suspend fun saveVerifyByDownload(enabled: Boolean) {
         context.credentialDataStore.edit { it[KEY_VERIFY_BY_DOWNLOAD] = enabled }
+    }
+
+    override suspend fun saveNewPhotosReminder(
+        enabled: Boolean,
+        interval: ReminderInterval,
+    ) {
+        context.credentialDataStore.edit { prefs ->
+            val wasEnabled = prefs.asMap()[KEY_REMINDER_ENABLED] as? Boolean ?: false
+            if (enabled && !wasEnabled) {
+                prefs[KEY_REMINDER_SINCE] = System.currentTimeMillis()
+                prefs.remove(KEY_REMINDER_LAST_SHOWN)
+            }
+            prefs[KEY_REMINDER_ENABLED] = enabled
+            prefs[KEY_REMINDER_INTERVAL] = interval.name
+        }
+    }
+
+    override suspend fun markNewPhotosReminderShown(atMillis: Long) {
+        context.credentialDataStore.edit { it[KEY_REMINDER_LAST_SHOWN] = atMillis }
     }
 
     override suspend fun clear() {

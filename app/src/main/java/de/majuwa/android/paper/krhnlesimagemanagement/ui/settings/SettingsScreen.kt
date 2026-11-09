@@ -211,6 +211,13 @@ private fun LoggedInContent(
 
     Spacer(modifier = Modifier.height(16.dp))
 
+    NewPhotosReminderSetting(
+        settings = uiState.newPhotosReminder,
+        onChange = viewModel.reminder::change,
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
     AutoDateFoldersSetting(
         enabled = uiState.autoDateFoldersEnabled,
         onEnabledChange = viewModel::setAutoDateFoldersEnabled,

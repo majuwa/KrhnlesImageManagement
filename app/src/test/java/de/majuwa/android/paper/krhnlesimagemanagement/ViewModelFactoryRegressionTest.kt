@@ -6,6 +6,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewM
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.LaunchRequestViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.StartupViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
@@ -83,6 +84,7 @@ class PlainViewModelFactoryRegressionTest(
             listOf(
                 arrayOf(DuplicatesViewModel::class.java),
                 arrayOf(BlurViewModel::class.java),
+                arrayOf(LaunchRequestViewModel::class.java),
             )
     }
 
