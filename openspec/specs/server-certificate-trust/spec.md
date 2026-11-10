@@ -48,7 +48,7 @@ A pinned certificate SHALL be accepted only when the connection uses `https` to 
 - **THEN** the connection fails
 
 ### Requirement: All server connections apply the same trust rules
-The WebDAV operations (listing, folder creation, upload incl. chunked upload, chunk assembly and abort, rename, deletion, size checks, verification downloads), album thumbnails and previews, album video streaming, the image loader, the upload worker and the uploaded-photo removal check SHALL all apply the same trust rules. The Nextcloud login flow SHALL apply them only if its library accepts a client provided by the app; otherwise it SHALL rely on the system trust store only and SHALL never use a pin.
+The WebDAV operations (listing, folder creation, upload incl. chunked upload, chunk assembly and abort, rename, deletion, size checks, verification downloads), album thumbnails and previews, album video streaming, the image loader, the upload worker and the uploaded-photo removal check SHALL all apply the same trust rules.
 
 #### Scenario: Background upload to a pinned server
 - **WHEN** an upload runs in the background against a configured server whose certificate is pinned
@@ -61,6 +61,13 @@ The WebDAV operations (listing, folder creation, upload incl. chunked upload, ch
 #### Scenario: Video from a pinned server
 - **WHEN** the user plays a video of an album on a server whose certificate is pinned
 - **THEN** the video streams from the pinned server, and the same video fails with a certificate problem once the pin no longer applies (removed, or for another port)
+
+### Requirement: The Nextcloud login flow applies the trust rules only if possible
+The Nextcloud login flow SHALL apply them only if its library accepts a client provided by the app; otherwise it SHALL rely on the system trust store only and SHALL never use a pin.
+
+#### Scenario: Login library without a client parameter
+- **WHEN** the Nextcloud login library cannot accept a client provided by the app
+- **THEN** the login relies on the system trust store only and never uses a pin
 
 ### Requirement: A removed or replaced pin takes effect without stale trust
 A connection SHALL never reuse a TLS session or pooled connection established under a pin that has since been removed or replaced. A running background upload SHALL apply a removed or replaced pin no later than from its next photo on.
@@ -138,15 +145,11 @@ The app SHALL store at most one pinned certificate, together with its origin (`h
 - **THEN** no certificate is pinned and self-signed connections fail until the user trusts again
 
 ### Requirement: The pin is cleared on logout and on server change
-Logging out SHALL remove the pin. Saving credentials for a different origin SHALL remove a pin for another origin before the new credentials are written. Changing only the username, password or base folder on the same origin SHALL keep the pin. A failure to remove the pin SHALL be logged, SHALL be reported to the user with a localized message and SHALL NOT prevent the logout or the save; a pin left behind by a failed logout clear SHALL be removed by the next save of credentials (there is no previous configuration then).
+Logging out SHALL remove the pin. Saving credentials for a different origin SHALL remove a pin for another origin before the new credentials are written. Changing only the username, password or base folder on the same origin SHALL keep the pin.
 
 #### Scenario: Logout
 - **WHEN** the user logs out while a certificate is pinned
 - **THEN** the pin is removed, and logging in again to the same self-signed server requires trusting the certificate again
-
-#### Scenario: Removing the pin fails
-- **WHEN** logging out or switching servers cannot remove the pin
-- **THEN** the logout or save still happens and Settings shows that the trusted certificate could not be removed; the leftover pin is removed at the next sign-in
 
 #### Scenario: Switching servers
 - **WHEN** the user saves credentials for a server with a different host, port or scheme
@@ -155,6 +158,13 @@ Logging out SHALL remove the pin. Saving credentials for a different origin SHAL
 #### Scenario: New password on the same server
 - **WHEN** the user saves new credentials for the same origin
 - **THEN** the pin is kept and the connection still succeeds
+
+### Requirement: A failed pin removal is reported and does not block
+A failure to remove the pin SHALL be logged, SHALL be reported to the user with a localized message and SHALL NOT prevent the logout or the save; a pin left behind by a failed logout clear SHALL be removed by the next save of credentials (there is no previous configuration then).
+
+#### Scenario: Removing the pin fails
+- **WHEN** logging out or switching servers cannot remove the pin
+- **THEN** the logout or save still happens and Settings shows that the trusted certificate could not be removed; the leftover pin is removed at the next sign-in
 
 ### Requirement: The user can stop trusting a pinned certificate
 While a pin exists for the configured origin, Settings SHALL show the trusted certificate's fingerprint and its validity end with a "Stop trusting" action that removes the pin.

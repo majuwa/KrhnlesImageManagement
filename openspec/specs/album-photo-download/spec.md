@@ -6,7 +6,7 @@ Lets the user save photos from a remote album back to the device. Saving runs in
 ## Requirements
 
 ### Requirement: Save to device is offered in the viewer and in selection mode
-The fullscreen viewer SHALL show a "Save to device" button for the current photo in its overlay controls, and SHALL NOT show it while the current page is a video. The album detail selection top bar SHALL show a "Save to device" action that saves every selected photo and then clears the selection. Both SHALL have localized accessibility labels. The selection action SHALL be disabled while a photo deletion runs. If the action requests nothing (for example the loaded album was dropped after a configuration change), the app SHALL tell the user with a localized message and SHALL keep the selection; the viewer SHALL then not mark the photo as saved. A photo already saved from the viewer SHALL expose a "Saved" state description on its disabled button.
+The fullscreen viewer SHALL show a "Save to device" button for the current photo in its overlay controls, and SHALL NOT show it while the current page is a video. The album detail selection top bar SHALL show a "Save to device" action that saves every selected photo and then clears the selection. Both SHALL have localized accessibility labels. The selection action SHALL be disabled while a photo deletion runs.
 
 #### Scenario: Save from the viewer
 - **WHEN** the user taps "Save to device" in the viewer
@@ -23,6 +23,9 @@ The fullscreen viewer SHALL show a "Save to device" button for the current photo
 #### Scenario: Deletion running
 - **WHEN** a selection-mode deletion is running
 - **THEN** the "Save to device" action is disabled
+
+### Requirement: A save that requests nothing and a saved photo are reported
+If the action requests nothing (for example the loaded album was dropped after a configuration change), the app SHALL tell the user with a localized message and SHALL keep the selection; the viewer SHALL then not mark the photo as saved. A photo already saved from the viewer SHALL expose a "Saved" state description on its disabled button.
 
 #### Scenario: Nothing could be requested
 - **WHEN** the user taps "Save to device" but no download can be requested
@@ -102,7 +105,7 @@ If the device lacks space for a photo (the announced size does not fit the free 
 - **THEN** that photo's partial file is removed, the remaining photos are not requested and the notification names the storage reason
 
 ### Requirement: Only allow-listed image types are saved
-A photo SHALL be saved only if its file-name extension maps to an allow-listed raster image type (JPEG, PNG, GIF, WebP, HEIC, HEIF, AVIF, BMP, DNG). The saved item SHALL get that type's MIME type. Any other entry (video, SVG, TIFF, unknown extension) SHALL be skipped without a request and counted as failed with an "unsupported type" reason. A response SHALL fail the photo (fail closed, nothing stored) unless: its `Content-Type`, if present, parses and is `application/octet-stream` or an allow-listed image subtype (so `image/svg+xml` fails); its `Content-Encoding`, if present, is `identity`; with an unknown length an HTTP/1.x response is chunked (otherwise a truncation cannot be told from the end); and the first bytes of the body match the signature of the file type (JPEG, PNG, GIF, WebP, HEIC / HEIF / AVIF, BMP, DNG), checked before anything is stored.
+A photo SHALL be saved only if its file-name extension maps to an allow-listed raster image type (JPEG, PNG, GIF, WebP, HEIC, HEIF, AVIF, BMP, DNG). The saved item SHALL get that type's MIME type. Any other entry (video, SVG, TIFF, unknown extension) SHALL be skipped without a request and counted as failed with an "unsupported type" reason.
 
 #### Scenario: Video in the album
 - **WHEN** the selection contains a video file
@@ -112,13 +115,19 @@ A photo SHALL be saved only if its file-name extension maps to an allow-listed r
 - **WHEN** the user saves `drawing.svg`
 - **THEN** it is not downloaded and counts as "unsupported type"
 
-#### Scenario: Wrong content behind an image type
-- **WHEN** the server answers a `.jpg` request with `Content-Type: image/jpeg` but an HTML body
-- **THEN** nothing is created on the device and the photo counts as rejected
+### Requirement: Image response headers are validated
+A response SHALL fail the photo (fail closed, nothing stored) unless: its `Content-Type`, if present, parses and is `application/octet-stream` or an allow-listed image subtype (so `image/svg+xml` fails); its `Content-Encoding`, if present, is `identity`; and with an unknown length an HTTP/1.x response is chunked (otherwise a truncation cannot be told from the end).
 
 #### Scenario: Encoded or unparseable response
 - **WHEN** the response has `Content-Encoding: gzip` or a `Content-Type` that does not parse
 - **THEN** the photo counts as rejected and nothing is stored
+
+### Requirement: The body must match the file type before it is stored
+A response SHALL fail the photo (fail closed, nothing stored) unless the first bytes of its body match the signature of the file type (JPEG, PNG, GIF, WebP, HEIC / HEIF / AVIF, BMP, DNG), checked before anything is stored.
+
+#### Scenario: Wrong content behind an image type
+- **WHEN** the server answers a `.jpg` request with `Content-Type: image/jpeg` but an HTML body
+- **THEN** nothing is created on the device and the photo counts as rejected
 
 #### Scenario: HTML instead of an image
 - **WHEN** the server answers a `.jpg` request with 200 and `Content-Type: text/html`

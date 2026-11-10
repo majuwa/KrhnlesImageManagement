@@ -29,7 +29,14 @@ The system SHALL ignore a request to start a connection test while another conne
 - **THEN** a new check runs
 
 ### Requirement: Connection test result is localized and typed
-The system SHALL report the result as a typed outcome: success, not configured, untrusted certificate with reviewable certificate details, server certificate changed with the new certificate's details, other certificate/TLS problem, unknown host, server unreachable, timeout, authentication failure (HTTP 401/403), not found (HTTP 404), other HTTP error with its status code, invalid URL, or unknown error. The Settings screen SHALL show each outcome using a localized, user-friendly string resource, with success styled as positive and the other outcomes styled as errors. The screen SHALL NOT show raw exception messages.
+The system SHALL report the result as a typed outcome: success, not configured, untrusted certificate with reviewable certificate details, server certificate changed with the new certificate's details, other certificate/TLS problem, unknown host, server unreachable, timeout, authentication failure (HTTP 401/403), not found (HTTP 404), other HTTP error with its status code, invalid URL, or unknown error. The result SHALL be available to the Settings screen.
+
+#### Scenario: Result carries the outcome type
+- **WHEN** a connection test finishes
+- **THEN** its result is exactly one of the typed outcomes, not an exception message
+
+### Requirement: Outcomes are shown with localized strings
+The Settings screen SHALL show each outcome using a localized, user-friendly string resource, with success styled as positive and the other outcomes styled as errors. The screen SHALL NOT show raw exception messages.
 
 #### Scenario: Successful connection
 - **WHEN** the server check succeeds
