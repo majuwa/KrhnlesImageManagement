@@ -52,7 +52,7 @@
 - [x] 8.1 Run `./gradlew test` and verify all tests pass
 - [x] 8.2 Run `./gradlew spotlessCheck`, `./gradlew detekt` and `./gradlew lintDebug` and verify zero issues (no suppressions, no baseline)
 - [x] 8.3 Run `./gradlew jacocoTestReport` and verify `worker/UploadCancellation.kt` and `CancelUploadReceiver` are covered in the HTML report
-- [ ] 8.4 Manually on a device (API 35+): start an upload of ~20 photos, tap Cancel in the notification mid-batch, check the cancelled notification and history entry, tap "Retry Failed" and confirm only the remaining photos are uploaded; repeat from the in-app banner and with Wi-Fi only toggled off/on to confirm a constraint stop is not reported as cancelled
+- [ ] 8.4 (OPEN at archive time: manual device check not yet performed; track on the PR) Manually on a device (API 35+): start an upload of ~20 photos, tap Cancel in the notification mid-batch, check the cancelled notification and history entry, tap "Retry Failed" and confirm only the remaining photos are uploaded; repeat from the in-app banner and with Wi-Fi only toggled off/on to confirm a constraint stop is not reported as cancelled
 
 ## Workflow follow-up
 
