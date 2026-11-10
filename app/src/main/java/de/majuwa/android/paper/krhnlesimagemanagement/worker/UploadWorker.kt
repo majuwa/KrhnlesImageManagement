@@ -6,6 +6,7 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -13,6 +14,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.data.ChunkedLocations
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.LocalDigest
@@ -31,6 +33,10 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavClient
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
 import de.majuwa.android.paper.krhnlesimagemanagement.data.toUploadFailure
 import de.majuwa.android.paper.krhnlesimagemanagement.data.verifierFor
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
@@ -58,7 +64,7 @@ class UploadWorker internal constructor(
     context: Context,
     params: WorkerParameters,
     private val credentialRepository: CredentialRepository,
-    private val clientFactory: (WebDavConfig) -> WebDavClient,
+    private val clientFactory: (WebDavConfig, PinnedCertificate?) -> WebDavClient,
     private val uploadedPhotos: UploadedPhotosRepositoryContract = UploadedPhotosStore(context.applicationContext),
     private val uploadHistory: UploadHistoryRepository = UploadHistoryStore(context.applicationContext),
     private val isActiveNetworkMetered: () -> Boolean = { isActiveNetworkMetered(context.applicationContext) },
@@ -111,6 +117,31 @@ class UploadWorker internal constructor(
      */
     @Volatile
     private var terminal = false
+
+    /**
+     * Seam for tests (the default values are the production ones): chunking threshold and chunk size,
+     * the wait between attempts and the bound of the abort `DELETE` ([ChunkedUploadSettings]). A
+     * property, not a constructor parameter, to keep the constructor within detekt's limit.
+     */
+    @VisibleForTesting
+    internal var chunking = ChunkedUploadSettings()
+
+    /** The pinned-certificate store; a property (not a constructor parameter) like [chunking], for the detekt limit. */
+    @VisibleForTesting
+    internal var trustedCertificates: TrustedCertificateRepository = TrustedCertificateStore(context.applicationContext)
+
+    /**
+     * Aborts the chunked transfers saved in a queue with this run's client and folders (each `DELETE`
+     * bounded by the given timeout); set right after the run read its configuration (no suspension
+     * point in between). Used by a user cancel; a cancel before that reads the configuration itself
+     * ([cancelAborter]).
+     */
+    @Volatile
+    private var abortTransfers: (suspend (UploadQueue, Long) -> Unit)? = null
+
+    /** The uploads endpoint refused a new transfer: the rest of this run uploads with one `PUT` per file. */
+    @Volatile
+    private var chunkingUnavailable = false
 
     companion object {
         const val KEY_QUEUE_FILE = "queue_file"
@@ -177,9 +208,36 @@ class UploadWorker internal constructor(
 
     private suspend fun finalizeOnCancel(queueFile: File) {
         val queue = liveQueue ?: return
-        // A chunked-upload session of the in-flight item is discarded here (best effort, before
-        // the claim) once the nextcloud-chunked-upload change exists; see docs/architecture.md.
+        // The queue is claimed and reported first, so the "Upload cancelled" notification never waits
+        // for the network. Then every open chunked transfer (the in-flight one is saved in the queue
+        // before its MKCOL) is removed on the server: best effort, not cancellable, bounded per
+        // request. Only a user cancel gets here; a system stop keeps them so the next run resumes.
         finalizeCancelledQueue(applicationContext, queueFile, queue, liveFailures.toSet(), uploadHistory)
+        val abort = abortTransfers ?: cancelAborter(queue)
+        abort?.invoke(queue, chunking.cancelAbortTimeoutMs)
+    }
+
+    /**
+     * The aborter of a cancel that came before the run read its configuration (Wi-Fi-only or
+     * configuration read): reads the configuration now (bounded, not cancellable: the work is already
+     * cancelled) so the transfers saved in [queue] are still removed (binding-checked). Null when
+     * nothing is saved or no valid configuration could be read.
+     */
+    private suspend fun cancelAborter(queue: UploadQueue): (suspend (UploadQueue, Long) -> Unit)? {
+        if (queue.entries.none { it.chunked != null && !it.uploaded }) return null
+        val config =
+            withContext(NonCancellable) {
+                runCatching {
+                    withTimeoutOrNull(
+                        CONFIG_RECHECK_TIMEOUT_MS,
+                    ) { credentialRepository.webDavConfig.first() }
+                }.onFailure { if (it is CancellationException) throw it }
+                    .getOrNull()
+            }
+        if (config == null || !config.isValid) return null
+        // Read next to the config re-read, inside NonCancellable (bounded, fallback: system trust only).
+        val pin = withContext(NonCancellable) { trustedCertificates.pinFor(config.url) }
+        return transferAborter(config, clientFactory(config, pin), queue)
     }
 
     private suspend fun runUpload(
@@ -245,14 +303,18 @@ class UploadWorker internal constructor(
         val notificationTag = queueFile.name
         val total = queue.entries.size
         val pending = queue.pendingIndices
-        val remoteFolderPaths = List(total) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
-        val client = clientFactory(config)
+        val remoteFolderPaths = remoteFolderPathsOf(config, queue)
+        val pin = trustedCertificates.pinFor(config.url)
+        val client = clientFactory(config, pin)
+        abortTransfers = transferAborter(config, client, queue)
+        // Always the aborter of the *current* client: a changed pin replaces it (see uploadFiles).
+        val abortOpen: suspend (UploadQueue) -> Unit = { abortTransfers?.invoke(it, chunking.abortTimeoutMs) }
 
         applicationContext.createUploadNotificationChannel()
         // A refused foreground service (time budget used up, background start) retries the run
         // later; the queue stays.
         if (!setForegroundOrFalse(buildForegroundInfo(total - pending.size, total))) {
-            return interrupted(UploadRun(queue, emptySet(), interrupted = true), queueFile, notificationTag)
+            return interrupted(UploadRun(queue, emptySet(), interrupted = true), queueFile, notificationTag, abortOpen)
         }
 
         // Nothing left (an earlier run finished every entry): no folder request, only the result.
@@ -260,6 +322,8 @@ class UploadWorker internal constructor(
             val folderPaths = pending.map { remoteFolderPaths[it] }
             val folderError = createRemoteFolders(client, queue, config.uploadPathPrefix, folderPaths)
             if (folderError != null) {
+                // The run ends without a retry file: its saved transfers will never be resumed.
+                abortOpen(queue)
                 terminalReport {
                     uploadHistory.recordRun(queue.historyLabel, total, pending.size)
                     val message =
@@ -277,10 +341,18 @@ class UploadWorker internal constructor(
         }
 
         // Read once per run; an unreadable setting means no extra downloads.
-        val verifier = verifierFor(config, readVerifyByDownload(credentialRepository.verifyByDownload), client)
-        val upload = UploadContext(client, verifier, config, applicationContext.hasMediaLocationAccess())
+        val downloadEnabled = readVerifyByDownload(credentialRepository.verifyByDownload)
+        val verifier = verifierFor(config, downloadEnabled, client)
+        val upload =
+            UploadContext(client, verifier, config, applicationContext.hasMediaLocationAccess(), pin, downloadEnabled)
         val run = uploadFiles(upload, queue, remoteFolderPaths, queueFile)
-        return if (run.interrupted) interrupted(run, queueFile, notificationTag) else finish(run, notificationTag)
+        return if (run.interrupted) {
+            interrupted(run, queueFile, notificationTag, abortOpen)
+        } else {
+            // Transfers still saved now will not be resumed (their entries failed before reaching them).
+            abortOpen(run.queue)
+            finish(run, notificationTag)
+        }
     }
 
     /**
@@ -288,11 +360,14 @@ class UploadWorker internal constructor(
      * refusals are used up; then it stops like a finished run with the remaining entries failed.
      * The refusal is counted in the queue file; if that write fails the run is retried only while
      * `runAttemptCount` is below [MAX_UPLOAD_RUN_ATTEMPTS], and never from [MAX_UPLOAD_RUN_ATTEMPTS_BACKSTOP].
+     * Giving up first runs [abortOpen] for the queue: the unfinished chunked transfers on the server
+     * are removed (the retry file starts them again).
      */
     private suspend fun interrupted(
         run: UploadRun,
         queueFile: File,
         notificationTag: String,
+        abortOpen: suspend (UploadQueue) -> Unit,
     ): UploadOutcome {
         // A user cancel is not an interruption: it is finalized by the caller of doWork, never
         // counted and never retried.
@@ -315,6 +390,7 @@ class UploadWorker internal constructor(
             }
         }
         Log.w(UPLOAD_WORKER_TAG, "Upload interrupted too often; giving up after $MAX_UPLOAD_RUN_ATTEMPTS interruptions")
+        abortOpen(run.queue)
         return finish(run, notificationTag, gaveUp = true)
     }
 
@@ -333,7 +409,11 @@ class UploadWorker internal constructor(
             uploadHistory.recordRun(queue.historyLabel, total, failed)
 
             val retryQueueFilePath =
-                if (failedIndices.isNotEmpty()) writeRetryQueueFile(queue, failedIndices)?.absolutePath else null
+                if (failedIndices.isNotEmpty()) {
+                    applicationContext.writeRetryQueueFile(queue, failedIndices)?.absolutePath
+                } else {
+                    null
+                }
             val retainedStaged =
                 if (retryQueueFilePath != null) {
                     failedIndices.mapNotNull { queue.entries[it].staged }.toSet()
@@ -369,11 +449,12 @@ class UploadWorker internal constructor(
      * foreground update interrupts the run, except after the last entry (the batch is complete).
      */
     private suspend fun uploadFiles(
-        upload: UploadContext,
+        initialUpload: UploadContext,
         initialQueue: UploadQueue,
         remoteFolderPaths: List<String>,
         queueFile: File,
     ): UploadRun {
+        var upload = initialUpload
         var queue = initialQueue
         val pending = queue.pendingIndices
         val total = queue.entries.size
@@ -382,7 +463,21 @@ class UploadWorker internal constructor(
 
         for ((n, i) in pending.withIndex()) {
             val entry = queue.entries[i]
-            val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry)
+            // A removed or replaced pin applies from the next entry on (a chunked transfer in
+            // progress finishes with its snapshot).
+            val refreshed = upload.withRefreshedPin(trustedCertificates, clientFactory)
+            if (refreshed !== upload) {
+                // The aborters (cancel, give-up, end of run) must use the client of the pin now in effect.
+                abortTransfers = transferAborter(refreshed.config, refreshed.client, queue)
+            }
+            upload = refreshed
+            val outcome = uploadPhoto(upload, remoteFolderPaths[i], entry, EntrySlot(i, queueFile, finished, total))
+            // The progress of a chunked upload: kept when interrupted, cleared when finished or failed.
+            queue = queue.withChunked(i, liveQueue?.entries?.getOrNull(i)?.chunked)
+            if (outcome.interrupted) {
+                liveQueue = queue
+                return UploadRun(queue, failures, interrupted = true)
+            }
             // A finished PUT is always booked, even if the user cancels right now: the item is
             // marked uploaded and never re-sent. The cancel surfaces at the next suspension point.
             queue = withContext(NonCancellable) { bookOutcome(upload, queue, i, outcome, queueFile) }
@@ -424,143 +519,138 @@ class UploadWorker internal constructor(
     }
 
     /**
-     * Run-wide upload state: the client, the chosen verification strategy, the configuration of this
-     * run and whether originals can be opened (`ACCESS_MEDIA_LOCATION`).
-     */
-    private class UploadContext(
-        val client: WebDavClient,
-        val verifier: UploadVerifier,
-        val config: WebDavConfig,
-        val originalAccess: Boolean,
-    )
-
-    /**
-     * [failure] null = uploaded; [target] is where the `PUT` wrote (null: nothing was sent); [record]
-     * is set only for a verified upload of an original.
-     */
-    private class PhotoUploadOutcome(
-        val failure: UploadFailure?,
-        val target: UploadTarget? = null,
-        val record: VerifiedUpload? = null,
-    )
-
-    /**
      * Streams one photo or video (never buffered); the size is sent when known. A MediaStore photo
      * opened as the original is hashed while it streams and verified afterwards (design D2 / D4): a
      * mismatch or a check that cannot finish is a failed photo; no strategy, a photo that could not
      * be opened as the original (its location may be redacted), or a local file that is not provably
      * the one that was sent, is an unverified (but successful) upload. A staged (shared) entry is
-     * never verified.
+     * never verified. On a Nextcloud files URL a file of known size from the chunking threshold on
+     * is uploaded in chunks (issue #69), unless the uploads endpoint refused a transfer in this run.
      */
     private suspend fun uploadPhoto(
         upload: UploadContext,
         remoteFolderPath: String,
         entry: UploadQueueEntry,
+        slot: EntrySlot,
     ): PhotoUploadOutcome {
-        val staged = entry.staged
         val uri = entry.uri.toUri()
         // Validated before any MediaStore query on the uri: only foreign content:// URIs, never
         // file:// or this app's own providers. A staged entry never touches its uri.
-        if (staged == null && !isAllowedPhotoUri(uri, applicationContext.packageName)) {
+        if (entry.staged == null && !isAllowedPhotoUri(uri, applicationContext.packageName)) {
             Log.w(UPLOAD_WORKER_TAG, "Photo URI rejected: unsupported scheme or own authority")
             return PhotoUploadOutcome(UploadFailure.Other)
         }
-        val verifiable = staged == null && entry.id >= 0L
-        // Read before the stream is opened: the metadata of the file that is about to be sent.
-        val before = if (verifiable) applicationContext.contentResolver.mediaFileStateOf(uri) else null
-        val source =
-            applicationContext.openEntry(entry, uri, wantOriginal = verifiable && upload.originalAccess)
-                ?: return PhotoUploadOutcome(UploadFailure.Other)
+        val verifiable = entry.staged == null && entry.id >= 0L
+        val open: suspend () -> OpenedEntry? = {
+            applicationContext.openVerifiable(entry, uri, verifiable, upload.originalAccess)
+        }
+        val opened = open() ?: return PhotoUploadOutcome(UploadFailure.Other)
         val target = UploadTarget(upload.config.url, remoteFolderPath, entry.displayName)
+        val locations =
+            upload.client.chunkedLocations(remoteFolderPath, entry.displayName).takeUnless { chunkingUnavailable }
+        if (locations == null ||
+            !chunking.policy.isChunked(applicationContext.uploadLengthOf(opened.source.stream, entry))
+        ) {
+            return uploadSingle(upload, target, entry, slot, opened)
+        }
+        // Every attempt of a chunked upload opens the file again.
+        opened.source.stream.close()
+        val request = ChunkedRequest(remoteFolderPath, entry.displayName, locations, upload.verifier.requestsServerHash)
+        return uploadChunked(upload, target, entry, slot, request, open)
+            ?: uploadSingle(upload, target, entry, slot, open())
+    }
+
+    /** Uploads [opened] with one `PUT` and verifies it (an original only); null = it could not be opened. */
+    private suspend fun uploadSingle(
+        upload: UploadContext,
+        target: UploadTarget,
+        entry: UploadQueueEntry,
+        slot: EntrySlot,
+        opened: OpenedEntry?,
+    ): PhotoUploadOutcome {
+        if (opened == null) return PhotoUploadOutcome(UploadFailure.Other)
+        // A chunked transfer saved by an earlier run that is not continued (one PUT now) is removed.
+        liveQueue?.entries?.getOrNull(slot.index)?.chunked?.let {
+            upload.client.abortIfBound(it, target.folder, target.fileName, chunking.abortTimeoutMs)
+            saveChunked(slot, null)
+        }
         // The PUT replaces whatever is at the target: drop its records first, so a run that dies
         // during the PUT never leaves a record describing a file that was overwritten.
         verifiedUploads.applyUploadLogged(target)
-        val original = (source as? UploadSource.Original)?.takeIf { verifiable }
-        val (response, sent) = put(upload, remoteFolderPath, entry, source, hashed = original != null)
+        val original = opened.original
+        val (response, sent) =
+            applicationContext.put(upload, target.folder, entry, opened.source, hashed = original != null)
         val putFailure = response.exceptionOrNull()
         return when {
             putFailure != null -> PhotoUploadOutcome(putFailure.toUploadFailure(), target)
             original == null || sent == null -> PhotoUploadOutcome(null, target)
-            else -> verifyUpload(upload, target, entry, original, sent, before, response.getOrThrow())
+            else -> verifyUpload(upload, target, entry, original, sent, opened.before, response.getOrThrow())
         }
     }
 
     /**
-     * Streams [source] with one `PUT`; when [hashed], the sent bytes are hashed and counted on the
-     * way (the returned stream). The length comes from the raw stream (a staged one reads it from
-     * the file channel), so the digest wrapper is applied only afterwards.
+     * Uploads [entry] in chunks ([ChunkedUploader], design D5 / D6). The progress is saved in the queue
+     * file after every step, every confirmed chunk but the last updates the notification (a refusal
+     * interrupts the run, and so does a last attempt that failed transiently: the progress is kept),
+     * and an assembled original is verified like a `PUT`. Null = the uploads
+     * endpoint is not usable (design D10): this and every later file of the run use one `PUT`.
      */
-    private suspend fun put(
-        upload: UploadContext,
-        remoteFolderPath: String,
-        entry: UploadQueueEntry,
-        source: UploadSource,
-        hashed: Boolean,
-    ): Pair<kotlin.Result<UploadResponse>, DigestCountingInputStream?> {
-        var counting: DigestCountingInputStream? = null
-        val response =
-            source.stream.use { stream ->
-                val length = applicationContext.uploadLengthOf(stream, entry)
-                val body = if (hashed) DigestCountingInputStream(stream).also { counting = it } else stream
-                upload.client.uploadFile(
-                    remoteFolderPath,
-                    entry.displayName,
-                    entry.mimeType,
-                    body,
-                    length,
-                    requestServerHash = hashed && upload.verifier.requestsServerHash,
-                )
-            }
-        return response to counting
-    }
-
-    /** Verifies the upload of an [original] (never of a stream whose location may be redacted). */
-    private suspend fun verifyUpload(
+    private suspend fun uploadChunked(
         upload: UploadContext,
         target: UploadTarget,
         entry: UploadQueueEntry,
-        original: UploadSource.Original,
-        sent: DigestCountingInputStream,
-        before: MediaFileState?,
-        put: UploadResponse,
-    ): PhotoUploadOutcome {
-        val local = LocalDigest(sha256 = sent.sha256Hex(), sizeBytes = sent.bytesRead)
-        // Not provably the file that was sent (metadata missing, or it changed / is stale): a good
-        // backup that is never offered for removal. No download is spent on it.
-        val provable = before != null && before.size == local.sizeBytes
-        val verification =
-            if (provable && upload.verifier !== NoVerifier) {
-                upload.verifier.verify(RemoteFile(target.folder, target.fileName), local, put)
-            } else {
-                Verification.Unavailable
-            }
-        return when (verification) {
-            Verification.Verified -> {
-                PhotoUploadOutcome(
-                    failure = null,
-                    target = target,
-                    record =
-                        VerifiedUpload(
-                            id = entry.id,
-                            uri = original.mediaUri.toString(),
-                            size = local.sizeBytes,
-                            dateModified = checkNotNull(before).dateModified,
-                            serverUrl = target.serverUrl,
-                            folder = target.folder,
-                            fileName = target.fileName,
-                            verifiedAt = System.currentTimeMillis(),
-                        ),
-                )
+        slot: EntrySlot,
+        request: ChunkedRequest,
+        open: suspend () -> OpenedEntry?,
+    ): PhotoUploadOutcome? {
+        val callbacks =
+            ChunkedCallbacks(
+                open = open,
+                lengthOf = { applicationContext.uploadLengthOf(it, entry) },
+                beginAttempt = { verifiedUploads.applyUploadLogged(target) },
+                persist = { saveChunked(slot, it) },
+                chunkConfirmed = { percent ->
+                    setForegroundOrFalse(buildForegroundInfo(slot.finished, slot.total, percent))
+                },
+            )
+        val saved = liveQueue?.entries?.getOrNull(slot.index)?.chunked
+        return when (val result = ChunkedUploader(upload.client, chunking, request, callbacks, saved).upload()) {
+            is ChunkedResult.Uploaded -> {
+                val original = result.opened.original
+                if (original == null) {
+                    PhotoUploadOutcome(null, target)
+                } else {
+                    verifyUpload(upload, target, entry, original, result.sent, result.opened.before, result.response)
+                }
             }
 
-            Verification.Unavailable -> {
-                PhotoUploadOutcome(null, target)
+            is ChunkedResult.Interrupted -> {
+                PhotoUploadOutcome(null, interrupted = true)
             }
 
-            Verification.Mismatch, Verification.Inconclusive -> {
-                PhotoUploadOutcome(UploadFailure.Verification, target)
+            is ChunkedResult.Failed -> {
+                PhotoUploadOutcome(result.cause.toUploadFailure(), target)
+            }
+
+            ChunkedResult.Unavailable -> {
+                Log.w(UPLOAD_WORKER_TAG, "Nextcloud uploads endpoint not usable; uploading single files")
+                chunkingUnavailable = true
+                null
             }
         }
+    }
+
+    /**
+     * Saves the chunked-upload progress of the entry at [slot] in the live queue and its queue file
+     * (atomic rewrite; a failed write only loses resume granularity).
+     */
+    private fun saveChunked(
+        slot: EntrySlot,
+        state: ChunkedTransferState?,
+    ) {
+        val updated = (liveQueue ?: return).withChunked(slot.index, state)
+        liveQueue = updated
+        rewriteQueueFile(slot.queueFile, updated.toProgressJson().toString())
     }
 
     /**
@@ -581,37 +671,200 @@ class UploadWorker internal constructor(
         verifiedUploads.applyUploadLogged(target, record, forgetIds)
     }
 
-    /** Writes the retry file: only failed entries, each keeping its folder; common folder and label copied. */
-    private fun writeRetryQueueFile(
-        queue: UploadQueue,
-        failedIndices: List<Int>,
-    ): File? =
-        try {
-            val retryFile =
-                File(queueFilesDir(applicationContext), "retry_queue_${UUID.randomUUID()}.json")
-            retryFile.writeText(queue.toRetryJson(failedIndices).toString())
-            retryFile
-        } catch (e: Exception) {
-            Log.w(UPLOAD_WORKER_TAG, "Failed to write retry queue file: ${e.javaClass.simpleName}")
-            null
-        }
-
     private fun buildForegroundInfo(
         current: Int,
         total: Int,
+        filePercent: Int? = null,
     ): ForegroundInfo =
         ForegroundInfo(
             NOTIFICATION_ID,
-            buildProgressNotification(current, total),
+            buildProgressNotification(current, total, filePercent),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
 
-    /** The progress notification of this work, with its Cancel action. */
+    /**
+     * The progress notification of this work, with its Cancel action; [filePercent] is the share of
+     * the file being uploaded in chunks (null = none).
+     */
     internal fun buildProgressNotification(
         current: Int,
         total: Int,
-    ): Notification = applicationContext.buildProgressNotification(current, total, id)
+        filePercent: Int? = null,
+    ): Notification = applicationContext.buildProgressNotification(current, total, id, filePercent)
 }
+
+/**
+ * Run-wide upload state: the client, the chosen verification strategy, the configuration of this
+ * run and whether originals can be opened (`ACCESS_MEDIA_LOCATION`).
+ */
+private class UploadContext(
+    val client: WebDavClient,
+    val verifier: UploadVerifier,
+    val config: WebDavConfig,
+    val originalAccess: Boolean,
+    val pin: PinnedCertificate?,
+    val downloadEnabled: Boolean,
+)
+
+/**
+ * Re-reads the pin (bounded, fallback: system trust only); when it differs from the one the client was
+ * built with, a new client and verifier replace them for the remaining entries.
+ */
+private suspend fun UploadContext.withRefreshedPin(
+    trustedCertificates: TrustedCertificateRepository,
+    clientFactory: (WebDavConfig, PinnedCertificate?) -> WebDavClient,
+): UploadContext {
+    val current = trustedCertificates.pinFor(config.url)
+    if (current == pin) return this
+    val newClient = clientFactory(config, current)
+    val newVerifier = verifierFor(config, downloadEnabled, newClient)
+    return UploadContext(newClient, newVerifier, config, originalAccess, current, downloadEnabled)
+}
+
+/**
+ * [failure] null = uploaded; [target] is where the upload wrote (null: nothing was sent); [record]
+ * is set only for a verified upload of an original. [interrupted]: a chunked upload was interrupted
+ * by a refused foreground service or by attempts that all failed transiently, e.g. a network outage
+ * (its progress is kept, nothing is booked; the run is retried like any interruption).
+ */
+private class PhotoUploadOutcome(
+    val failure: UploadFailure?,
+    val target: UploadTarget? = null,
+    val record: VerifiedUpload? = null,
+    val interrupted: Boolean = false,
+)
+
+/** Aborts the binding-matched transfers of a queue with [client] and the folders of [queue] under [config]. */
+private fun transferAborter(
+    config: WebDavConfig,
+    client: WebDavClient,
+    queue: UploadQueue,
+): suspend (UploadQueue, Long) -> Unit {
+    val remoteFolderPaths = remoteFolderPathsOf(config, queue)
+    return { q, timeoutMs -> client.abortOpenTransfers(q, remoteFolderPaths, timeoutMs) }
+}
+
+/** Remote folder of every entry of [queue] (by index) under the upload path of [config]. */
+private fun remoteFolderPathsOf(
+    config: WebDavConfig,
+    queue: UploadQueue,
+): List<String> = List(queue.entries.size) { "${config.uploadPathPrefix}${queue.folderOf(it)}" }
+
+/** Entry [index] of the run, its [queueFile] and the batch progress ([finished] of [total]) for the notification. */
+private class EntrySlot(
+    val index: Int,
+    val queueFile: File,
+    val finished: Int,
+    val total: Int,
+)
+
+/**
+ * Opens [entry] for upload (see [openEntry]) together with the metadata read just before (verifiable
+ * entries only); the source counts as original only for a verifiable entry. Null = not openable.
+ */
+private fun Context.openVerifiable(
+    entry: UploadQueueEntry,
+    uri: Uri,
+    verifiable: Boolean,
+    originalAccess: Boolean,
+): OpenedEntry? {
+    // Read before the stream is opened: the metadata of the file that is about to be sent.
+    val before = if (verifiable) contentResolver.mediaFileStateOf(uri) else null
+    val source = openEntry(entry, uri, wantOriginal = verifiable && originalAccess) ?: return null
+    return OpenedEntry(source, before, (source as? UploadSource.Original)?.takeIf { verifiable })
+}
+
+/**
+ * Streams [source] with one `PUT`; when [hashed], the sent bytes are hashed and counted on the
+ * way (the returned stream). The length comes from the raw stream (a staged one reads it from
+ * the file channel), so the digest wrapper is applied only afterwards.
+ */
+private suspend fun Context.put(
+    upload: UploadContext,
+    remoteFolderPath: String,
+    entry: UploadQueueEntry,
+    source: UploadSource,
+    hashed: Boolean,
+): Pair<kotlin.Result<UploadResponse>, DigestCountingInputStream?> {
+    var counting: DigestCountingInputStream? = null
+    val response =
+        source.stream.use { stream ->
+            val length = uploadLengthOf(stream, entry)
+            val body = if (hashed) DigestCountingInputStream(stream).also { counting = it } else stream
+            upload.client.uploadFile(
+                remoteFolderPath,
+                entry.displayName,
+                entry.mimeType,
+                body,
+                length,
+                requestServerHash = hashed && upload.verifier.requestsServerHash,
+            )
+        }
+    return response to counting
+}
+
+/** Verifies the upload of an [original] (never of a stream whose location may be redacted). */
+private suspend fun verifyUpload(
+    upload: UploadContext,
+    target: UploadTarget,
+    entry: UploadQueueEntry,
+    original: UploadSource.Original,
+    sent: DigestCountingInputStream,
+    before: MediaFileState?,
+    put: UploadResponse,
+): PhotoUploadOutcome {
+    val local = LocalDigest(sha256 = sent.sha256Hex(), sizeBytes = sent.bytesRead)
+    // Not provably the file that was sent (metadata missing, or it changed / is stale): a good
+    // backup that is never offered for removal. No download is spent on it.
+    val provable = before != null && before.size == local.sizeBytes
+    val verification =
+        if (provable && upload.verifier !== NoVerifier) {
+            upload.verifier.verify(RemoteFile(target.folder, target.fileName), local, put)
+        } else {
+            Verification.Unavailable
+        }
+    return when (verification) {
+        Verification.Verified -> {
+            PhotoUploadOutcome(
+                failure = null,
+                target = target,
+                record =
+                    VerifiedUpload(
+                        id = entry.id,
+                        uri = original.mediaUri.toString(),
+                        size = local.sizeBytes,
+                        dateModified = checkNotNull(before).dateModified,
+                        serverUrl = target.serverUrl,
+                        folder = target.folder,
+                        fileName = target.fileName,
+                        verifiedAt = System.currentTimeMillis(),
+                    ),
+            )
+        }
+
+        Verification.Unavailable -> {
+            PhotoUploadOutcome(null, target)
+        }
+
+        Verification.Mismatch, Verification.Inconclusive -> {
+            PhotoUploadOutcome(UploadFailure.Verification, target)
+        }
+    }
+}
+
+/** Writes the retry file: only failed entries, each keeping its folder; common folder and label copied. */
+private fun Context.writeRetryQueueFile(
+    queue: UploadQueue,
+    failedIndices: List<Int>,
+): File? =
+    try {
+        val retryFile = File(queueFilesDir(this), "retry_queue_${UUID.randomUUID()}.json")
+        retryFile.writeText(queue.toRetryJson(failedIndices).toString())
+        retryFile
+    } catch (e: Exception) {
+        Log.w(UPLOAD_WORKER_TAG, "Failed to write retry queue file: ${e.javaClass.simpleName}")
+        null
+    }
 
 /** The queue file named by [path] if it is an existing, validated worker queue file, else null. */
 private fun validQueueFile(

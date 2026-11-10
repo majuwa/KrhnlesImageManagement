@@ -61,3 +61,49 @@ A thumbnail downloaded for the duplicate or blur scan SHALL only be requested if
 #### Scenario: Regular thumbnails
 - **WHEN** the thumbnail is a photo below the base folder or its Memories preview
 - **THEN** it is downloaded as before
+
+### Requirement: Video streams stay on the configured server
+A video SHALL only be streamed from a URL that lies strictly below the configured base folder on the configured origin (resolved from the listing with the same href checks as photos). Any other URL, and any request other than a plain read of the video, SHALL fail without sending a request. Video requests SHALL carry the user's credentials only to the configured origin, SHALL NOT follow any redirect, and the body of an error response SHALL NOT be read into memory.
+
+#### Scenario: Video below the base folder
+- **WHEN** the user plays a listed video of an album
+- **THEN** the request goes to that video's address on the configured server with the user's credentials and may ask for a byte range
+
+#### Scenario: Unsafe video address
+- **WHEN** a video's address would resolve outside the configured base folder, to another host or port, or contains traversal or encoded separators
+- **THEN** playback fails with the generic message and no request is sent
+
+#### Scenario: Server redirects the video request
+- **WHEN** the server answers a video request with any redirect (301, 302, 303, 307 or 308), to the same or another origin
+- **THEN** the redirect is not followed, no request is sent to the redirect target and the page shows the redirect failure message
+
+#### Scenario: Stream after configuration change
+- **WHEN** the server or account changes, or the user logs out, while a video stream of the old configuration is still open or about to reconnect
+- **THEN** no further request is sent with the old configuration's credentials
+
+#### Scenario: Server certificate trust
+- **WHEN** the configured server uses a certificate the app trusts only through the user's explicit choice (the pinned self-signed certificate)
+- **THEN** video requests use exactly the same trust decision as album listing requests, never a broader one
+
+#### Scenario: Error response with a huge body
+- **WHEN** the server answers a video request with an error status and an arbitrarily large body
+- **THEN** the body is discarded without being read, memory use stays bounded and the page shows the message for that status
+
+### Requirement: Photo downloads stay inside their album
+A photo saved to the device SHALL only be requested if its album href resolves strictly below the configured base folder and the photo href resolves strictly below that album, on the configured origin, under the same rules as other server-supplied hrefs. A refused href SHALL fail that photo without sending a request; the decision SHALL be repeated when the queued download runs, against the configuration current at that time.
+
+#### Scenario: Traversal in a queued href
+- **WHEN** a queued photo href contains `..`, `%2e%2e` or an encoded slash
+- **THEN** no request is sent for it and it counts as failed
+
+#### Scenario: Photo outside its album
+- **WHEN** a queued photo href points to another album, the base folder itself or another user's files
+- **THEN** no request is sent for it and it counts as failed
+
+#### Scenario: Other origin
+- **WHEN** a queued photo href is an absolute URL on another host or port
+- **THEN** no request is sent and no credentials leave the device
+
+#### Scenario: Base folder changed after queueing
+- **WHEN** the base folder was changed in Settings after the download was queued and the album is no longer below it
+- **THEN** no photo of that batch is requested

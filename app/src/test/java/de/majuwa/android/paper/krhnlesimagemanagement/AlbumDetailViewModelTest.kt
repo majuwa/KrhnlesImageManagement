@@ -8,8 +8,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.cash.turbine.test
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailState
@@ -70,13 +73,15 @@ class AlbumDetailViewModelTest {
         viewModel = createViewModel()
     }
 
-    private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract = { fakeRepo }) =
-        AlbumDetailViewModel(
-            application = RuntimeEnvironment.getApplication() as Application,
-            credentialRepo = credentials,
-            repoFactory = repoFactory,
-            backgroundDispatcher = testDispatcher,
-        )
+    private fun createViewModel(
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract = { _, _ -> fakeRepo },
+    ) = AlbumDetailViewModel(
+        application = RuntimeEnvironment.getApplication() as Application,
+        credentialRepo = credentials,
+        repoFactory = repoFactory,
+        backgroundDispatcher = testDispatcher,
+        trustedCertificates = FakeTrustedCertificateRepository(),
+    )
 
     @After
     fun tearDown() {
@@ -95,6 +100,28 @@ class AlbumDetailViewModelTest {
             assertEquals("Summer", detail.albumName)
             assertEquals(2, detail.photos.size)
             assertFalse(detail.isLoading)
+        }
+
+    @Test
+    fun `a failed poster is remembered until the album is loaded again`() =
+        runTest {
+            fakeRepo.photos = Result.success(listOf(beach, sunset))
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+            val url =
+                viewModel.detailState.value.thumbnailUrls
+                    .getValue(beach.href)
+
+            viewModel.markPosterFailed(url)
+            viewModel.markPosterFailed(url)
+
+            assertEquals(setOf(url), viewModel.detailState.value.failedPosterUrls)
+            viewModel.reload()
+            advanceUntilIdle()
+            assertTrue(
+                viewModel.detailState.value.failedPosterUrls
+                    .isEmpty(),
+            )
         }
 
     @Test
@@ -140,7 +167,7 @@ class AlbumDetailViewModelTest {
     fun `loadAlbum with a repository factory throwing IllegalArgumentException shows an error instead of crashing`() =
         runTest {
             // e.g. a restored album detail entry whose stored server URL is no longer valid
-            viewModel = createViewModel { throw IllegalArgumentException("Invalid WebDAV URL") }
+            viewModel = createViewModel { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             viewModel.loadAlbum("/Summer/")
             advanceUntilIdle()
@@ -179,7 +206,7 @@ class AlbumDetailViewModelTest {
             assertEquals(AlbumsError.NotConfigured, detail.error)
             assertTrue(detail.photos.isEmpty())
             assertTrue(detail.thumbnailUrls.isEmpty())
-            assertEquals("no URLs of the old server", "", viewModel.fullImageUrl(beach))
+            assertNull("no URLs of the old server", viewModel.fullImageUrl(beach))
             assertTrue(viewModel.repositories.get().isFailure)
             assertTrue(
                 "accepted, but nothing is deleted with the old credentials",
@@ -247,9 +274,9 @@ class AlbumDetailViewModelTest {
         }
 
     @Test
-    fun `fullImageUrl is empty before the album is loaded and the repository URL afterwards`() =
+    fun `fullImageUrl is null before the album is loaded and the repository URL afterwards`() =
         runTest {
-            assertEquals("", viewModel.fullImageUrl(beach))
+            assertNull(viewModel.fullImageUrl(beach))
 
             fakeRepo.photos = Result.success(listOf(beach))
             viewModel.loadAlbum("/Summer/")
@@ -576,5 +603,21 @@ class AlbumDetailViewModelTest {
             gate.complete(Unit)
             advanceUntilIdle()
             assertTrue(viewModel.detailState.value.isLoaded)
+        }
+
+    @Test
+    fun `a video without a server preview has no thumbnail entry and no full image url`() =
+        runTest {
+            val video = RemotePhoto("v.mp4", "/Summer/v.mp4", "5", "video/mp4", MediaKind.Video)
+            fakeRepo.photos = Result.success(listOf(beach, video))
+            fakeRepo.videoPreviewsAvailable = false
+
+            viewModel.loadAlbum("/Summer/")
+            advanceUntilIdle()
+
+            val state = viewModel.detailState.value
+            assertEquals(setOf(beach.href), state.thumbnailUrls.keys)
+            assertEquals(2, state.photos.size)
+            assertNull(viewModel.fullImageUrl(video))
         }
 }

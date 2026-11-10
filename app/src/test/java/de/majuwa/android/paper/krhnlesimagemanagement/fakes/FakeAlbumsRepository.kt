@@ -5,6 +5,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContr
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoListing
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
+import de.majuwa.android.paper.krhnlesimagemanagement.util.exceedsAlbumNameLimit
+import de.majuwa.android.paper.krhnlesimagemanagement.util.isValidOccasionName
+import okhttp3.Call
 
 class FakeAlbumsRepository : AlbumsRepositoryContract {
     var albums: Result<List<RemoteAlbum>> = Result.success(emptyList())
@@ -39,10 +42,23 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
     var listAlbumsCalls = 0
         private set
 
+    /** Invoked (and may suspend or throw) on every [listAlbums] call before the result is returned. */
+    var onListAlbums: suspend () -> Unit = {}
+
     override suspend fun listAlbums(): Result<List<RemoteAlbum>> {
         listAlbumsCalls++
+        onListAlbums()
         return albums
     }
+
+    /** Maps an album to its folder name; the default passes [RemoteAlbum.displayName] through the validity checks. */
+    var folderNameMapper: (RemoteAlbum) -> String? = { album ->
+        album.displayName.takeIf {
+            isValidOccasionName(it) && !exceedsAlbumNameLimit(it) && it == it.trim()
+        }
+    }
+
+    override fun folderNameOf(album: RemoteAlbum): String? = folderNameMapper(album)
 
     /** Invoked (and may suspend or throw) on every [renameAlbum] call before the result is returned. */
     var onRenameAlbum: suspend () -> Unit = {}
@@ -81,9 +97,34 @@ class FakeAlbumsRepository : AlbumsRepositoryContract {
             )
     }
 
-    override suspend fun thumbnailUrl(photo: RemotePhoto): String = "https://fake.server/thumb/${photo.href}"
+    /** `false` simulates a server without video previews: videos get no thumbnail / full image URL. */
+    var videoPreviewsAvailable = true
 
-    override fun fullImageUrl(photo: RemotePhoto): String = "https://fake.server/full/${photo.href}"
+    /** Every photo passed to [thumbnailUrl], in call order. */
+    val thumbnailRequests = mutableListOf<RemotePhoto>()
+
+    override suspend fun thumbnailUrl(photo: RemotePhoto): String? {
+        thumbnailRequests += photo
+        return if (photo.isVideo && !videoPreviewsAvailable) null else "https://fake.server/thumb/${photo.href}"
+    }
+
+    override fun fullImageUrl(photo: RemotePhoto): String? =
+        if (photo.isVideo && !videoPreviewsAvailable) null else "https://fake.server/full/${photo.href}"
+
+    /** `null` simulates an unsafe href: [videoStreamUrl] then yields no URL. */
+    var videoStreamUrlOverride: String? = null
+    var videoStreamUrlAvailable = true
+
+    override fun videoStreamUrl(photo: RemotePhoto): String? =
+        when {
+            !photo.isVideo || !videoStreamUrlAvailable -> null
+            else -> videoStreamUrlOverride ?: "https://fake.server/video${photo.href}"
+        }
+
+    /** The factory handed to the player; the default fails every call (no network in fakes). */
+    var videoCalls: Call.Factory = Call.Factory { error("no network in FakeAlbumsRepository") }
+
+    override fun videoCallFactory(): Call.Factory = videoCalls
 
     /** Every URL passed to [downloadBitmapForHash], in call order. */
     val downloadedUrls = mutableListOf<String>()

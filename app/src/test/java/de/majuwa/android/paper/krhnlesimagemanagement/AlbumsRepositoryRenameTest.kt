@@ -47,6 +47,7 @@ class AlbumsRepositoryRenameTest {
                 password = "testpass",
                 baseFolder = baseFolder,
             ),
+            null,
         )
     }
 
@@ -161,5 +162,19 @@ class AlbumsRepositoryRenameTest {
                 assertEquals(before + 1, server.requestCount)
                 assertEquals("MOVE", server.takeRequest().method)
             }
+        }
+
+    @Test
+    fun `renameAlbum keeps the last modified value`() =
+        runTest {
+            repo = createRepo(baseFolder = "Photos/Backup")
+            server.enqueue(MockResponse().setResponseCode(201))
+            val album =
+                RemoteAlbum("Summer", "/remote.php/dav/files/user/Photos/Backup/Summer/", lastModified = 1234L)
+
+            val renamed = repo.renameAlbum(album, "Autumn").getOrThrow()
+
+            assertEquals(1234L, renamed.lastModified)
+            assertEquals("Autumn", renamed.displayName)
         }
 }

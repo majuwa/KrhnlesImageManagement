@@ -5,16 +5,21 @@ import android.util.Log
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialCipher
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.credentialDataStore
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.SoftwareKeyProvider
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -319,6 +324,43 @@ class CredentialStoreTest {
             assertEquals(BlurSensitivity.MEDIUM, store.blurSensitivity.first())
         }
 
+    // ── Album sort ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `album sort defaults to name ascending and round-trips every option`() =
+        runTest {
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+            AlbumSort.entries.forEach { sort ->
+                store.saveAlbumSort(sort)
+                assertEquals(sort, store.albumSort.first())
+            }
+        }
+
+    @Test
+    fun `unknown and wrong-typed stored album sort fall back to name ascending`() =
+        runTest {
+            context.credentialDataStore.edit { it[stringPreferencesKey("album_sort")] = "NEWEST" }
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+
+            context.credentialDataStore.edit { it.remove(stringPreferencesKey("album_sort")) }
+            context.credentialDataStore.edit { it[intPreferencesKey("album_sort")] = 3 }
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+        }
+
+    @Test
+    fun `logout resets the album sort and saving it leaves the credentials version alone`() =
+        runTest {
+            store.save("https://cloud.example.com/dav/", "user", "secret")
+            val versionKey = longPreferencesKey("credentials_version")
+            val before = context.credentialDataStore.data.first()[versionKey]
+
+            store.saveAlbumSort(AlbumSort.MODIFIED_OLDEST)
+
+            assertEquals(before, context.credentialDataStore.data.first()[versionKey])
+            store.clear()
+            assertEquals(AlbumSort.NAME_ASC, store.albumSort.first())
+        }
+
     @Test
     fun `auto date folders default to off, round trip and are reset by clear`() =
         runTest {
@@ -379,11 +421,121 @@ class CredentialStoreTest {
             store.saveWifiOnly(true)
             store.saveAutoDateFolders(true)
             store.saveVerifyByDownload(true)
+            store.saveAlbumSort(AlbumSort.MODIFIED_NEWEST)
             // Fence: a credentials write is observed (and emitted) only after the earlier writes.
             store.saveBaseFolder("Photos")
             withContext(Dispatchers.Default) { delay(SETTLE_MS) }
 
             assertEquals("non-credential writes must not re-emit (base folder did)", before + 1, emissions.size)
+            job.cancel()
+        }
+
+    // ── New-photos reminder (issue #75) ──────────────────────────────────────
+
+    @Test
+    fun `reminder defaults to off and Weekly`() =
+        runTest {
+            assertEquals(
+                NewPhotosReminderSettings(false, ReminderInterval.Weekly, 0L, 0L),
+                store.newPhotosReminder.first(),
+            )
+        }
+
+    @Test
+    fun `reminder persists across store instances and enabling records since`() =
+        runTest {
+            val before = System.currentTimeMillis()
+            store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
+            val reread = CredentialStore(context, CredentialCipher(keys)).newPhotosReminder.first()
+            assertTrue(reread.enabled)
+            assertEquals(ReminderInterval.Monthly, reread.interval)
+            assertTrue(reread.sinceMillis >= before)
+            assertEquals(0L, reread.lastShownMillis)
+        }
+
+    @Test
+    fun `interval change keeps since and last shown, enabling again resets them`() =
+        runTest {
+            store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
+            val since = store.newPhotosReminder.first().sinceMillis
+            store.markNewPhotosReminderShown(since + 5, since)
+
+            store.saveNewPhotosReminder(true, ReminderInterval.EveryTwoWeeks)
+            val changed = store.newPhotosReminder.first()
+            assertEquals(since, changed.sinceMillis)
+            assertEquals(since + 5, changed.lastShownMillis)
+            assertEquals(ReminderInterval.EveryTwoWeeks, changed.interval)
+
+            store.saveNewPhotosReminder(false, ReminderInterval.EveryTwoWeeks)
+            store.saveNewPhotosReminder(true, ReminderInterval.EveryTwoWeeks)
+            assertEquals(0L, store.newPhotosReminder.first().lastShownMillis)
+        }
+
+    @Test
+    fun `marking the reminder shown is conditional on still being on and the same since`() =
+        runTest {
+            store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
+            val since = store.newPhotosReminder.first().sinceMillis
+
+            store.markNewPhotosReminderShown(9L, since + 1)
+            assertEquals("another reminder generation", 0L, store.newPhotosReminder.first().lastShownMillis)
+
+            store.markNewPhotosReminderShown(9L, since)
+            assertEquals(9L, store.newPhotosReminder.first().lastShownMillis)
+
+            store.clear()
+            store.markNewPhotosReminderShown(11L, since)
+            assertEquals(
+                "after logout nothing is written",
+                NewPhotosReminderSettings(),
+                store.newPhotosReminder.first(),
+            )
+
+            store.saveNewPhotosReminder(true, ReminderInterval.Weekly)
+            store.saveNewPhotosReminder(false, ReminderInterval.Weekly)
+            store.markNewPhotosReminderShown(12L, store.newPhotosReminder.first().sinceMillis)
+            assertEquals("disabled", 0L, store.newPhotosReminder.first().lastShownMillis)
+        }
+
+    @Test
+    fun `wrong-typed stored reminder values read as defaults`() =
+        runTest {
+            context.credentialDataStore.edit {
+                it[intPreferencesKey("new_photos_reminder_interval")] = 3
+                it[stringPreferencesKey("new_photos_reminder_enabled")] = "true"
+                it[stringPreferencesKey("new_photos_reminder_since")] = "x"
+            }
+            assertEquals(NewPhotosReminderSettings(), store.newPhotosReminder.first())
+        }
+
+    @Test
+    fun `logout resets the reminder`() =
+        runTest {
+            store.save("https://cloud.example.com/dav/", "user", "secret")
+            store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
+            store.markNewPhotosReminderShown(7L, store.newPhotosReminder.first().sinceMillis)
+            store.clear()
+            assertEquals(NewPhotosReminderSettings(), store.newPhotosReminder.first())
+        }
+
+    @Test
+    fun `reminder writes do not re-emit the credential flows`() =
+        runTest {
+            store.save("https://cloud.example.com/dav/", "user", "secret")
+            val emissions = mutableListOf<CredentialState>()
+            val job =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    store.credentialState.collect { emissions += it }
+                }
+            withContext(Dispatchers.Default) { withTimeout(AWAIT_TIMEOUT_MS) { while (emissions.isEmpty()) delay(10) } }
+            val before = emissions.size
+
+            store.saveNewPhotosReminder(true, ReminderInterval.Monthly)
+            store.markNewPhotosReminderShown(1L, store.newPhotosReminder.first().sinceMillis)
+            store.saveBaseFolder("Photos")
+            withContext(Dispatchers.Default) { delay(SETTLE_MS) }
+
+            assertEquals("reminder writes must not re-emit (base folder did)", before + 1, emissions.size)
             job.cancel()
         }
 
@@ -394,7 +546,12 @@ class CredentialStoreTest {
             Dispatchers.setMain(UnconfinedTestDispatcher())
             try {
                 store.save("https://cloud.example.com/dav/", "user", "secret")
-                val viewModel = SettingsViewModel(ApplicationProvider.getApplicationContext(), store)
+                val viewModel =
+                    SettingsViewModel(
+                        ApplicationProvider.getApplicationContext(),
+                        store,
+                        trustedCertificates = FakeTrustedCertificateRepository(),
+                    )
                 withContext(Dispatchers.Default) {
                     withTimeout(AWAIT_TIMEOUT_MS) { while (!viewModel.uiState.value.isLoggedIn) delay(10) }
                 }

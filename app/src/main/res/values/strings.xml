@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">Kröhnle\'s Image Management</string>
+    <string name="app_name" translatable="false">Kröhnle\'s Image Management</string>
 
     <!-- Common actions -->
     <string name="action_clear">Clear</string>
@@ -16,6 +16,8 @@
     <string name="connection_test_success">Connection successful!</string>
     <string name="connection_test_not_configured">Not configured.</string>
     <string name="connection_test_error_certificate">Secure connection failed: the server\'s certificate is not trusted (it may be self-signed or expired).</string>
+    <string name="connection_test_error_certificate_untrusted">The server\'s certificate is not trusted (it may be self-signed or expired). Review it below to decide whether to trust it.</string>
+    <string name="connection_test_error_certificate_changed">The server\'s certificate changed since you trusted it. Review it below.</string>
     <string name="connection_test_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
     <string name="connection_test_error_unreachable">Could not reach the server. Check the address and that the server is online.</string>
     <string name="connection_test_error_timeout">The server did not respond in time. Please try again.</string>
@@ -41,6 +43,15 @@
     <string name="cd_back">Back</string>
     <string name="cd_reload">Reload</string>
     <string name="cd_photo_position">Photo %1$d of %2$d</string>
+    <string name="cd_play_video">Play video</string>
+    <string name="cd_pause_video">Pause video</string>
+    <string name="cd_video_seek">Video position</string>
+    <string name="video_position_state">%1$s of %2$s</string>
+    <string name="video_elapsed_of_total" translatable="false">%1$s / %2$s</string>
+    <string name="viewer_page_counter" translatable="false">%1$d / %2$d</string>
+    <string name="video_error_unsupported_format">This video format is not supported on this device.</string>
+    <string name="video_error_redirected">The server redirected the video request, which is not followed. Check the server address in Settings.</string>
+    <string name="cd_video_position">Video %1$d of %2$d</string>
     <string name="cd_photo_position_taken_on">Photo %1$d of %2$d, taken on %3$s</string>
     <string name="cd_photo_position_date_unknown">Photo %1$d of %2$d, date unknown</string>
     <string name="cd_video_position_duration_taken_on">Video %1$d of %2$d, %3$s, taken on %4$s</string>
@@ -137,6 +148,8 @@
     <string name="removal_result_cancelled">Nothing was moved to the trash.</string>
     <string name="removal_result_failed">The photos could not be moved to the trash.</string>
 
+    <string name="error_photos_load_failed">The photos could not be loaded.</string>
+
     <!-- Permission -->
     <string name="permission_rationale">Photo and video access is required to browse your photos and videos.</string>
     <string name="banner_media_partial_access">Only the photos and videos you selected are shown.</string>
@@ -152,6 +165,8 @@
     <!-- Upload dialog -->
     <string name="dialog_upload_title">Upload Photos</string>
     <string name="dialog_upload_message">Enter the occasion or folder name for the upload:</string>
+    <string name="occasion_suggestions_heading">Suggestions</string>
+    <string name="occasion_suggestion_use_label">Use as folder name</string>
     <string name="label_occasion_name">Occasion / Folder Name</string>
     <string name="dialog_clear_upload_history_title">Clear upload history?</string>
     <string name="dialog_clear_upload_history_message">This removes all upload history entries.</string>
@@ -160,14 +175,14 @@
         <item quantity="one">The selected photos will upload to this folder:</item>
         <item quantity="other">The selected photos will be split into %d folders:</item>
     </plurals>
-    <string name="preview_upload_path">• %s</string>
+    <string name="preview_upload_path" translatable="false">• %s</string>
 
     <!-- Settings screen — logged-in -->
     <string name="status_connected">Connected</string>
     <string name="label_user">User: %s</string>
     <string name="label_webdav_url">WebDAV: %s</string>
     <string name="label_base_folder">Base upload folder</string>
-    <string name="placeholder_base_folder">Photos/KrohnSync</string>
+    <string name="placeholder_base_folder" translatable="false">Photos/KrohnSync</string>
     <string name="hint_base_folder">All uploads go inside this folder. Leave empty for root.</string>
     <string name="label_wifi_only">Upload on Wi-Fi only</string>
     <string name="hint_wifi_only">Restrict background uploads to unmetered (Wi-Fi) connections.</string>
@@ -186,24 +201,35 @@
     <string name="title_connect_nextcloud">Connect to Nextcloud</string>
     <string name="subtitle_connect_nextcloud">Sign in via your browser for a secure connection.</string>
     <string name="label_nextcloud_url">Nextcloud URL</string>
-    <string name="placeholder_nextcloud_url">https://nextcloud.example.com</string>
+    <string name="placeholder_nextcloud_url" translatable="false">https://nextcloud.example.com</string>
     <string name="status_waiting_browser">Waiting for browser login…</string>
 
     <!-- Settings screen — manual config -->
     <string name="label_webdav_url_input">WebDAV URL</string>
-    <string name="placeholder_webdav_url">https://cloud.example.com/remote.php/dav/files/user/</string>
+    <string name="placeholder_webdav_url" translatable="false">https://cloud.example.com/remote.php/dav/files/user/</string>
     <string name="label_username">Username</string>
     <string name="label_password">Password / App Token</string>
     <string name="error_credentials_key_invalidated">Your stored credentials could not be decrypted because the device security settings changed. Please log in again.</string>
     <string name="error_credentials_unreadable">Your stored credentials could not be read and have been ignored. Please log in again.</string>
     <string name="error_credentials_save_failed">Your credentials could not be stored securely on this device. Please try again.</string>
+    <string name="error_server_url_required">Server URL is required.</string>
+    <string name="error_fill_all_fields">Please fill in all fields.</string>
+    <string name="error_login_failed">Login failed. Check the server address and try again.</string>
     <string name="warning_http_insecure">Insecure connection — credentials will be sent in plaintext. Use HTTPS.</string>
 
     <!-- Albums -->
     <string name="empty_albums">No albums found.</string>
+    <string name="album_search_label">Search albums</string>
+    <string name="cd_clear_album_search">Clear search</string>
+    <string name="albums_no_match">No albums match “%1$s”</string>
+    <string name="cd_sort_albums">Sort albums</string>
+    <string name="album_sort_name_asc">Name A–Z</string>
+    <string name="album_sort_name_desc">Name Z–A</string>
+    <string name="album_sort_modified_newest">Last modified (newest first)</string>
+    <string name="album_sort_modified_oldest">Last modified (oldest first)</string>
     <string name="empty_upload_history">No upload history yet.</string>
     <string name="dialog_delete_album_title">Delete album?</string>
-    <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos from the server? This cannot be undone.</string>
+    <string name="dialog_delete_album_message">Permanently delete the album \"%1$s\" and all its photos and videos from the server? This cannot be undone.</string>
     <string name="dialog_rename_album_title">Rename album</string>
     <string name="label_album_name">Album name</string>
     <string name="error_album_name_blank">Please enter an album name.</string>
@@ -219,7 +245,8 @@
     <string name="albums_error_not_configured">You are not logged in. Log in under Settings to see your albums.</string>
     <string name="albums_error_invalid_url">The server address is not a valid URL. Check it in Settings and log in again.</string>
     <string name="albums_error_configuration_changed">Your server settings changed. Go back and open the album again.</string>
-    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted (it may be self-signed or expired).</string>
+    <string name="albums_error_certificate">Secure connection failed: the server\'s certificate is not trusted. You can check the connection with Test Connection in Settings.</string>
+    <string name="albums_error_certificate_changed">The server\'s certificate changed. You can check the connection with Test Connection in Settings.</string>
     <string name="albums_error_unknown_host">Server not found. Check the server address and your internet connection.</string>
     <string name="albums_error_unreachable">Could not reach the server. Check your internet connection and that the server is online.</string>
     <string name="albums_error_timeout">The server did not respond in time. Please try again.</string>
@@ -230,26 +257,26 @@
     <string name="albums_error_unknown">Something went wrong while talking to the server. Please try again.</string>
 
     <!-- Album detail -->
-    <string name="empty_album_photos">No photos in this album.</string>
+    <string name="empty_album_photos">No photos or videos in this album.</string>
     <plurals name="album_loading_photos">
-        <item quantity="one">Loading photos… %d found</item>
-        <item quantity="other">Loading photos… %d found</item>
+        <item quantity="one">Loading… %d item found</item>
+        <item quantity="other">Loading… %d items found</item>
     </plurals>
     <plurals name="album_truncated_notice">
-        <item quantity="one">This album is too large to show completely. Only the first %d photo is shown.</item>
-        <item quantity="other">This album is too large to show completely. Only the first %d photos are shown.</item>
+        <item quantity="one">This album is too large to show completely. Only the first %d item is shown.</item>
+        <item quantity="other">This album is too large to show completely. Only the first %d items are shown.</item>
     </plurals>
-    <string name="album_truncated_empty_notice">This album is too large to load completely, and no photos were found in the part that could be loaded.</string>
+    <string name="album_truncated_empty_notice">This album is too large to load completely, and no photos or videos were found in the part that could be loaded.</string>
     <string name="review_truncated_notice">This album is too large to load completely, so the results may be incomplete.</string>
-    <string name="status_deleting_photos">Deleting photos…</string>
-    <string name="dialog_delete_photos_title">Delete photos?</string>
+    <string name="status_deleting_photos">Deleting…</string>
+    <string name="dialog_delete_photos_title">Delete from album?</string>
     <plurals name="dialog_delete_photos_message">
-        <item quantity="one">Permanently delete %1$d photo from the server? This cannot be undone.</item>
-        <item quantity="other">Permanently delete %1$d photos from the server? This cannot be undone.</item>
+        <item quantity="one">Permanently delete %1$d item from the server? This cannot be undone.</item>
+        <item quantity="other">Permanently delete %1$d items from the server? This cannot be undone.</item>
     </plurals>
     <plurals name="snackbar_delete_failures">
-        <item quantity="one">%d photo could not be deleted.</item>
-        <item quantity="other">%d photos could not be deleted.</item>
+        <item quantity="one">%d item could not be deleted.</item>
+        <item quantity="other">%d items could not be deleted.</item>
     </plurals>
 
     <!-- Blur review -->
@@ -314,6 +341,8 @@
     <!-- Notifications (UploadWorker) -->
     <string name="notification_preparing">Preparing…</string>
     <string name="notification_uploading_title">Uploading photos and videos</string>
+    <!-- Batch progress and the share of the file uploaded in chunks, e.g. "1 / 3 · 50 %" -->
+    <string name="notification_uploading_file_progress" translatable="false">%1$d / %2$d · %3$d %%</string>
     <string name="notification_upload_complete">Upload complete</string>
     <plurals name="notification_upload_success">
         <item quantity="one">%d item uploaded successfully.</item>
@@ -337,14 +366,58 @@
     <string name="upload_error_not_configured">no server is configured. Open Settings and connect your server first.</string>
     <string name="upload_failure_too_large">A file is too large for the server.</string>
     <string name="upload_failure_verification">A file could not be verified on the server.</string>
+    <string name="upload_failure_certificate_changed">The server\'s certificate changed. You can check the connection with Test Connection in Settings.</string>
     <string name="upload_failure_storage_full">The server storage is full.</string>
     <string name="upload_failure_interrupted">The system stopped the upload repeatedly. Retry it later.</string>
     <!-- Result notification text: %1$s = counts (or a first reason), %2$s = the (next) failure reason. -->
-    <string name="notification_text_with_reason">%1$s %2$s</string>
+    <string name="notification_text_with_reason" translatable="false">%1$s %2$s</string>
     <string name="upload_error_generic">something went wrong. Please try again later.</string>
     <string name="error_invalid_occasion_name">Use a name without slashes or backslashes that is not just dots.</string>
     <string name="channel_name_uploads">Uploads</string>
     <string name="channel_desc_uploads">Shows upload progress for photo and video backups</string>
+
+    <!-- Saving album photos to the device (DownloadWorker) -->
+    <string name="cd_save_to_device">Save to device</string>
+    <string name="state_saved_to_device">Saved</string>
+    <string name="download_save_unavailable">These photos cannot be saved right now. Reload the album and try again.</string>
+    <plurals name="download_saving">
+        <item quantity="one">Saving %d photo in the background.</item>
+        <item quantity="other">Saving %d photos in the background.</item>
+    </plurals>
+    <string name="download_not_configured">No server is configured. Open Settings and connect your server first.</string>
+    <string name="download_enqueue_failed">Saving could not be started. Please try again.</string>
+    <string name="download_notification_title">Saving photos to this device</string>
+    <string name="action_cancel_download">Cancel</string>
+    <string name="download_complete">Photos saved</string>
+    <string name="download_partial">Photos partly saved</string>
+    <string name="download_failed">Saving failed</string>
+    <string name="download_cancelled">Saving cancelled</string>
+    <plurals name="download_saved_count">
+        <item quantity="one">%d photo saved.</item>
+        <item quantity="other">%d photos saved.</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%d photo could not be saved.</item>
+        <item quantity="other">%d photos could not be saved.</item>
+    </plurals>
+    <plurals name="download_cancelled_counts">
+        <item quantity="one">%1$d of %2$d photo saved before cancelling.</item>
+        <item quantity="other">%1$d of %2$d photos saved before cancelling.</item>
+    </plurals>
+    <string name="download_failure_unsupported">Only photos can be saved, not videos or other file types.</string>
+    <string name="download_failure_too_large">A file is too large to save (limit 200 MB).</string>
+    <string name="download_failure_storage_full">This device has no storage space left.</string>
+    <string name="download_failure_not_found">A file was not found on the server any more.</string>
+    <string name="download_failure_access_denied">The server refused access. Check your login in Settings.</string>
+    <string name="download_failure_certificate">The server certificate is not trusted. You can check the connection with Test Connection in Settings.</string>
+    <string name="download_failure_connection">The server could not be reached.</string>
+    <string name="download_failure_server_error">The server reported an error.</string>
+    <string name="download_failure_rejected">A file was not accepted because it did not look like a photo from this album.</string>
+    <string name="download_failure_write_failed">A photo could not be written to this device.</string>
+    <string name="download_failure_configuration_changed">The server settings changed while saving.</string>
+    <string name="download_failure_interrupted">The system stopped saving repeatedly. Try again later.</string>
+    <string name="channel_name_downloads">Downloads</string>
+    <string name="channel_desc_downloads">Shows progress when photos are saved to this device</string>
 
     <!-- Onboarding -->
     <string name="onboarding_step_indicator">Step %1$d of %2$d</string>
@@ -355,4 +428,49 @@
     <string name="onboarding_overview_body">Pick the photos you want to keep, give them an occasion name and upload them to your own Nextcloud or WebDAV server. Uploads continue in the background.</string>
     <string name="onboarding_connect_title">Connect your server</string>
     <string name="onboarding_connect_body">Open Settings and log in with your Nextcloud account, or enter your WebDAV address and app password. You can skip this and set it up later.</string>
+    <string name="certificate_review_title">Server certificate</string>
+    <string name="certificate_review_fingerprint">SHA-256 fingerprint</string>
+    <string name="certificate_review_previous_fingerprint">Previously trusted fingerprint</string>
+    <string name="certificate_review_subject">Subject</string>
+    <string name="certificate_review_issuer">Issuer</string>
+    <string name="certificate_review_validity">Valid from %1$s until %2$s</string>
+    <string name="certificate_review_origin">Would be trusted only for %1$s</string>
+    <string name="certificate_review_warning">Anyone who holds this certificate\'s private key can read everything you send to this server. Trust it only if the fingerprint matches the one on your server.</string>
+    <string name="certificate_review_changed_warning">If you did not replace the server certificate yourself, someone may be intercepting the connection. Do not trust it unless you are sure.</string>
+    <string name="certificate_review_key">Public key: %1$s, %2$d-bit</string>
+    <string name="certificate_review_key_unknown">Public key: %1$s (unsupported type or size)</string>
+    <string name="certificate_review_weak_key">This certificate uses a weak public key (less than RSA 2048 or EC 256 bits), so it cannot be trusted.</string>
+    <string name="certificate_review_not_valid">This certificate has expired or is not valid yet, so it cannot be trusted.</string>
+    <string name="action_trust_certificate">Trust this certificate</string>
+    <string name="certificate_trust_dialog_title">Trust this certificate?</string>
+    <string name="certificate_trust_dialog_body">Fingerprint:\n%1$s\n\nServer: %2$s\n\nCompare the fingerprint with the one shown on your server, for example with: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="certificate_trust_dialog_changed_body">Previously trusted fingerprint:\n%1$s\n\nNew fingerprint:\n%2$s\n\nServer: %3$s\n\nCompare the new fingerprint with the one shown on your server, for example with: openssl x509 -noout -fingerprint -sha256</string>
+    <string name="error_trusted_certificate_clear_failed">The trusted certificate could not be removed. It is removed the next time you sign in, or use Stop trusting.</string>
+    <string name="certificate_trust_save_failed">The certificate could not be saved. Please try again.</string>
+    <string name="certificate_trusted_title">Trusted certificate</string>
+    <string name="certificate_trusted_until">SHA-256 %1$s, valid until %2$s</string>
+    <string name="action_stop_trusting">Stop trusting</string>
+    <!-- New-photos reminder (opt-in, local only) -->
+    <string name="label_new_photos_reminder">Remind me about new photos</string>
+    <string name="hint_new_photos_reminder">Get an occasional notification when photos or videos on this device are not backed up yet. The check runs on this device only and needs access to your photos and videos.</string>
+    <string name="reminder_interval_weekly">Weekly</string>
+    <string name="reminder_interval_every_two_weeks">Every 2 weeks</string>
+    <string name="reminder_interval_monthly">Monthly</string>
+    <string name="reminder_notifications_off_hint">Notifications are turned off for this app or for reminders, so no reminder can be shown.</string>
+    <string name="action_open_notification_settings">Open notification settings</string>
+    <string name="reminder_channel_name">Reminders</string>
+    <string name="reminder_channel_desc">Occasional reminders about photos and videos that are not backed up yet</string>
+    <string name="reminder_notification_title">Photos waiting for backup</string>
+    <plurals name="reminder_new_media_since_upload">
+        <item quantity="one">%d new photo or video since your last upload</item>
+        <item quantity="other">%d new photos and videos since your last upload</item>
+    </plurals>
+    <plurals name="reminder_new_media">
+        <item quantity="one">%d new photo or video on this device</item>
+        <item quantity="other">%d new photos and videos on this device</item>
+    </plurals>
+    <plurals name="reminder_new_media_at_least">
+        <item quantity="one">At least %d new photo or video on this device</item>
+        <item quantity="other">At least %d new photos and videos on this device</item>
+    </plurals>
 </resources>

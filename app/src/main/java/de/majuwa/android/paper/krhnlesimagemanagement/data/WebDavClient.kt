@@ -2,6 +2,14 @@ package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateCapture
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateChangedException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.CertificateReviewException
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerTrust
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.withServerTrust
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -14,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
@@ -21,19 +30,22 @@ import okio.BufferedSink
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class WebDavClient(
     private val config: WebDavConfig,
+    /** The pinned certificate for the configured origin (already filtered), or `null` for system trust only. */
+    private val pin: PinnedCertificate?,
 ) {
     private val userAgent = "Kroehnles-Image-Management/1.0 (Android; ${Build.MANUFACTURER} ${Build.MODEL})"
 
     private val client: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        serverHttpClientBuilder(ServerTrust(pin))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
@@ -79,6 +91,20 @@ class WebDavClient(
             .build()
     }
 
+    /**
+     * [uploadClient] with a [CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES] read timeout, for the final `MOVE`
+     * of a chunked upload: Nextcloud assembles a multi-gigabyte file before it answers. Derived from
+     * [uploadClient], so it keeps its pool, dispatcher, no-redirect rule, origin-restricted auth
+     * interceptor (and whatever the upload client is later built with); no call timeout.
+     */
+    @VisibleForTesting
+    internal val assemblyClient: OkHttpClient by lazy {
+        uploadClient
+            .newBuilder()
+            .readTimeout(CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+            .build()
+    }
+
     private val baseUrl: String
         get() = config.url.trimEnd('/')
 
@@ -100,11 +126,20 @@ class WebDavClient(
                     .method("PROPFIND", null)
                     .header("Depth", "0")
                     .build()
-            val call = client.newCall(request)
+            // A capturing trust snapshot for this one call: an untrusted certificate of the tested
+            // origin is recorded for review, the handshake still fails before any request is sent.
+            val capture = ServerOrigin.of(baseUrl)?.let(::CertificateCapture)
+            val testClient = if (capture != null) client.withServerTrust(ServerTrust(pin, capture)) else client
+            val call = testClient.newCall(request)
             call.timeout().timeout(timeoutMillis, TimeUnit.MILLISECONDS)
-            val (code, message) = call.awaitStatus()
-            if (code !in HTTP_SUCCESS_CODES) {
-                throw WebDavHttpException(code, "Connection failed: HTTP $code $message")
+            try {
+                val (code, message) = call.awaitStatus()
+                if (code !in HTTP_SUCCESS_CODES) {
+                    throw WebDavHttpException(code, "Connection failed: HTTP $code $message")
+                }
+            } catch (e: SSLException) {
+                val captured = capture?.value ?: throw e
+                throw CertificateReviewException(captured.certificate, captured.changed, captured.previousSha256, e)
             }
         }.onFailure { if (it is CancellationException) throw it }
 
@@ -266,6 +301,49 @@ class WebDavClient(
         }.onFailure { if (it is CancellationException) throw it }
 
     /**
+     * Downloads the file at [url] (a URL already resolved with [resolveWebDavHref]) as the stored
+     * bytes and hands the body to [sink] as a [DownloadBody], never buffered in memory. Runs on
+     * [noRedirectClient] (pin-aware, origin-restricted `Authorization`, any 3xx fails, no call
+     * timeout, per-read timeout) with `Accept-Encoding: identity`, cancelled with the coroutine
+     * ([executeCancellable]). A URL on another origin fails with [UnsafeHrefException] without a
+     * request; a non-2xx status with [WebDavHttpException]; an announced length above [maxBytes] with
+     * [DownloadTooLargeException] before [sink] runs; a response that is not storable as is (see
+     * [isStorableImageResponse]) with [UnexpectedContentException]. The stream given
+     * to [sink] fails with [DownloadTooLargeException] once it would exceed [maxBytes]. Cancellation
+     * is rethrown.
+     */
+    suspend fun download(
+        url: HttpUrl,
+        maxBytes: Long,
+        sink: (DownloadBody) -> Unit,
+    ): Result<Unit> =
+        runCatching {
+            if (!url.hasSameOriginAs(config.url)) throw UnsafeHrefException()
+            val request =
+                Request
+                    .Builder()
+                    .url(url)
+                    .get()
+                    .header("Accept-Encoding", "identity")
+                    .build()
+            executeCancellable(noRedirectClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Download failed: HTTP ${response.code}")
+                }
+                val body = response.body
+                val length = body.contentLength()
+                if (length > maxBytes) throw DownloadTooLargeException()
+                if (!response.isStorableImageResponse(length)) throw UnexpectedContentException()
+                sink(
+                    DownloadBody(
+                        length,
+                        LimitedInputStream(body.byteStream(), maxBytes) { DownloadTooLargeException() },
+                    ),
+                )
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
      * Size of `folderName/fileName` on the server from one `HEAD` (`Content-Length`; `null` when the
      * server sends none). `Accept-Encoding: identity` keeps it the stored size. Runs on
      * [noRedirectClient] (any 3xx fails), is cancelled with the coroutine; a non-2xx status fails
@@ -292,6 +370,158 @@ class WebDavClient(
             }
         }.onFailure { if (it is CancellationException) throw it }
 
+    /**
+     * Creates the Nextcloud upload folder of [transferId] (`MKCOL` below the uploads collection)
+     * for the file [folderName]/[fileName] of [totalLength] bytes: 201 is [ChunkedUploadCreation.Created],
+     * 405 [ChunkedUploadCreation.AlreadyExists] (an earlier attempt of the same transfer); every other
+     * status, including any redirect, fails with [WebDavHttpException]. Invalid ids / segments, or a
+     * server URL without a uploads collection, fail without a request. Cancellable, no redirects.
+     */
+    suspend fun createChunkedUpload(
+        transferId: String,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+    ): Result<ChunkedUploadCreation> =
+        runCatching {
+            val request =
+                chunkedRequest(transferId, folderName, fileName, totalLength) { it.method("MKCOL", null) }
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                when (response.code) {
+                    HTTP_CREATED -> ChunkedUploadCreation.Created
+                    HTTP_METHOD_NOT_ALLOWED -> ChunkedUploadCreation.AlreadyExists
+                    else -> throw WebDavHttpException(response.code, "Upload folder failed: HTTP ${response.code}")
+                }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Sends chunk [chunkNumber] of the transfer: exactly [chunkLength] bytes read from [stream],
+     * which stays open (the caller reads the next chunk from it). A stream that ends early fails
+     * with an [IOException]. Never asks for a server hash. Any non-2xx status fails with
+     * [WebDavHttpException]. Cancellable, no redirects, no call timeout.
+     */
+    suspend fun uploadChunk(
+        transferId: String,
+        chunkNumber: Int,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+        stream: InputStream,
+        chunkLength: Long,
+    ): Result<Unit> =
+        runCatching {
+            val request =
+                chunkedRequest(transferId, folderName, fileName, totalLength, chunkName(chunkNumber)) {
+                    it.put(BoundedInputStreamRequestBody(stream, chunkLength))
+                }
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful) {
+                    throw WebDavHttpException(response.code, "Chunk upload failed: HTTP ${response.code}")
+                }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Assembles the transfer into its destination with `MOVE <transfer>/.file`. Only 201 / 204 are
+     * success. With [requestServerHash] the request carries `X-Hash: sha256` (Nextcloud hashes the
+     * assembled file on regular storage) and the answer's `X-Hash-SHA256` is returned if it is a
+     * well-formed SHA-256. Runs on [assemblyClient].
+     */
+    suspend fun finishChunkedUpload(
+        transferId: String,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+        requestServerHash: Boolean = false,
+    ): Result<UploadResponse> =
+        runCatching {
+            val request =
+                chunkedRequest(transferId, folderName, fileName, totalLength, CHUNKED_ASSEMBLED_NAME) {
+                    it.method("MOVE", null)
+                    if (requestServerHash) it.header(HEADER_REQUEST_HASH, HASH_ALGORITHM_SHA256)
+                }
+            executeCancellable(assemblyClient.newCall(request)) { response, _ ->
+                if (response.code != HTTP_CREATED && response.code != HTTP_NO_CONTENT) {
+                    throw WebDavHttpException(response.code, "Assembling failed: HTTP ${response.code}")
+                }
+                UploadResponse(serverSha256 = response.header(HEADER_RESPONSE_SHA256)?.takeIf(::isSha256Hex))
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * Removes the upload folder of [transferId] (`DELETE`). 2xx and 404 (already gone) are success.
+     * Best-effort cleanup: the caller bounds it in time and ignores its failure.
+     */
+    suspend fun abortChunkedUpload(transferId: String): Result<Unit> =
+        runCatching {
+            val url = chunkedTransferUrl(transferId)
+            val request =
+                Request
+                    .Builder()
+                    .url(url)
+                    .delete()
+                    .build()
+            executeCancellable(uploadClient.newCall(request)) { response, _ ->
+                if (!response.isSuccessful && response.code != HTTP_NOT_FOUND) {
+                    throw WebDavHttpException(response.code, "Aborting the upload failed: HTTP ${response.code}")
+                }
+            }
+        }.onFailure { if (it is CancellationException) throw it }
+
+    /**
+     * The uploads collection and the destination URL of `folderName/fileName` for a chunked upload,
+     * or `null` when the server URL is not a Nextcloud files URL or a segment is unsafe (the file
+     * then uses one `PUT`).
+     */
+    internal fun chunkedLocations(
+        folderName: String,
+        fileName: String,
+    ): ChunkedLocations? =
+        runCatching {
+            val collection = requireNotNull(nextcloudUploadsCollection(config.url))
+            ChunkedLocations(collection.toString(), buildPathUrl(remoteFileSegments(folderName, fileName)).toString())
+        }.getOrNull()
+
+    /** `<uploads collection>/<transferId>`; invalid ids or no uploads collection fail before any request. */
+    private fun chunkedTransferUrl(
+        transferId: String,
+        vararg more: String,
+    ): HttpUrl {
+        require(isValidTransferId(transferId)) { "Invalid transfer id" }
+        val collection = requireNotNull(nextcloudUploadsCollection(config.url)) { "No Nextcloud uploads collection" }
+        return collection
+            .newBuilder()
+            .addPathSegment(transferId)
+            .apply { more.forEach(::addPathSegment) }
+            .build()
+    }
+
+    /**
+     * The request of one chunked step to `<collection>/<transferId>[/<name>]`: `Destination` (the
+     * absolute target URL, built from validated segments) and `OC-Total-Length`, then the method and
+     * body set by [configure].
+     */
+    private fun chunkedRequest(
+        transferId: String,
+        folderName: String,
+        fileName: String,
+        totalLength: Long,
+        name: String? = null,
+        configure: (Request.Builder) -> Unit,
+    ): Request {
+        val segments = remoteFileSegments(folderName, fileName)
+        val url = if (name == null) chunkedTransferUrl(transferId) else chunkedTransferUrl(transferId, name)
+        val builder =
+            Request
+                .Builder()
+                .url(url)
+                .header(HEADER_DESTINATION, buildPathUrl(segments).toString())
+                .header(HEADER_TOTAL_LENGTH, totalLength.toString())
+        configure(builder)
+        return builder.build()
+    }
+
     private fun remoteFileSegments(
         folderName: String,
         fileName: String,
@@ -302,45 +532,6 @@ class WebDavClient(
         return folderSegments + fileName
     }
 
-    private fun digestOf(stream: InputStream): RemoteDigest {
-        val digest = MessageDigest.getInstance("SHA-256")
-        var count = 0L
-        stream.use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read == -1) break
-                digest.update(buffer, 0, read)
-                count += read
-            }
-        }
-        return RemoteDigest(sha256 = digest.digest().toHexString(), sizeBytes = count)
-    }
-
-    /** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
-    private suspend fun Call.awaitStatus(): Pair<Int, String> =
-        suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { cancel() }
-            enqueue(
-                object : Callback {
-                    override fun onFailure(
-                        call: Call,
-                        e: IOException,
-                    ) {
-                        continuation.resumeWithException(e)
-                    }
-
-                    override fun onResponse(
-                        call: Call,
-                        response: Response,
-                    ) {
-                        val status = response.use { it.code to it.message }
-                        continuation.resume(status)
-                    }
-                },
-            )
-        }
-
     private fun buildPathUrl(segments: List<String>): HttpUrl =
         requireBaseHttpUrl()
             .newBuilder()
@@ -349,14 +540,6 @@ class WebDavClient(
             }.build()
 
     private fun requireBaseHttpUrl(): HttpUrl = requireNotNull(baseUrl.toHttpUrlOrNull()) { "Invalid WebDAV URL" }
-
-    private fun validatePathSegment(segment: String) {
-        require(segment.isNotBlank()) { "Invalid path segment: blank" }
-        require('/' !in segment) { "Invalid path segment: '$segment'" }
-        require(segment != "." && segment != "..") { "Invalid path segment: '$segment'" }
-        require('\\' !in segment) { "Invalid path segment: backslash" }
-        require(segment.none { it.isISOControl() }) { "Invalid path segment contains a control character" }
-    }
 
     /** Streams [input] once; [length] `-1` = unknown (chunked transfer). */
     @VisibleForTesting
@@ -386,7 +569,44 @@ class WebDavClient(
         }
     }
 
+    /**
+     * One-shot body of a chunk: copies exactly [chunkLength] bytes from the shared [input] and never
+     * closes it (the next chunk continues there). A stream that ends early fails with an [IOException].
+     */
+    @VisibleForTesting
+    internal class BoundedInputStreamRequestBody(
+        private val input: InputStream,
+        private val chunkLength: Long,
+    ) : RequestBody() {
+        override fun contentType(): MediaType = CHUNK_MEDIA_TYPE
+
+        override fun contentLength(): Long = chunkLength
+
+        override fun isOneShot(): Boolean = true
+
+        override fun writeTo(sink: BufferedSink) {
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var remaining = chunkLength
+            while (remaining > 0) {
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (read == -1) throw IOException("Stream ended before the chunk was complete")
+                sink.write(buffer, 0, read)
+                remaining -= read
+            }
+        }
+    }
+
     companion object {
+        /** Read timeout of [assemblyClient]: the server assembles the whole file before it answers. */
+        const val CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES = 30L
+
+        private val CHUNK_MEDIA_TYPE = "application/octet-stream".toMediaType()
+        private const val CHUNKED_ASSEMBLED_NAME = ".file"
+        private const val HEADER_DESTINATION = "Destination"
+        private const val HEADER_TOTAL_LENGTH = "OC-Total-Length"
+        private const val HTTP_METHOD_NOT_ALLOWED = 405
+        private const val HTTP_NOT_FOUND = 404
+
         /** Overall limit for [testConnection] (connect + TLS + request + response headers). */
         const val CONNECTION_TEST_TIMEOUT_MILLIS = 30_000L
 
@@ -395,6 +615,9 @@ class WebDavClient(
 
         /** Read timeout of [uploadClient] (time to the response after the last byte, per read). */
         const val UPLOAD_READ_TIMEOUT_MINUTES = 5L
+
+        /** Per-file limit of a photo download (phone JPEG / HEIC / DNG are far below). */
+        const val MAX_DOWNLOAD_BYTES = 200L * 1024 * 1024
 
         /** 2xx, including 207 Multi-Status, which is the normal PROPFIND answer. */
         private val HTTP_SUCCESS_CODES = 200..299
@@ -406,10 +629,83 @@ class WebDavClient(
     }
 }
 
+/** Where a chunked upload collects its chunks and where the finished file lands (absolute URLs). */
+internal data class ChunkedLocations(
+    val collectionUrl: String,
+    val destinationUrl: String,
+)
+
+/** Outcome of creating the upload folder of a chunked transfer. */
+enum class ChunkedUploadCreation {
+    /** 201: a new upload folder. */
+    Created,
+
+    /** 405: the folder exists already (a resumed transfer). */
+    AlreadyExists,
+}
+
 /** What a successful `PUT` answered: the server-computed SHA-256 (64 hex chars), null when absent or malformed. */
 data class UploadResponse(
     val serverSha256: String?,
 )
+
+/** The body of a photo download: [contentLength] (`-1` = unknown) and the size-limited [stream]. */
+class DownloadBody(
+    val contentLength: Long,
+    val stream: InputStream,
+)
+
+/**
+ * Image subtypes a download may announce (the allow-listed raster types and their usual aliases;
+ * `image/svg+xml`, `image/tiff` and the like are not on the list). Case-insensitive.
+ */
+private val downloadImageSubtypes =
+    setOf(
+        "jpeg",
+        "jpg",
+        "pjpeg",
+        "png",
+        "gif",
+        "webp",
+        "heic",
+        "heif",
+        "heic-sequence",
+        "heif-sequence",
+        "avif",
+        "bmp",
+        "x-ms-bmp",
+        "x-adobe-dng",
+        "dng",
+        "x-dcraw",
+    )
+
+/**
+ * True if the stored bytes of this response may be saved as an image. It fails closed:
+ *  - a raw `Content-Type` header that does not parse is rejected; a missing one is fine;
+ *  - the type must be `application/octet-stream` or an allow-listed `image/…` subtype;
+ *  - any `Content-Encoding` other than `identity` is rejected (the request asks for none, and
+ *    OkHttp does not decode a response to a request with its own `Accept-Encoding`);
+ *  - with an unknown [length] (`-1`) an HTTP/1.x response must be `Transfer-Encoding: chunked`:
+ *    a body delimited only by the closing connection cannot be told from a truncated one.
+ * What the bytes really are is checked from their first bytes before anything is stored.
+ */
+private fun Response.isStorableImageResponse(length: Long): Boolean {
+    val rawType = header("Content-Type")
+    val type = body.contentType()
+    val typeOk =
+        when {
+            rawType == null -> true
+            type == null -> false
+            type.type.equals("application", ignoreCase = true) -> type.subtype.equals("octet-stream", ignoreCase = true)
+            type.type.equals("image", ignoreCase = true) -> type.subtype.lowercase(Locale.ROOT) in downloadImageSubtypes
+            else -> false
+        }
+    val encoding = header("Content-Encoding")
+    val encodingOk = encoding == null || encoding.trim().equals("identity", ignoreCase = true)
+    val http1 = protocol == Protocol.HTTP_1_0 || protocol == Protocol.HTTP_1_1
+    val delimited = length >= 0L || !http1 || header("Transfer-Encoding")?.trim().equals("chunked", ignoreCase = true)
+    return typeOk && encodingOk && delimited
+}
 
 /** SHA-256 (lower-case hex) and byte count of a downloaded body. */
 data class RemoteDigest(
@@ -443,6 +739,9 @@ enum class UploadFailure {
     /** The server copy differs from the local file, or the check could not finish. */
     Verification,
 
+    /** A certificate is pinned for the server but it presented a different, untrusted one. */
+    CertificateChanged,
+
     /** Any other failure (network, other status, unreadable file). */
     Other,
 }
@@ -452,8 +751,61 @@ private const val HTTP_INSUFFICIENT_STORAGE = 507
 
 /** Branches on [WebDavHttpException.code] only, never on the message. */
 fun Throwable.toUploadFailure(): UploadFailure =
-    when ((this as? WebDavHttpException)?.code) {
-        HTTP_PAYLOAD_TOO_LARGE -> UploadFailure.TooLarge
-        HTTP_INSUFFICIENT_STORAGE -> UploadFailure.StorageFull
-        else -> UploadFailure.Other
+    when {
+        (this as? WebDavHttpException)?.code == HTTP_PAYLOAD_TOO_LARGE -> {
+            UploadFailure.TooLarge
+        }
+
+        (this as? WebDavHttpException)?.code == HTTP_INSUFFICIENT_STORAGE -> {
+            UploadFailure.StorageFull
+        }
+
+        generateSequence(this) { it.cause }.take(MAX_UPLOAD_CAUSE_DEPTH).any { it is CertificateChangedException } -> {
+            UploadFailure.CertificateChanged
+        }
+
+        else -> {
+            UploadFailure.Other
+        }
+    }
+
+private const val MAX_UPLOAD_CAUSE_DEPTH = 10
+
+private fun digestOf(stream: InputStream): RemoteDigest {
+    val digest = MessageDigest.getInstance("SHA-256")
+    var count = 0L
+    stream.use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read == -1) break
+            digest.update(buffer, 0, read)
+            count += read
+        }
+    }
+    return RemoteDigest(sha256 = digest.digest().toHexString(), sizeBytes = count)
+}
+
+/** Enqueues the call and suspends until its status line arrives; cancelling the coroutine cancels the call. */
+private suspend fun Call.awaitStatus(): Pair<Int, String> =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: IOException,
+                ) {
+                    continuation.resumeWithException(e)
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    val status = response.use { it.code to it.message }
+                    continuation.resume(status)
+                }
+            },
+        )
     }

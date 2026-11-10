@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performTouchInput
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
@@ -76,9 +77,10 @@ class PhotoDeletionOutcomeUiTest {
         AlbumDetailViewModel(
             application = RuntimeEnvironment.getApplication() as Application,
             credentialRepo = credentials(),
-            repoFactory = { fakeRepo },
+            repoFactory = { _, _ -> fakeRepo },
             // Thumbnail URLs resolved inline: several tests wait for the load before any content is set.
             backgroundDispatcher = Dispatchers.Unconfined,
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     /**
@@ -99,8 +101,8 @@ class PhotoDeletionOutcomeUiTest {
     @Test
     fun `failure message uses the plural resource and is null without failures`() {
         assertNull(photoDeletionFailureMessage(resources, PhotoDeletionOutcome(0)))
-        assertEquals("1 photo could not be deleted.", photoDeletionFailureMessage(resources, PhotoDeletionOutcome(1)))
-        assertEquals("3 photos could not be deleted.", photoDeletionFailureMessage(resources, PhotoDeletionOutcome(3)))
+        assertEquals("1 item could not be deleted.", photoDeletionFailureMessage(resources, PhotoDeletionOutcome(1)))
+        assertEquals("3 items could not be deleted.", photoDeletionFailureMessage(resources, PhotoDeletionOutcome(3)))
     }
 
     @Test
@@ -125,8 +127,8 @@ class PhotoDeletionOutcomeUiTest {
             }
         }
 
-        composeTestRule.waitUntilExactlyOneExists(hasText("1 photo could not be deleted."), timeoutMillis = 5_000)
-        composeTestRule.onNodeWithText("1 photo could not be deleted.").assertIsDisplayed()
+        composeTestRule.waitUntilExactlyOneExists(hasText("1 item could not be deleted."), timeoutMillis = 5_000)
+        composeTestRule.onNodeWithText("1 item could not be deleted.").assertIsDisplayed()
         assertNull("outcome is consumed so it is shown only once", viewModel.photoDeletionOutcome.value)
     }
 
@@ -153,8 +155,8 @@ class PhotoDeletionOutcomeUiTest {
 
         composeTestRule.runOnIdle { viewModel.deleteSelectedPhotos(listOf(photoA, photoB)) }
 
-        composeTestRule.waitUntilExactlyOneExists(hasText("2 photos could not be deleted."), timeoutMillis = 5_000)
-        composeTestRule.onNodeWithText("2 photos could not be deleted.").assertIsDisplayed()
+        composeTestRule.waitUntilExactlyOneExists(hasText("2 items could not be deleted."), timeoutMillis = 5_000)
+        composeTestRule.onNodeWithText("2 items could not be deleted.").assertIsDisplayed()
     }
 
     @Test
@@ -335,8 +337,9 @@ class PhotoDeletionOutcomeUiTest {
             AlbumDetailViewModel(
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialRepo = credentials,
-                repoFactory = { fakeRepo },
+                repoFactory = { _, _ -> fakeRepo },
                 backgroundDispatcher = Dispatchers.Unconfined,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             )
         val duplicatesViewModel = createDuplicatesViewModel()
         composeTestRule.runOnIdle { viewModel.loadAlbum("/Album/") }

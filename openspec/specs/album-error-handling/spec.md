@@ -6,7 +6,7 @@ Keeps the album list, album details and the duplicate and blur reviews usable wh
 ## Requirements
 
 ### Requirement: Album errors are shown as user-friendly messages
-When the album list, an album's photos or a duplicate / blur scan cannot be loaded, the app SHALL show a localized, plain-language message for the cause (not logged in, invalid server address, untrusted certificate, server not found, server unreachable, timeout, access denied, not found, other HTTP status, unknown) and SHALL NOT show raw exception text. Where retrying can help, the screen SHALL offer a way to retry.
+When the album list, an album's photos or a duplicate / blur scan cannot be loaded, the app SHALL show a localized, plain-language message for the cause (not logged in, invalid server address, untrusted certificate, server certificate changed, server not found, server unreachable, timeout, access denied, not found, other HTTP status, unknown) and SHALL NOT show raw exception text. Where retrying can help, the screen SHALL offer a way to retry.
 
 #### Scenario: Server rejects the credentials
 - **WHEN** loading an album fails with HTTP 401 or 403
@@ -15,6 +15,14 @@ When the album list, an album's photos or a duplicate / blur scan cannot be load
 #### Scenario: Unexpected failure
 - **WHEN** loading fails for a reason without a specific message
 - **THEN** a generic localized message is shown, without exception text or server details
+
+#### Scenario: Untrusted certificate
+- **WHEN** loading fails because the server certificate is neither system-trusted nor pinned
+- **THEN** the screen shows the localized untrusted-certificate message, which states the problem neutrally (it does not invite the user to trust anything; the review stays reachable through the connection test in Settings), and offers Retry
+
+#### Scenario: Server certificate changed
+- **WHEN** loading fails because a certificate is pinned for the configured server and the server presented a different, untrusted certificate
+- **THEN** the screen shows the localized "server certificate changed" message (neutral wording, no call to trust), distinct from the untrusted-certificate message, and offers Retry
 
 ### Requirement: Missing or invalid configuration never crashes album screens
 Opening the album list, an album, the duplicate review or the blur review with no stored credentials or an unusable server address SHALL NOT terminate the app; the screen SHALL show the corresponding message instead.

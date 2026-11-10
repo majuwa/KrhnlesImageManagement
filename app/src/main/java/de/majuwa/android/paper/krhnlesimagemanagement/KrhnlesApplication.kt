@@ -11,17 +11,30 @@ import coil3.serviceLoaderEnabled
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UploadHistoryStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.hasSameOriginAs
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedClientHolder
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerTrust
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.pinFor
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.serverHttpClientBuilder
+import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduler
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.NewPhotosReminderScheduling
+import de.majuwa.android.paper.krhnlesimagemanagement.reminder.ReminderSettingsController
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadEnqueuer
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.recoverCancelledUploads
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Credentials
-import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
@@ -34,6 +47,25 @@ class KrhnlesApplication :
 
     /** Enqueues uploads in [appScope] so they survive the calling activity being destroyed. */
     val uploadEnqueuer: UploadEnqueuer by lazy { UploadEnqueuer(this, CredentialStore(this), appScope) }
+
+    /** Enqueues saving album photos to the device in [appScope], so it survives the screen being left. */
+    val downloadEnqueuer: DownloadEnqueuer by lazy { DownloadEnqueuer(this, CredentialStore(this), appScope) }
+
+    /** The one scheduler of the new-photos reminder (stateless; Settings and app start share it). */
+    val newPhotosReminderScheduler: NewPhotosReminderScheduling by lazy { NewPhotosReminderScheduler(this) }
+
+    /**
+     * The one writer of the reminder setting and schedule, in [appScope] (survives leaving Settings; Settings,
+     * app start and logout share its lock).
+     */
+    val reminderController: ReminderSettingsController by lazy {
+        ReminderSettingsController(appScope, CredentialStore(this), newPhotosReminderScheduler)
+    }
+
+    /** Brings the periodic reminder check in line with the stored setting, once per process. */
+    fun reconcileInBackground() {
+        reminderController.reconcileOnce()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -53,36 +85,46 @@ class KrhnlesApplication :
         }
     }
 
+    private class ImageServer(
+        val config: WebDavConfig,
+        val pin: PinnedCertificate?,
+    )
+
     private companion object {
         val recoveryStarted = AtomicBoolean(false)
     }
 
     override fun newImageLoader(context: Context): ImageLoader {
         val credentialStore = CredentialStore(context)
-        val cachedConfig =
-            credentialStore.webDavConfig.stateIn(
+        val trustedCertificates = TrustedCertificateStore(context)
+        // Config and pin come from one snapshot, so credentials and trust always belong together.
+        val cached =
+            combine(credentialStore.webDavConfig, trustedCertificates.trustedCertificate) { config, stored ->
+                ImageServer(config, stored.pinFor(config.url))
+            }.stateIn(
                 scope = appScope,
                 started = SharingStarted.Eagerly,
-                initialValue = WebDavConfig("", "", "", ""),
+                initialValue = ImageServer(WebDavConfig("", "", "", ""), null),
             )
 
-        val authenticatedClient =
-            OkHttpClient
-                .Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .addInterceptor { chain ->
-                    val config = cachedConfig.value
-                    val requestBuilder = chain.request().newBuilder()
-                    // Credentials only go to the configured server origin (defence in depth).
-                    if (config.isValid && chain.request().url.hasSameOriginAs(config.url)) {
-                        requestBuilder.header(
-                            "Authorization",
-                            Credentials.basic(config.username, config.password),
-                        )
-                    }
-                    chain.proceed(requestBuilder.build())
-                }.build()
+        val authenticatedClients =
+            PinnedClientHolder(currentPin = { cached.value.pin }) { pin ->
+                serverHttpClientBuilder(ServerTrust(pin))
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .addInterceptor { chain ->
+                        val config = cached.value.config
+                        val requestBuilder = chain.request().newBuilder()
+                        // Credentials only go to the configured server origin (defence in depth).
+                        if (config.isValid && chain.request().url.hasSameOriginAs(config.url)) {
+                            requestBuilder.header(
+                                "Authorization",
+                                Credentials.basic(config.username, config.password),
+                            )
+                        }
+                        chain.proceed(requestBuilder.build())
+                    }.build()
+            }
 
         // No service-loader components: they would add an unauthenticated network fetcher and a
         // video decoder for every source; both are registered explicitly instead.
@@ -90,7 +132,7 @@ class KrhnlesApplication :
             .Builder(context)
             .serviceLoaderEnabled(false)
             .components {
-                add(OkHttpNetworkFetcherFactory(callFactory = { authenticatedClient }))
+                add(OkHttpNetworkFetcherFactory(callFactory = { authenticatedClients }))
                 add(LocalVideoFrameDecoderFactory())
             }.build()
     }

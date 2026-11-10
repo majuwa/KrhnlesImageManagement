@@ -45,6 +45,7 @@ internal fun Throwable.toFolderCreationError(): FolderCreationError =
                 AlbumsError.NotConfigured -> FolderCreationError.NotConfigured
 
                 AlbumsError.CertificateError,
+                AlbumsError.CertificateChanged,
                 AlbumsError.UnknownHost,
                 AlbumsError.ServerUnreachable,
                 AlbumsError.Timeout,

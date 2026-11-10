@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.majuwa.android.paper.krhnlesimagemanagement.KrhnlesApplication
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryProvider
@@ -12,6 +13,10 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.PhotoDeletionResult
 import de.majuwa.android.paper.krhnlesimagemanagement.data.deletePhotosIndividually
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateStore
+import de.majuwa.android.paper.krhnlesimagemanagement.download.DownloadRequester
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CoroutineDispatcher
@@ -42,6 +47,8 @@ data class AlbumDetailState(
     val loadedCount: Int = 0,
     /** The listing stopped at a size limit: [photos] is only the first part of the album. */
     val isTruncated: Boolean = false,
+    /** Poster URLs that failed to load; they stay placeholders until the album is loaded again. */
+    val failedPosterUrls: Set<String> = emptySet(),
 ) {
     internal fun withPhotosDeleted(hrefs: Set<String>): AlbumDetailState =
         copy(
@@ -97,13 +104,17 @@ class AlbumDetailViewModel
         application: Application,
         credentialRepo: CredentialRepository =
             CredentialStore(application),
-        repoFactory: (WebDavConfig) -> AlbumsRepositoryContract =
-            { config -> AlbumsRepository(config) },
+        trustedCertificates: TrustedCertificateRepository =
+            TrustedCertificateStore(application),
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract =
+            { config, pin -> AlbumsRepository(config, pin) },
         /** Resolves the thumbnail URLs of a loaded listing (up to 20,000 photos) off the main thread. */
         private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
+        /** Starts saving photos to the device in the application scope (default: the app's enqueuer). */
+        private val downloadRequester: DownloadRequester = (application as KrhnlesApplication).downloadEnqueuer,
     ) : AndroidViewModel(application),
         PhotoDeletionLauncher {
-        private val repos = AlbumsRepositoryProvider(credentialRepo, repoFactory = repoFactory)
+        private val repos = AlbumsRepositoryProvider(credentialRepo, trustedCertificates, repoFactory = repoFactory)
 
         override fun onCleared() {
             repos.close()
@@ -196,7 +207,13 @@ class AlbumDetailViewModel
                                 .getOrThrow()
                         val urls =
                             withContext(backgroundDispatcher) {
-                                listing.photos.associate { photo -> photo.href to repository.thumbnailUrl(photo) }
+                                listing.photos
+                                    .mapNotNull { photo ->
+                                        repository.thumbnailUrl(photo)?.let {
+                                            photo.href to
+                                                it
+                                        }
+                                    }.toMap()
                             }
                         // A cancelled or replaced load (new load, configuration change) never publishes stale photos.
                         currentCoroutineContext().ensureActive()
@@ -245,8 +262,16 @@ class AlbumDetailViewModel
             _detailState.update { AlbumDetailState(albumName = it.albumName, error = error) }
         }
 
-        /** Full-size image URL of [photo], or `""` before the album has been loaded. */
-        fun fullImageUrl(photo: RemotePhoto): String = repos.current?.fullImageUrl(photo) ?: ""
+        /** Remembers a poster that failed to load so the grid does not request it again on every scroll. */
+        fun markPosterFailed(url: String) {
+            _detailState.update { it.copy(failedPosterUrls = it.failedPosterUrls + url) }
+        }
+
+        /**
+         * Full-size image URL of [photo], or `null` before the album has been loaded and for a video
+         * without a server preview.
+         */
+        fun fullImageUrl(photo: RemotePhoto): String? = repos.current?.fullImageUrl(photo)
 
         /**
          * Deletes [toDelete] photos directly from the album view (not via a review).
@@ -260,6 +285,27 @@ class AlbumDetailViewModel
                 onStart = { _isDeletingPhotos.value = true },
                 onFinish = { _isDeletingPhotos.value = false },
             )
+
+        /**
+         * Saves [photos] of the open album to the device in the background. Only photos of the
+         * currently loaded listing are requested (stale photos, e.g. after a server or account
+         * change, are dropped); nothing happens while the album is not loaded or after a
+         * [AlbumsError.NotConfigured] / [AlbumsError.ConfigurationChanged]. Videos are passed on:
+         * the download worker reports them as unsupported.
+         *
+         * @return true if a download was requested; false if nothing was (the caller tells the user
+         *   and keeps its selection / "saved" state).
+         */
+        fun saveToDevice(photos: List<RemotePhoto>): Boolean {
+            val albumHref = currentHref ?: return false
+            val state = _detailState.value
+            if (!state.isLoaded || state.error != null) return false
+            val loaded = state.photos.mapTo(HashSet()) { it.href }
+            val hrefs = photos.map { it.href }.filter { it in loaded }.distinct()
+            if (hrefs.isEmpty()) return false
+            downloadRequester.requestDownload(albumHref, hrefs)
+            return true
+        }
 
         /** Clears [photoDeletionOutcome] once the UI has shown it. */
         fun consumePhotoDeletionOutcome() {

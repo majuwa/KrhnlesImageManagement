@@ -19,6 +19,7 @@ private const val KEY_MIME_TYPE = "mimeType"
 private const val KEY_DISPLAY_NAME = "displayName"
 private const val KEY_UPLOADED = "uploaded"
 private const val KEY_INTERRUPTIONS = "interruptions"
+private const val KEY_CHUNKED = "chunked"
 
 /** One photo of a queue file; [folderName] is set only in the per-photo format. */
 internal data class UploadQueueEntry(
@@ -35,6 +36,11 @@ internal data class UploadQueueEntry(
      * older versions = not uploaded). A re-run skips it but counts it in the batch result.
      */
     val uploaded: Boolean = false,
+    /**
+     * Progress of a chunked upload of this entry (optional `chunked` object, see
+     * [ChunkedTransferState]); never part of a retry file.
+     */
+    val chunked: ChunkedTransferState? = null,
 )
 
 /**
@@ -73,13 +79,22 @@ internal data class UploadQueue(
     val pendingIndices: List<Int>
         get() = entries.indices.filter { !entries[it].uploaded }
 
-    /** This queue with entry [index] marked uploaded. */
+    /** This queue with entry [index] marked uploaded; its chunked-upload progress is finished. */
     fun withUploaded(index: Int): UploadQueue =
-        copy(entries = entries.toMutableList().also { it[index] = it[index].copy(uploaded = true) })
+        copy(entries = entries.toMutableList().also { it[index] = it[index].copy(uploaded = true, chunked = null) })
 
-    /** Retry queue JSON with only the entries at [failedIndices], each keeping its own folder. */
+    /** This queue with the chunked-upload progress of entry [index] set to [state] (`null` clears it). */
+    fun withChunked(
+        index: Int,
+        state: ChunkedTransferState?,
+    ): UploadQueue = copy(entries = entries.toMutableList().also { it[index] = it[index].copy(chunked = state) })
+
+    /**
+     * Retry queue JSON with only the entries at [failedIndices], each keeping its own folder. A retry
+     * never carries chunked-upload progress: it starts a fresh transfer.
+     */
     fun toRetryJson(failedIndices: List<Int>): JSONObject =
-        toJson(failedIndices.map { entries[it].copy(uploaded = false) }, interruptions = 0)
+        toJson(failedIndices.map { entries[it].copy(uploaded = false, chunked = null) }, interruptions = 0)
 
     /** The whole queue in its own format, with an `uploaded` marker on every uploaded entry. */
     fun toProgressJson(): JSONObject = toJson(entries, interruptions)
@@ -108,6 +123,7 @@ internal data class UploadQueue(
                                 entry.folderName?.let { put(KEY_FOLDER_NAME, it) }
                                 entry.staged?.let { put(KEY_STAGED, it) }
                                 if (entry.uploaded) put(KEY_UPLOADED, true)
+                                entry.chunked?.let { put(KEY_CHUNKED, it.toJson()) }
                             },
                         )
                     }
@@ -126,7 +142,9 @@ internal data class UploadQueue(
  *
  * An optional entry `staged` must be a string staged name ([isValidStagedName]) on an entry
  * without an id (`id = -1`); otherwise the whole file is malformed. An optional entry `uploaded`
- * (written by [UploadQueue.toProgressJson]) marks an entry finished by an earlier run.
+ * (written by [UploadQueue.toProgressJson]) marks an entry finished by an earlier run. An optional
+ * entry `chunked` object is the progress of a chunked upload; an invalid one is dropped (the entry
+ * uploads from the start) and never makes the file malformed.
  *
  * @throws org.json.JSONException for unparseable JSON or missing / mistyped entry fields.
  */
@@ -147,6 +165,8 @@ internal fun parseUploadQueue(json: String): UploadQueue? {
                 staged = obj.opt(KEY_STAGED) as? String,
                 // Strict: only a JSON `true` marks an entry uploaded; anything else uploads it again.
                 uploaded = obj.opt(KEY_UPLOADED) == true,
+                // Lenient on purpose: invalid progress is dropped, the entry uploads from the start.
+                chunked = ChunkedTransferState.fromJson(obj.opt(KEY_CHUNKED)),
             )
         }
     val stagedValid = objects.indices.all { hasValidStaged(objects[it], entries[it]) }

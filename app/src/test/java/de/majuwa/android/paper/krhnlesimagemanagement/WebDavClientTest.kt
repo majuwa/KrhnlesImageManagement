@@ -52,6 +52,7 @@ class WebDavClientTest {
                     username = "testuser",
                     password = "testpass",
                 ),
+                null,
             )
     }
 
@@ -418,6 +419,95 @@ class WebDavClientTest {
         assertTrue(shared.connectionPool === upload.connectionPool)
         assertTrue(shared.dispatcher === upload.dispatcher)
         assertEquals(shared.writeTimeoutMillis, upload.writeTimeoutMillis)
+    }
+
+    @Test
+    fun `assembly client derives from the upload client with a 30 minute read timeout and no call timeout`() {
+        val assembly = client.assemblyClient
+        val upload = client.uploadClient
+
+        assertEquals(TimeUnit.MINUTES.toMillis(30).toInt(), assembly.readTimeoutMillis)
+        assertEquals(30L, WebDavClient.CHUNK_ASSEMBLY_READ_TIMEOUT_MINUTES)
+        assertEquals(0, assembly.callTimeoutMillis)
+        assertFalse(assembly.followRedirects)
+        assertFalse(assembly.followSslRedirects)
+        assertTrue(assembly.connectionPool === upload.connectionPool)
+        assertTrue(assembly.dispatcher === upload.dispatcher)
+        assertEquals(upload.interceptors, assembly.interceptors)
+        assertEquals(upload.writeTimeoutMillis, assembly.writeTimeoutMillis)
+    }
+
+    @Test
+    fun `assembly client sends credentials to the configured origin only`() =
+        runTest {
+            val other = MockWebServer()
+            other.start()
+            try {
+                server.enqueue(MockResponse().setResponseCode(200))
+                other.enqueue(MockResponse().setResponseCode(200))
+                client.assemblyClient
+                    .newCall(
+                        okhttp3.Request
+                            .Builder()
+                            .url(server.url("/x"))
+                            .build(),
+                    ).execute()
+                    .close()
+                client.assemblyClient
+                    .newCall(
+                        okhttp3.Request
+                            .Builder()
+                            .url(other.url("/x"))
+                            .build(),
+                    ).execute()
+                    .close()
+
+                assertNotNull(server.takeRequest().getHeader("Authorization"))
+                assertNull(other.takeRequest().getHeader("Authorization"))
+            } finally {
+                other.shutdown()
+            }
+        }
+
+    @Test
+    fun `chunk body copies exactly its length, keeps the stream open and fails on early end`() {
+        val input = TrackingInputStream(ByteArray(10) { it.toByte() })
+        val body = WebDavClient.BoundedInputStreamRequestBody(input, 4L)
+        val sink = okio.Buffer()
+
+        body.writeTo(sink)
+
+        assertEquals(4L, body.contentLength())
+        assertTrue(body.isOneShot())
+        assertEquals(listOf<Byte>(0, 1, 2, 3), sink.readByteArray().toList())
+        assertFalse(input.closed)
+        // The next chunk continues where this one stopped.
+        val next = okio.Buffer()
+        WebDavClient.BoundedInputStreamRequestBody(input, 6L).writeTo(next)
+        assertEquals((4..9).map { it.toByte() }, next.readByteArray().toList())
+
+        val short = TrackingInputStream(ByteArray(3))
+        val failure =
+            runCatching {
+                WebDavClient
+                    .BoundedInputStreamRequestBody(
+                        short,
+                        5L,
+                    ).writeTo(okio.Buffer())
+            }.exceptionOrNull()
+        assertTrue(failure is java.io.IOException)
+        assertFalse(short.closed)
+    }
+
+    private class TrackingInputStream(
+        data: ByteArray,
+    ) : ByteArrayInputStream(data) {
+        var closed = false
+
+        override fun close() {
+            closed = true
+            super.close()
+        }
     }
 
     @Test

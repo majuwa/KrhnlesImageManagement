@@ -9,6 +9,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -114,7 +115,7 @@ class PhotoGridViewModelTest {
 
             val state = viewModel.uiState.value
             assertFalse(state.isLoading)
-            assertEquals("No permission", state.error)
+            assertEquals(PhotoGridError.LoadFailed, state.error)
         }
 
     // ── togglePhotoSelection ────────────────────────────────────────────────
@@ -316,7 +317,7 @@ class PhotoGridViewModelTest {
 
             val state = viewModel.uiState.value
             assertFalse(state.isRefreshing)
-            assertEquals("disk error", state.error)
+            assertEquals(PhotoGridError.LoadFailed, state.error)
         }
 
     // ── dismissDialogs ──────────────────────────────────────────────────────
@@ -397,6 +398,112 @@ class PhotoGridViewModelTest {
             advanceUntilIdle()
 
             assertTrue(5L in viewModel.uiState.value.uploadedPhotoIds)
+        }
+
+    // ── showOnlyNewPhotos (opened from the new-photos reminder) ──────────────
+
+    @Test
+    fun `showOnlyNewPhotos turns the filter on and hides uploaded photos`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.showOnlyNewPhotos()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.showOnlyNewPhotos)
+            assertEquals(
+                listOf(2L),
+                state.photosByDate.values
+                    .flatten()
+                    .map { it.id },
+            )
+        }
+
+    @Test
+    fun `showOnlyNewPhotos keeps an active filter on and is idempotent`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.toggleShowOnlyNewPhotos()
+
+            viewModel.showOnlyNewPhotos()
+            viewModel.showOnlyNewPhotos()
+
+            assertTrue(viewModel.uiState.value.showOnlyNewPhotos)
+            assertEquals(
+                listOf(2L),
+                viewModel.uiState.value.photosByDate.values
+                    .flatten()
+                    .map { it.id },
+            )
+        }
+
+    @Test
+    fun `showOnlyNewPhotos with no markers hides nothing`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+
+            viewModel.showOnlyNewPhotos()
+
+            assertEquals(
+                2,
+                viewModel.uiState.value.photosByDate.values
+                    .flatten()
+                    .size,
+            )
+        }
+
+    @Test
+    fun `showOnlyNewPhotos deselects hidden items and keeps the new selected one`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.togglePhotoSelection(1L)
+            viewModel.togglePhotoSelection(2L)
+
+            viewModel.showOnlyNewPhotos()
+
+            assertEquals(setOf(2L), viewModel.uiState.value.selectedPhotoIds)
+        }
+
+    @Test
+    fun `an item marked uploaded while the filter is on is deselected by the marker collector`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.showOnlyNewPhotos()
+            viewModel.togglePhotoSelection(1L)
+            viewModel.togglePhotoSelection(2L)
+
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            advanceUntilIdle()
+
+            assertEquals(setOf(2L), viewModel.uiState.value.selectedPhotoIds)
+        }
+
+    @Test
+    fun `an item marked uploaded while the filter is off stays selected`() =
+        runTest {
+            fakeMedia.photosToReturn = listOf(photo(1, "a.jpg", today), photo(2, "b.jpg", today))
+            viewModel.loadPhotos()
+            advanceUntilIdle()
+            viewModel.togglePhotoSelection(1L)
+            viewModel.togglePhotoSelection(2L)
+
+            fakeUploadedPhotos.markAsUploaded(setOf(1L))
+            advanceUntilIdle()
+
+            assertEquals(setOf(1L, 2L), viewModel.uiState.value.selectedPhotoIds)
         }
 
     // ── toggleShowOnlyNewPhotos ─────────────────────────────────────────────

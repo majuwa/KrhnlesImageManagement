@@ -117,9 +117,17 @@ Selected videos SHALL be uploaded with the same flow as photos (occasion or auto
 - **WHEN** an upload was started any number of times without a foreground refusal (Wi-Fi-only wake-ups on a metered network, constraint stops)
 - **THEN** none of these starts counts towards the limit and a later refusal still retries the upload
 
-### Requirement: Albums and reviews ignore videos
-Album listings and the duplicate and blurry photo reviews SHALL NOT include video files. Uploaded videos therefore do not appear in the Albums screens.
+### Requirement: Duplicate and blur reviews ignore videos
+The duplicate and blurry photo reviews SHALL analyse only the photos of an album: videos SHALL NOT be downloaded, analysed, counted in the review progress, shown as results or deleted by a review. The review actions SHALL be offered only when the loaded album contains at least one photo. Videos stay in the album unchanged by a review.
 
-#### Scenario: Album contains a video file
-- **WHEN** an album folder on the server contains an mp4 file
-- **THEN** it is not listed and not scanned
+#### Scenario: Album with photos and a video
+- **WHEN** the user starts the duplicate or blur review of an album with four photos and one video
+- **THEN** the progress counts four photos, no request is sent for the video and the video is never a result
+
+#### Scenario: Album with only videos
+- **WHEN** the loaded album contains only videos
+- **THEN** the duplicate and blur review actions are not offered
+
+#### Scenario: Review deletion keeps videos
+- **WHEN** the user deletes all results of a review in an album that also contains videos
+- **THEN** the videos are still in the album and on the server

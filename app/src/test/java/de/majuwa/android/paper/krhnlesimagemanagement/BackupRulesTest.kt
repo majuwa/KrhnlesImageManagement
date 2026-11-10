@@ -6,6 +6,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.PREFS_FILE_NAME
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UPLOADED_PHOTOS_DATASTORE_NAME
 import de.majuwa.android.paper.krhnlesimagemanagement.data.UPLOAD_HISTORY_DATASTORE_NAME
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VERIFIED_UPLOADS_DATASTORE_NAME
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TRUSTED_CERTIFICATES_DATASTORE_NAME
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
@@ -28,6 +29,7 @@ class BackupRulesTest {
             "file" to "datastore/$UPLOADED_PHOTOS_DATASTORE_NAME.preferences_pb",
             "file" to "datastore/$UPLOAD_HISTORY_DATASTORE_NAME.preferences_pb",
             "file" to "datastore/$VERIFIED_UPLOADS_DATASTORE_NAME.preferences_pb",
+            "file" to "datastore/$TRUSTED_CERTIFICATES_DATASTORE_NAME.preferences_pb",
         )
 
     private fun excludes(

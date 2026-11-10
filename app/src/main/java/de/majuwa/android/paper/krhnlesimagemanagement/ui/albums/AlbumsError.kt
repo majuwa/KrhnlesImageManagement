@@ -28,6 +28,9 @@ sealed interface AlbumsError {
     /** TLS handshake failed or the certificate is not trusted (e.g. self-signed or expired). */
     data object CertificateError : AlbumsError
 
+    /** A certificate is pinned for the server but it presented a different, untrusted one. */
+    data object CertificateChanged : AlbumsError
+
     data object UnknownHost : AlbumsError
 
     data object ServerUnreachable : AlbumsError
@@ -132,14 +135,27 @@ private const val HTTP_PRECONDITION_FAILED = 412
 private fun ConnectionTestResult.toAlbumsError(): AlbumsError =
     when (this) {
         ConnectionTestResult.NotConfigured -> AlbumsError.NotConfigured
-        ConnectionTestResult.CertificateError -> AlbumsError.CertificateError
+
+        ConnectionTestResult.CertificateError,
+        is ConnectionTestResult.UntrustedCertificate,
+        -> AlbumsError.CertificateError
+
+        is ConnectionTestResult.CertificateChanged -> AlbumsError.CertificateChanged
+
         ConnectionTestResult.UnknownHost -> AlbumsError.UnknownHost
+
         ConnectionTestResult.ServerUnreachable -> AlbumsError.ServerUnreachable
+
         ConnectionTestResult.Timeout -> AlbumsError.Timeout
+
         ConnectionTestResult.AuthFailed -> AlbumsError.AuthFailed
+
         ConnectionTestResult.NotFound -> AlbumsError.NotFound
+
         is ConnectionTestResult.HttpError -> AlbumsError.HttpError(code)
+
         ConnectionTestResult.InvalidUrl -> AlbumsError.InvalidServerUrl
+
         ConnectionTestResult.Success, ConnectionTestResult.UnknownError -> AlbumsError.Unknown
     }
 
@@ -155,7 +171,9 @@ fun albumsErrorMessage(
 
         AlbumsError.ConfigurationChanged -> resources.getString(R.string.albums_error_configuration_changed)
 
-        AlbumsError.CertificateError -> resources.getString(R.string.albums_error_certificate)
+        AlbumsError.CertificateError,
+        AlbumsError.CertificateChanged,
+        -> certificateErrorMessage(resources, error)
 
         AlbumsError.UnknownHost -> resources.getString(R.string.albums_error_unknown_host)
 
@@ -182,6 +200,18 @@ fun albumsErrorMessage(
 
         AlbumsError.Unknown -> resources.getString(R.string.albums_error_unknown)
     }
+
+private fun certificateErrorMessage(
+    resources: Resources,
+    error: AlbumsError,
+): String =
+    resources.getString(
+        if (error == AlbumsError.CertificateChanged) {
+            R.string.albums_error_certificate_changed
+        } else {
+            R.string.albums_error_certificate
+        },
+    )
 
 private fun renameErrorMessage(
     resources: Resources,

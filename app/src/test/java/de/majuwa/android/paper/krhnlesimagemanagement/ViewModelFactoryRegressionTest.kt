@@ -6,12 +6,15 @@ import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewM
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.BlurViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.DuplicatesViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.navigation.LaunchRequestViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.OnboardingViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.onboarding.StartupViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.UploadedRemovalViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionSuggestionsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.ShareViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.viewer.VideoPlayerViewModel
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +43,8 @@ class ViewModelFactoryRegressionTest(
                 arrayOf(StartupViewModel::class.java),
                 arrayOf(ShareViewModel::class.java),
                 arrayOf(UploadedRemovalViewModel::class.java),
+                arrayOf(OccasionSuggestionsViewModel::class.java),
+                arrayOf(VideoPlayerViewModel::class.java),
             )
     }
 
@@ -79,6 +84,7 @@ class PlainViewModelFactoryRegressionTest(
             listOf(
                 arrayOf(DuplicatesViewModel::class.java),
                 arrayOf(BlurViewModel::class.java),
+                arrayOf(LaunchRequestViewModel::class.java),
             )
     }
 

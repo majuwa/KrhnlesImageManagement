@@ -23,6 +23,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
@@ -76,6 +77,7 @@ class SettingsScreenTest {
                 FakeCredentialRepository(
                     WebDavConfig("https://cloud.example.com/dav/", "testuser", "pass", "Photos"),
                 ),
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
     }
 
@@ -84,6 +86,7 @@ class SettingsScreenTest {
         return SettingsViewModel(
             application = app,
             credentialStore = FakeCredentialRepository(WebDavConfig()),
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
     }
 
@@ -95,7 +98,8 @@ class SettingsScreenTest {
                 FakeCredentialRepository(
                     WebDavConfig("https://cloud.example.com/dav/", "testuser", "pass", "Photos"),
                 ),
-            connectionTester = tester,
+            connectionTester = { config, _ -> tester(config) },
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
     }
 
@@ -118,6 +122,7 @@ class SettingsScreenTest {
             SettingsViewModel(
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialStore = store,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             ),
         )
 
@@ -146,6 +151,7 @@ class SettingsScreenTest {
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialStore = store,
                 verifiedUploadsRepository = FakeVerifiedUploadsRepository(),
+                trustedCertificates = FakeTrustedCertificateRepository(),
             ),
         )
 
@@ -200,6 +206,7 @@ class SettingsScreenTest {
             SettingsViewModel(
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialStore = store,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             ),
         )
         val slider = composeTestRule.onNodeWithTag("blurSensitivitySlider").performScrollTo()
@@ -231,6 +238,7 @@ class SettingsScreenTest {
             SettingsViewModel(
                 application = RuntimeEnvironment.getApplication() as Application,
                 credentialStore = store,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             ),
         )
         composeTestRule.onNodeWithTag("blurSensitivitySlider").performScrollTo()
@@ -354,7 +362,11 @@ class SettingsScreenTest {
     }
 
     private fun autoDateViewModel(fake: FakeCredentialRepository): SettingsViewModel =
-        SettingsViewModel(application = RuntimeEnvironment.getApplication() as Application, credentialStore = fake)
+        SettingsViewModel(
+            application = RuntimeEnvironment.getApplication() as Application,
+            credentialStore = fake,
+            trustedCertificates = FakeTrustedCertificateRepository(),
+        )
 
     private fun loggedInFake(autoDate: Boolean = false) =
         FakeCredentialRepository(
@@ -437,7 +449,11 @@ class SettingsScreenTest {
         val app = RuntimeEnvironment.getApplication() as Application
         val repo = FakeCredentialRepository(WebDavConfig())
         repo.credentialStateOverride.value = CredentialState.Corrupted(reason)
-        return SettingsViewModel(application = app, credentialStore = repo)
+        return SettingsViewModel(
+            application = app,
+            credentialStore = repo,
+            trustedCertificates = FakeTrustedCertificateRepository(),
+        )
     }
 
     @Test

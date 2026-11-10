@@ -5,8 +5,13 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryProvi
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException.Reason
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerCertificate
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.ServerOrigin
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.TrustedCertificateInfo
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.decodeHex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
@@ -43,14 +49,49 @@ class AlbumsRepositoryProviderTest {
     private val firstConfig = WebDavConfig(url = "https://one.example.com/dav/", username = "u", password = "p")
     private val credentials = FakeCredentialRepository(firstConfig)
     private val createdFor = mutableListOf<WebDavConfig>()
-    private val factory: (WebDavConfig) -> AlbumsRepositoryContract = { config ->
+    private val factory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract = { config, _ ->
         createdFor += config
         FakeAlbumsRepository()
     }
-    private val provider = AlbumsRepositoryProvider(credentials, repoFactory = factory)
+    private val provider =
+        AlbumsRepositoryProvider(credentials, FakeTrustedCertificateRepository(), repoFactory = factory)
 
     private fun Result<*>.unavailableReason(): Reason? =
         (exceptionOrNull() as? AlbumsRepositoryUnavailableException)?.reason
+
+    private val pinnedInfo =
+        TrustedCertificateInfo(
+            ServerCertificate(
+                ServerOrigin("one.example.com", 443),
+                "ab".repeat(32).decodeHex(),
+                "CN=a",
+                "CN=b",
+                0L,
+                Long.MAX_VALUE / 2,
+            ),
+            1L,
+        )
+
+    @Test
+    fun `a pin change builds a new repository and the same pin keeps the cached one`() =
+        runTest {
+            val trusted = FakeTrustedCertificateRepository()
+            val pins = mutableListOf<PinnedCertificate?>()
+            val pinned =
+                AlbumsRepositoryProvider(credentials, trusted) { _, pin ->
+                    pins += pin
+                    FakeAlbumsRepository()
+                }
+            val first = pinned.get().getOrThrow()
+            assertSame(first, pinned.get().getOrThrow())
+            trusted.trust(pinnedInfo.certificate)
+            val second = pinned.get().getOrThrow()
+            assertNotSame(first, second)
+            assertSame(second, pinned.get().getOrThrow())
+            trusted.clear()
+            assertNotSame(second, pinned.get().getOrThrow())
+            assertEquals(listOf(null, pinnedInfo.pin, null), pins)
+        }
 
     @Test
     fun `creates the repository lazily and caches it`() =
@@ -134,7 +175,10 @@ class AlbumsRepositoryProviderTest {
     fun `a factory throwing IllegalArgumentException is a handled failure and caches nothing`() =
         runTest {
             val failing =
-                AlbumsRepositoryProvider(credentials) { throw IllegalArgumentException("Invalid WebDAV URL") }
+                AlbumsRepositoryProvider(
+                    credentials,
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             val result = failing.get()
 
@@ -146,7 +190,7 @@ class AlbumsRepositoryProviderTest {
     fun `concurrent gets share one repository`() =
         runTest {
             val gated = GatedCredentials(credentials).apply { gate = CompletableDeferred() }
-            val concurrent = AlbumsRepositoryProvider(gated, repoFactory = factory)
+            val concurrent = AlbumsRepositoryProvider(gated, FakeTrustedCertificateRepository(), repoFactory = factory)
 
             val a = async { concurrent.get().getOrThrow() }
             val b = async { concurrent.get().getOrThrow() }
@@ -161,7 +205,7 @@ class AlbumsRepositoryProviderTest {
     fun `a repository built while invalidate runs is not cached`() =
         runTest {
             val gated = GatedCredentials(credentials).apply { gate = CompletableDeferred() }
-            val racing = AlbumsRepositoryProvider(gated, repoFactory = factory)
+            val racing = AlbumsRepositoryProvider(gated, FakeTrustedCertificateRepository(), repoFactory = factory)
 
             val inFlight = async { racing.get().getOrThrow() }
             runCurrent() // configuration read, build pending
@@ -179,7 +223,13 @@ class AlbumsRepositoryProviderTest {
     fun `a stalled configuration read fails with a timeout instead of holding the lock forever`() =
         runTest {
             val gated = GatedCredentials(credentials).apply { gate = CompletableDeferred() }
-            val stalled = AlbumsRepositoryProvider(gated, lockTimeoutMs = 1_000, repoFactory = factory)
+            val stalled =
+                AlbumsRepositoryProvider(
+                    gated,
+                    FakeTrustedCertificateRepository(),
+                    lockTimeoutMs = 1_000,
+                    repoFactory = factory,
+                )
 
             val result = stalled.get()
 

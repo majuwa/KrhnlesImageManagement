@@ -12,7 +12,9 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositorySourc
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryUnavailableException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.RecordingPhotoDeletionLauncher
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumsError
@@ -164,7 +166,8 @@ class DuplicatesViewModelTest {
             val invalidUrl =
                 AlbumsRepositoryProvider(
                     FakeCredentialRepository(WebDavConfig(url = "not a url", username = "u", password = "p")),
-                ) { throw IllegalArgumentException("Invalid WebDAV URL") }
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             viewModel.scan(source = invalidUrl)
             advanceUntilIdle()
@@ -175,7 +178,11 @@ class DuplicatesViewModelTest {
     @Test
     fun `missing credentials are a typed error`() =
         runTest(testDispatcher) {
-            val loggedOut = AlbumsRepositoryProvider(FakeCredentialRepository(WebDavConfig())) { fakeRepo }
+            val loggedOut =
+                AlbumsRepositoryProvider(
+                    FakeCredentialRepository(WebDavConfig()),
+                    FakeTrustedCertificateRepository(),
+                ) { _, _ -> fakeRepo }
 
             viewModel.scan(source = loggedOut)
             advanceUntilIdle()
@@ -409,5 +416,46 @@ class DuplicatesViewModelTest {
             advanceUntilIdle()
 
             assertEquals(DuplicatesState.Error(AlbumsError.Unknown), viewModel.duplicatesState.value)
+        }
+
+    private val video = RemotePhoto("v.mp4", "/Album/v.mp4", "3", "video/mp4", MediaKind.Video)
+
+    @Test
+    fun `videos are never scanned and progress counts photos only`() =
+        runTest(testDispatcher) {
+            viewModel.duplicatesState.test {
+                assertEquals(DuplicatesState.Idle, awaitItem())
+                viewModel.scan(listOf(photoA, video, photoB))
+
+                assertEquals(DuplicatesState.Loading(0, 2), awaitItem())
+                assertEquals(DuplicatesState.Loading(1, 2), awaitItem())
+                assertEquals(DuplicatesState.Loading(2, 2), awaitItem())
+                assertEquals(DuplicatesState.Found(listOf(photos)), awaitItem())
+                cancelAndConsumeRemainingEvents()
+            }
+            assertTrue(fakeRepo.thumbnailRequests.none { it.isVideo })
+            assertTrue(fakeRepo.downloadedUrls.none { "v.mp4" in it })
+        }
+
+    @Test
+    fun `a loaded album with only videos ends in none found`() =
+        runTest(testDispatcher) {
+            viewModel.scan(listOf(video))
+            advanceUntilIdle()
+
+            assertEquals(DuplicatesState.NoneFound, viewModel.duplicatesState.value)
+            assertTrue(fakeRepo.downloadedUrls.isEmpty())
+        }
+
+    @Test
+    fun `Retry with only videos reports none found instead of doing nothing`() =
+        runTest(testDispatcher) {
+            viewModel.scan(source = AlbumsRepositorySource { Result.failure(IllegalStateException("x")) })
+            advanceUntilIdle()
+
+            viewModel.retryFindDuplicates(listOf(video), emptyMap(), repositories)
+            advanceUntilIdle()
+
+            assertEquals(DuplicatesState.NoneFound, viewModel.duplicatesState.value)
         }
 }

@@ -87,11 +87,15 @@ Each date header SHALL be one heading element, described by the merged date and 
 - **THEN** the header's merged texts contain "3 items" and its state is On only when all three are selected
 
 ### Requirement: Remote photo views never announce file names
-Album detail, blur review and duplicate review thumbnails and the fullscreen viewer SHALL describe a photo by its position ("Photo N of M") and never by its raw display name; no Kotlin source under `ui/` may use a display name as a `contentDescription`.
+Album detail, blur review and duplicate review thumbnails and the fullscreen viewer SHALL describe a photo by its position ("Photo N of M") and a video by its position ("Video N of M"), and never by its raw display name; no Kotlin source under `ui/` may use a display name as a `contentDescription`.
 
 #### Scenario: Remote thumbnail description
 - **WHEN** an album-detail thumbnail for the third of five photos is inspected
 - **THEN** its description is "Photo 3 of 5" and its display name is not exposed
+
+#### Scenario: Remote video description
+- **WHEN** an album-detail tile or the viewer page of the fourth of five items, a video, is inspected
+- **THEN** its description is "Video 4 of 5" and its display name is not exposed
 
 #### Scenario: Source guard
 - **WHEN** the regression test scans all `ui/**` Kotlin sources
@@ -111,3 +115,18 @@ A video in the local photo grid SHALL be exposed as one element whose descriptio
 #### Scenario: Video without duration
 - **WHEN** a video has no duration or a duration of zero
 - **THEN** the description is "Video 1 of 2, taken on <localized long date>" without a duration
+
+### Requirement: Album video tiles describe themselves as videos
+A video tile in the album detail grid SHALL be described as "Video N of M" (its position among all photos and videos of the album), whether its poster is loaded, failed or replaced by the placeholder. The play indicator and the placeholder icon SHALL NOT be separate accessibility elements. In selection mode a video tile SHALL expose the same actions and semantics as a photo tile.
+
+#### Scenario: Video tile with poster
+- **WHEN** an accessibility service inspects the album tile of the second of five items, a video with a server preview
+- **THEN** its description is "Video 2 of 5" and the play indicator is not announced separately
+
+#### Scenario: Video tile with placeholder
+- **WHEN** the video has no server preview and shows the placeholder icon
+- **THEN** its description is still "Video 2 of 5"
+
+#### Scenario: Video tile in selection mode
+- **WHEN** an accessibility service inspects a selected video tile and a selected photo tile in selection mode
+- **THEN** both expose the same actions and differ only in their "Video N of M" / "Photo N of M" description

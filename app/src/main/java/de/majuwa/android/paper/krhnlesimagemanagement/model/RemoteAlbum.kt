@@ -6,4 +6,6 @@ data class RemoteAlbum(
     val displayName: String,
     /** Full WebDAV href as returned by PROPFIND, e.g. /remote.php/dav/files/user/Photos/Summer25/ */
     val href: String,
+    /** Folder `d:getlastmodified` as epoch millis; `null` when the server did not report a valid date. */
+    val lastModified: Long? = null,
 )

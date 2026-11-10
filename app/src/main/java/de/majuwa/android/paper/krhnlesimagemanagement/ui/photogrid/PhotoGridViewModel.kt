@@ -2,10 +2,12 @@ package de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid
 
 import android.app.Application
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialStore
 import de.majuwa.android.paper.krhnlesimagemanagement.data.MediaPermissionRepository
@@ -41,6 +43,13 @@ data class UploadProgress(
     val workId: UUID,
 )
 
+/** A user-facing photo grid error; resolved to a string in Compose. */
+enum class PhotoGridError(
+    @StringRes val messageRes: Int,
+) {
+    LoadFailed(R.string.error_photos_load_failed),
+}
+
 data class PhotoGridUiState(
     val photosByDate: Map<LocalDate, List<Photo>> = emptyMap(),
     val selectedPhotoIds: Set<Long> = emptySet(),
@@ -48,7 +57,7 @@ data class PhotoGridUiState(
     val showOnlyNewPhotos: Boolean = false,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
-    val error: String? = null,
+    val error: PhotoGridError? = null,
     val showAutoDateFolderPreviewDialog: Boolean = false,
     val showOccasionDialog: Boolean = false,
     val showNotConfiguredDialog: Boolean = false,
@@ -86,6 +95,8 @@ class PhotoGridViewModel
                             state.copy(
                                 uploadedPhotoIds = ids,
                                 photosByDate = computeDisplayedPhotos(allPhotosByDate, ids, state.showOnlyNewPhotos),
+                                // With the filter on, an item that is now hidden is never left selected.
+                                selectedPhotoIds = selectionVisibleUnder(state, ids),
                             )
                         }
                     }
@@ -213,8 +224,9 @@ class PhotoGridViewModel
                             )
                         }
                     }.onFailure { throwable ->
+                        Log.w(TAG, "Loading photos failed: ${throwable.javaClass.simpleName}")
                         _uiState.update {
-                            it.copy(isLoading = false, error = throwable.message ?: "Failed to load photos")
+                            it.copy(isLoading = false, error = PhotoGridError.LoadFailed)
                         }
                     }
             }
@@ -258,6 +270,21 @@ class PhotoGridViewModel
                 state.copy(
                     showOnlyNewPhotos = newToggle,
                     photosByDate = computeDisplayedPhotos(allPhotosByDate, state.uploadedPhotoIds, newToggle),
+                )
+            }
+        }
+
+        /**
+         * Turns the filter on (never off; idempotent) when the app is opened from the new-photos reminder, and
+         * deselects the items it now hides: the toggle is not offered during a selection, but the reminder can
+         * arrive during one.
+         */
+        fun showOnlyNewPhotos() {
+            _uiState.update { state ->
+                state.copy(
+                    showOnlyNewPhotos = true,
+                    photosByDate = computeDisplayedPhotos(allPhotosByDate, state.uploadedPhotoIds, true),
+                    selectedPhotoIds = state.selectedPhotoIds - state.uploadedPhotoIds,
                 )
             }
         }
@@ -310,8 +337,9 @@ class PhotoGridViewModel
                             )
                         }
                     }.onFailure { throwable ->
+                        Log.w(TAG, "Loading photos failed: ${throwable.javaClass.simpleName}")
                         _uiState.update {
-                            it.copy(isRefreshing = false, error = throwable.message ?: "Failed to load photos")
+                            it.copy(isRefreshing = false, error = PhotoGridError.LoadFailed)
                         }
                     }
             }
@@ -323,6 +351,11 @@ class PhotoGridViewModel
                 .flatten()
                 .filter { it.id in state.selectedPhotoIds }
         }
+
+        private fun selectionVisibleUnder(
+            state: PhotoGridUiState,
+            uploadedIds: Set<Long>,
+        ): Set<Long> = if (state.showOnlyNewPhotos) state.selectedPhotoIds - uploadedIds else state.selectedPhotoIds
 
         private fun computeDisplayedPhotos(
             allPhotos: Map<LocalDate, List<Photo>>,

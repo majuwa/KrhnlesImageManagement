@@ -1,6 +1,7 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.ui.albums
 
 import android.content.res.Resources
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -24,7 +25,10 @@ import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FindReplace
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,12 +52,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -64,7 +70,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
-import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.photoPositionDescription
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.components.mediaPositionDescription
 import kotlinx.coroutines.flow.filterNotNull
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,6 +87,7 @@ fun AlbumDetailScreen(
     val isDeletingPhotos by viewModel.isDeletingPhotos.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val resources = LocalResources.current
+    val context = LocalContext.current
 
     var selectedHrefs by remember { mutableStateOf(emptySet<String>()) }
     val selectionMode = selectedHrefs.isNotEmpty()
@@ -118,7 +125,8 @@ fun AlbumDetailScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            if (state.photos.isNotEmpty() && !selectionMode && !isDeletingPhotos) {
+            // The reviews analyse photos only: a video-only album has nothing to review.
+            if (state.photos.any { !it.isVideo } && !selectionMode && !isDeletingPhotos) {
                 Column(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -142,6 +150,14 @@ fun AlbumDetailScreen(
                     selectedCount = selectedHrefs.size,
                     enabled = !isDeletingPhotos,
                     onClearSelection = { selectedHrefs = emptySet() },
+                    onSaveClick = {
+                        if (viewModel.saveToDevice(state.photos.filter { it.href in selectedHrefs })) {
+                            selectedHrefs = emptySet()
+                        } else {
+                            // Nothing was requested: say so and keep the selection for another try.
+                            Toast.makeText(context, R.string.download_save_unavailable, Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     onDeleteClick = { showDeleteConfirmation = true },
                 )
             } else {
@@ -184,6 +200,7 @@ fun AlbumDetailScreen(
             },
             onPhotoLongClick = { href -> selectedHrefs = selectedHrefs + href },
             onRetry = viewModel::reload,
+            onPosterError = viewModel::markPosterFailed,
         )
     }
 }
@@ -194,6 +211,7 @@ private fun SelectionTopBar(
     selectedCount: Int,
     enabled: Boolean,
     onClearSelection: () -> Unit,
+    onSaveClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     TopAppBar(
@@ -204,6 +222,9 @@ private fun SelectionTopBar(
             }
         },
         actions = {
+            IconButton(enabled = enabled, onClick = onSaveClick) {
+                Icon(Icons.Default.Download, contentDescription = stringResource(R.string.cd_save_to_device))
+            }
             IconButton(enabled = enabled, onClick = onDeleteClick) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete_selected))
             }
@@ -225,6 +246,7 @@ private fun AlbumDetailContent(
     onPhotoClick: (index: Int) -> Unit,
     onPhotoLongClick: (href: String) -> Unit,
     onRetry: () -> Unit,
+    onPosterError: (url: String) -> Unit,
 ) {
     when {
         isDeletingPhotos -> {
@@ -269,6 +291,7 @@ private fun AlbumDetailContent(
                     modifier = Modifier.weight(1f),
                     onPhotoClick = onPhotoClick,
                     onPhotoLongClick = onPhotoLongClick,
+                    onPosterError = onPosterError,
                 )
             }
         }
@@ -282,6 +305,7 @@ private fun AlbumPhotoGrid(
     modifier: Modifier,
     onPhotoClick: (index: Int) -> Unit,
     onPhotoLongClick: (href: String) -> Unit,
+    onPosterError: (url: String) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -294,10 +318,13 @@ private fun AlbumPhotoGrid(
                 photo = photo,
                 position = index + 1,
                 total = state.photos.size,
-                thumbUrl = state.thumbnailUrls[photo.href],
+                // A poster that failed once stays a placeholder: the failed item's state is lost when it
+                // scrolls out of the lazy grid, which would request the missing preview again.
+                thumbUrl = state.thumbnailUrls[photo.href]?.takeUnless { it in state.failedPosterUrls },
                 isSelected = photo.href in selectedHrefs,
                 onClick = { onPhotoClick(index) },
                 onLongClick = { onPhotoLongClick(photo.href) },
+                onPosterError = onPosterError,
             )
         }
     }
@@ -386,15 +413,21 @@ internal fun PhotoGridItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPosterError: (url: String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val description = mediaPositionDescription(photo, position, total)
     Box(
         modifier =
             Modifier
                 .aspectRatio(1f)
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                // On the tile node, so it is present with a poster, a placeholder or the spinner.
+                .semantics(mergeDescendants = true) { contentDescription = description },
     ) {
-        if (thumbUrl != null) {
+        if (photo.isVideo) {
+            VideoTileContent(thumbUrl = thumbUrl, onPosterError = onPosterError)
+        } else if (thumbUrl != null) {
             AsyncImage(
                 model =
                     ImageRequest
@@ -402,7 +435,7 @@ internal fun PhotoGridItem(
                         .data(thumbUrl)
                         .crossfade(true)
                         .build(),
-                contentDescription = photoPositionDescription(position, total),
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -429,6 +462,57 @@ internal fun PhotoGridItem(
                 )
             }
         }
+    }
+}
+
+/**
+ * Poster of a video (or the movie placeholder without one or when it fails to load) with a centred
+ * play indicator. Both decorative: the tile node carries the description.
+ */
+@Composable
+private fun VideoTileContent(
+    thumbUrl: String?,
+    onPosterError: (url: String) -> Unit,
+) {
+    val context = LocalContext.current
+    var posterFailed by remember(thumbUrl) { mutableStateOf(false) }
+    val showPoster = thumbUrl != null && !posterFailed
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (showPoster) {
+            AsyncImage(
+                model =
+                    ImageRequest
+                        .Builder(context)
+                        .data(thumbUrl)
+                        .crossfade(true)
+                        .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = {
+                    posterFailed = true
+                    onPosterError(thumbUrl)
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Movie,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.Default.PlayCircle,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(36.dp),
+        )
     }
 }
 

@@ -93,6 +93,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.isKnownDate
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionDialog
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionSuggestionsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.previewUploadPath
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.resolveAutoDateUploadBatch
@@ -110,6 +111,7 @@ fun PhotoGridScreen(
     onNavigateToUploadHistory: () -> Unit,
     onStartUpload: (batches: List<UploadBatch>) -> Unit,
     removalViewModel: UploadedRemovalViewModel = viewModel(),
+    suggestionsViewModel: OccasionSuggestionsViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val autoDateFoldersEnabled by viewModel.autoDateFoldersEnabled.collectAsStateWithLifecycle()
@@ -238,6 +240,7 @@ fun PhotoGridScreen(
                     onPhotoClick = { viewModel.togglePhotoSelection(it) },
                     onDateHeaderClick = { viewModel.toggleDateSelection(it) },
                     onRefresh = { viewModel.refreshPhotos() },
+                    onRetry = { viewModel.loadPhotos() },
                 )
             }
         }
@@ -252,6 +255,8 @@ fun PhotoGridScreen(
 
     if (uiState.showOccasionDialog) {
         val selectedPhotos = viewModel.getSelectedPhotos()
+        LaunchedEffect(Unit) { suggestionsViewModel.load() }
+        val suggestions by suggestionsViewModel.candidates.collectAsStateWithLifecycle()
         OccasionDialog(
             message = stringResource(R.string.dialog_upload_message),
             onDismiss = { viewModel.dismissOccasionDialog() },
@@ -260,6 +265,7 @@ fun PhotoGridScreen(
                 onStartUpload(listOf(UploadBatch.Occasion(occasionName, selectedPhotos)))
                 viewModel.clearSelection()
             },
+            suggestions = suggestions,
         )
     }
 
@@ -460,6 +466,7 @@ private fun InnerContent(
     onPhotoClick: (Long) -> Unit,
     onDateHeaderClick: (LocalDate) -> Unit,
     onRefresh: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     when {
         !hasPermission -> {
@@ -476,16 +483,17 @@ private fun InnerContent(
         }
 
         uiState.error != null -> {
-            PullToRefreshBox(
-                isRefreshing = uiState.isRefreshing,
-                onRefresh = onRefresh,
+            Column(
                 modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = uiState.error,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                Text(
+                    text = stringResource(uiState.error.messageRes),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.action_retry))
                 }
             }
         }

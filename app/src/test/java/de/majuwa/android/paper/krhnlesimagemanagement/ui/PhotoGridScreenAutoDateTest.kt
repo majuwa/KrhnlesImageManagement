@@ -9,8 +9,10 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -27,15 +29,22 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import de.majuwa.android.paper.krhnlesimagemanagement.R
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaPermissionRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadHistoryRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridScreen
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.photogrid.PhotoGridViewModel
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.share.OccasionSuggestionsViewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.upload.UploadBatch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -56,6 +65,8 @@ class PhotoGridScreenAutoDateTest {
     private lateinit var app: Application
     private lateinit var workManager: WorkManager
     private val started = mutableListOf<List<UploadBatch>>()
+    private val history = FakeUploadHistoryRepository()
+    private val albums = FakeAlbumsRepository()
 
     private val apr30 = LocalDate.of(2026, 4, 30)
     private val may1 = LocalDate.of(2026, 5, 1)
@@ -101,6 +112,15 @@ class PhotoGridScreenAutoDateTest {
                 workManager,
                 FakeMediaPermissionRepository(),
             )
+        val suggestions =
+            OccasionSuggestionsViewModel(
+                application = app,
+                credentialRepo = credentials,
+                trustedCertificates = FakeTrustedCertificateRepository(),
+                history = history,
+                repoFactory = { _, _ -> albums },
+                backgroundDispatcher = Dispatchers.Unconfined,
+            )
         composeTestRule.setContent {
             CompositionLocalProvider(
                 LocalInspectionMode provides true,
@@ -111,6 +131,7 @@ class PhotoGridScreenAutoDateTest {
                     onNavigateToSettings = {},
                     onNavigateToUploadHistory = {},
                     onStartUpload = { started += it },
+                    suggestionsViewModel = suggestions,
                 )
             }
         }
@@ -210,5 +231,47 @@ class PhotoGridScreenAutoDateTest {
             viewModel.uiState.value.selectedPhotoIds
                 .isEmpty(),
         )
+    }
+
+    @Test
+    fun autoDateOff_showsSuggestions_tapAndUploadEnqueuesThatOccasion() {
+        history.setEntries(listOf(UploadHistoryEntry(1, "Summer 2026", 100, 1, 0)))
+        setScreen(listOf(photo(1, apr30)), autoDate = false)
+        selectAllThroughGrid(1)
+
+        tapUpload()
+
+        composeTestRule.onNodeWithText(string(R.string.occasion_suggestions_heading)).assertIsDisplayed()
+        composeTestRule.onNode(hasClickAction() and hasText("Summer 2026")).performClick()
+        composeTestRule.onNodeWithText(string(R.string.action_upload)).performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("Summer 2026", (started.single().single() as UploadBatch.Occasion).folderName)
+    }
+
+    @Test
+    fun autoDateOff_hangingListingDoesNotBlockTheDialog() {
+        albums.onListAlbums = { awaitCancellation() }
+        setScreen(listOf(photo(1, apr30)), autoDate = false)
+        selectAllThroughGrid(1)
+        tapUpload()
+
+        composeTestRule.onNode(hasSetTextAction()).performTextInput("Trip")
+        composeTestRule.onNodeWithText(string(R.string.action_upload)).performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("Trip", (started.single().single() as UploadBatch.Occasion).folderName)
+    }
+
+    @Test
+    fun autoDateOn_showsNoSuggestions() {
+        history.setEntries(listOf(UploadHistoryEntry(1, "Summer 2026", 100, 1, 0)))
+        setScreen(listOf(photo(1, apr30)), autoDate = true)
+        selectAllThroughGrid(1)
+
+        tapUpload()
+
+        composeTestRule.onNodeWithText("Summer 2026").assertDoesNotExist()
+        assertEquals(0, albums.listAlbumsCalls)
     }
 }

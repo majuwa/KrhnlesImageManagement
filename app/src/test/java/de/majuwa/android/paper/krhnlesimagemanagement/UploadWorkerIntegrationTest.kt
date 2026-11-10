@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.withFakeTrustedCertificates
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.CompletionSummary
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.buildCompletionNotification
@@ -216,7 +217,8 @@ class UploadWorkerIntegrationTest {
         assertFalse(first.actions.single().actionIntent == second.actions.single().actionIntent)
     }
 
-    private fun buildWorker(): UploadWorker = TestListenableWorkerBuilder<UploadWorker>(context).build()
+    private fun buildWorker(): UploadWorker =
+        TestListenableWorkerBuilder<UploadWorker>(context).build().withFakeTrustedCertificates()
 
     private fun assertDedicatedIcon(notification: Notification) {
         val iconRes = notification.smallIcon.resId

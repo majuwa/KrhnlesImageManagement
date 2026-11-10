@@ -119,4 +119,162 @@ class UploadQueueProgressTest {
         assertFalse(file.exists())
         assertFalse(queueTempFile(file).exists())
     }
+
+    // --- chunked-upload progress (issue #69) ---
+
+    private val hash = "ab".repeat(32)
+    private val transferId = "krhnles-0123456789abcdef0123456789abcdef"
+
+    private fun chunkedJson(vararg overrides: Pair<String, Any?>): String {
+        val obj =
+            JSONObject()
+                .put("transferId", transferId)
+                .put("chunkBytes", 10)
+                .put("totalBytes", 25)
+                .put("confirmedChunks", 2)
+                .put("prefixSha256", hash)
+                .put("original", true)
+                .put("binding", hash)
+        overrides.forEach { (key, value) -> if (value == REMOVE) obj.remove(key) else obj.put(key, value) }
+        return ",\"chunked\":$obj"
+    }
+
+    private fun chunkedOf(vararg overrides: Pair<String, Any?>): ChunkedTransferState? =
+        parseUploadQueue("""{"folderName":"Trip","photos":[${entry(1, chunkedJson(*overrides))}]}""")!!
+            .entries
+            .single()
+            .chunked
+
+    @Test
+    fun chunkedProgress_roundTripsThroughProgressJson() {
+        val queue = parseUploadQueue("""{"folderName":"Trip","photos":[${entry(1, chunkedJson())},${entry(2)}]}""")!!
+
+        val state = queue.entries[0].chunked!!
+        assertEquals(ChunkedTransferState(transferId, 10L, 25L, 2, hash, true, hash), state)
+        assertEquals(null, queue.entries[1].chunked)
+
+        val again = parseUploadQueue(queue.toProgressJson().toString())!!
+        assertEquals(state, again.entries[0].chunked)
+        assertEquals(null, again.entries[1].chunked)
+    }
+
+    @Test
+    fun filesWithoutTheChunkedKey_parseUnchanged() {
+        val queue = parseUploadQueue("""{"folderName":"Trip","photos":[${entry(1)}]}""")!!
+
+        assertEquals(null, queue.entries.single().chunked)
+        assertFalse(queue.toProgressJson().toString().contains("chunked"))
+    }
+
+    @Test
+    fun withChunked_updatesOneEntryAndNull_clearsIt() {
+        val queue = parseUploadQueue("""{"folderName":"Trip","photos":[${entry(1)},${entry(2)}]}""")!!
+        val state = ChunkedTransferState(transferId, 10L, 25L, 1, hash, false, hash)
+
+        val updated = queue.withChunked(1, state)
+
+        assertEquals(null, updated.entries[0].chunked)
+        assertEquals(state, updated.entries[1].chunked)
+        assertEquals(state, parseUploadQueue(updated.toProgressJson().toString())!!.entries[1].chunked)
+        assertEquals(null, updated.withChunked(1, null).entries[1].chunked)
+    }
+
+    @Test
+    fun withUploaded_clearsTheChunkedProgress() {
+        val queue = parseUploadQueue("""{"folderName":"Trip","photos":[${entry(1, chunkedJson())}]}""")!!
+
+        val done = queue.withUploaded(0)
+
+        assertTrue(done.entries.single().uploaded)
+        assertEquals(null, done.entries.single().chunked)
+        assertFalse(done.toProgressJson().toString().contains("chunked"))
+    }
+
+    @Test
+    fun retryJson_neverCarriesChunkedProgress_butProgressJsonKeepsIt() {
+        val queue =
+            parseUploadQueue(
+                """{"folderName":"Trip","photos":[${entry(1, chunkedJson())},${entry(2, chunkedJson())}]}""",
+            )!!
+
+        val retry = queue.toRetryJson(listOf(0, 1)).toString()
+
+        assertFalse(retry.contains("chunked"))
+        assertEquals(null, parseUploadQueue(retry)!!.entries[0].chunked)
+        assertTrue(queue.toProgressJson().toString().contains("chunked"))
+    }
+
+    @Test
+    fun invalidChunkedProgress_isDroppedAndTheQueueStaysValid() {
+        val invalid =
+            listOf(
+                listOf<Pair<String, Any?>>("transferId" to REMOVE),
+                listOf<Pair<String, Any?>>("transferId" to "bad"),
+                listOf<Pair<String, Any?>>("transferId" to 5),
+                listOf<Pair<String, Any?>>("chunkBytes" to 0),
+                listOf<Pair<String, Any?>>("chunkBytes" to -1),
+                listOf<Pair<String, Any?>>("chunkBytes" to "10"),
+                listOf<Pair<String, Any?>>("chunkBytes" to 10.5),
+                listOf<Pair<String, Any?>>("totalBytes" to 0),
+                listOf<Pair<String, Any?>>("totalBytes" to REMOVE),
+                listOf<Pair<String, Any?>>("confirmedChunks" to -1),
+                listOf<Pair<String, Any?>>("confirmedChunks" to 4), // more than the 3 chunks of 25 bytes
+                listOf<Pair<String, Any?>>("confirmedChunks" to "2"),
+                listOf<Pair<String, Any?>>("confirmedChunks" to 1.5),
+                listOf<Pair<String, Any?>>("prefixSha256" to "zz"),
+                listOf<Pair<String, Any?>>("prefixSha256" to "ab".repeat(31)),
+                listOf<Pair<String, Any?>>("prefixSha256" to null),
+                listOf<Pair<String, Any?>>("original" to "true"),
+                listOf<Pair<String, Any?>>("original" to REMOVE),
+                listOf<Pair<String, Any?>>("binding" to hash.dropLast(1)),
+                listOf<Pair<String, Any?>>("binding" to REMOVE),
+                listOf<Pair<String, Any?>>("chunkBytes" to 1, "totalBytes" to 10_001), // over 10,000 chunks
+                // Review of #69: a count that wrapped through toInt() into range (2^32 + 5 -> 5).
+                listOf<Pair<String, Any?>>("chunkBytes" to 1, "totalBytes" to (1L shl 32) + 5),
+                listOf<Pair<String, Any?>>("chunkBytes" to 1, "totalBytes" to Long.MAX_VALUE),
+                listOf<Pair<String, Any?>>("chunkBytes" to 26), // a chunk larger than the file
+                listOf<Pair<String, Any?>>("chunkBytes" to Long.MAX_VALUE),
+                listOf<Pair<String, Any?>>("confirmedChunks" to -(1L shl 32)), // wrapped to 0 before
+            )
+
+        invalid.forEach { overrides -> assertEquals(overrides.toString(), null, chunkedOf(*overrides.toTypedArray())) }
+    }
+
+    @Test
+    fun nonObjectChunkedValues_areDropped() {
+        listOf("\"x\"", "5", "true", "[]", "null").forEach { value ->
+            val queue = parseUploadQueue("""{"folderName":"Trip","photos":[${entry(1, ",\"chunked\":$value")}]}""")
+            assertEquals(value, null, queue!!.entries.single().chunked)
+        }
+    }
+
+    @Test
+    fun invalidProgressOfOneEntry_doesNotAffectItsNeighbours() {
+        val json =
+            """{"folderName":"Trip","photos":[${entry(1, chunkedJson())},""" +
+                """${entry(2, chunkedJson("transferId" to "bad"))},${entry(3, chunkedJson())}]}"""
+
+        val queue = parseUploadQueue(json)!!
+
+        assertNotNull(queue.entries[0].chunked)
+        assertEquals(null, queue.entries[1].chunked)
+        assertNotNull(queue.entries[2].chunked)
+    }
+
+    @Test
+    fun chunkedProgress_doesNotChangeMarkersOrInterruptions() {
+        val json =
+            """{"interruptions":2,"folderName":"Trip","photos":[${entry(1, ",\"uploaded\":true")},""" +
+                """${entry(2, chunkedJson())}]}"""
+
+        val queue = parseUploadQueue(json)!!
+
+        assertEquals(listOf(1), queue.pendingIndices)
+        assertEquals(2, queue.interruptions)
+        assertEquals(2, parseUploadQueue(queue.toProgressJson().toString())!!.interruptions)
+    }
+
+    private companion object {
+        val REMOVE = Any()
+    }
 }

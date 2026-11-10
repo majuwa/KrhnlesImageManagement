@@ -8,6 +8,8 @@
         <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
         <exclude domain="file" path="datastore/upload_history.preferences_pb"/>
         <exclude domain="file" path="datastore/verified_uploads.preferences_pb"/>
+        <!-- A pinned certificate is confirmed per device: never restore trust the user did not give here -->
+        <exclude domain="file" path="datastore/trusted_certificates.preferences_pb"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="datastore/credentials.preferences_pb"/>
@@ -16,5 +18,7 @@
         <exclude domain="file" path="datastore/uploaded_photos.preferences_pb"/>
         <exclude domain="file" path="datastore/upload_history.preferences_pb"/>
         <exclude domain="file" path="datastore/verified_uploads.preferences_pb"/>
+        <!-- A pinned certificate is confirmed per device: never restore trust the user did not give here -->
+        <exclude domain="file" path="datastore/trusted_certificates.preferences_pb"/>
     </device-transfer>
 </data-extraction-rules>

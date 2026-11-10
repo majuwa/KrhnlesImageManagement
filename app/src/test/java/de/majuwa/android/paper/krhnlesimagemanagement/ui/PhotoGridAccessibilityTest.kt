@@ -20,11 +20,13 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performSemanticsAction
 import coil3.ColorImage
 import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
+import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
@@ -40,6 +42,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.time.LocalDate
 import java.util.Locale
@@ -319,12 +322,13 @@ class PhotoGridAccessibilityTest {
     fun `grid renders the date in the device locale`() {
         setGrid({ emptySet() }, {}, mapOf(may1 to listOf(photo(1))))
 
-        assertEquals(listOf("1. Mai 2026", "1 item"), composeTestRule.onAllNodes(clickable)[0].texts())
-        assertTrue(
-            (composeTestRule.onAllNodes(clickable)[1].config()[SemanticsProperties.ContentDescription])
-                .single()
-                .endsWith("taken on 1. Mai 2026"),
-        )
+        val resources = RuntimeEnvironment.getApplication().resources
+        val itemCount = resources.getQuantityString(R.plurals.item_count, 1, 1)
+        val taken = resources.getString(R.string.cd_photo_position_taken_on, 1, 1, "1. Mai 2026")
+        assertEquals(listOf("1. Mai 2026", itemCount), composeTestRule.onAllNodes(clickable)[0].texts())
+        val description = composeTestRule.onAllNodes(clickable)[1].config()[SemanticsProperties.ContentDescription]
+        assertEquals(listOf(taken), description)
+        assertFalse("German resources are used", itemCount == "1 item")
     }
 
     @Test
@@ -383,6 +387,74 @@ class PhotoGridAccessibilityTest {
         val descriptions = nodes.flatMap { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
         assertTrue(descriptions.contains("Photo 3 of 5"))
         assertFalse(descriptions.any { displayName in it })
+    }
+
+    private val remoteVideo =
+        RemotePhoto("VID_1.mp4", "/dav/a/VID_1.mp4", "9", "video/mp4", MediaKind.Video)
+    private val remoteImage = RemotePhoto("IMG_1.jpg", "/dav/a/IMG_1.jpg", "8", "image/jpeg")
+
+    private fun albumTile(
+        photo: RemotePhoto,
+        position: Int,
+        thumbUrl: String?,
+        selected: Boolean = false,
+    ) = setUiContent {
+        PhotoGridItem(
+            photo = photo,
+            position = position,
+            total = 5,
+            thumbUrl = thumbUrl,
+            isSelected = selected,
+            onClick = {},
+            onLongClick = {},
+        )
+    }
+
+    private fun allDescriptions() =
+        composeTestRule
+            .onAllNodes(SemanticsMatcher("all") { true }, useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .flatMap { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
+
+    @Test
+    fun `album video tile with a poster is described as Video N of M`() {
+        albumTile(remoteVideo, 2, "https://example.org/poster.jpg")
+
+        composeTestRule.onNodeWithContentDescription("Video 2 of 5").assertExists()
+        assertEquals(listOf("Video 2 of 5"), allDescriptions())
+    }
+
+    @Test
+    fun `album video tile without a poster keeps its description and exposes no extra nodes`() {
+        albumTile(remoteVideo, 2, null)
+
+        composeTestRule.onNodeWithContentDescription("Video 2 of 5").assertExists()
+        // The placeholder and the play indicator are decorative: nothing else is announced.
+        assertEquals(listOf("Video 2 of 5"), allDescriptions())
+    }
+
+    @Test
+    fun `album photo tile is still described as Photo N of M`() {
+        albumTile(remoteImage, 3, "https://example.org/thumb.jpg")
+
+        composeTestRule.onNodeWithContentDescription("Photo 3 of 5").assertExists()
+        assertEquals(listOf("Photo 3 of 5"), allDescriptions())
+    }
+
+    @Test
+    fun `selected video tile has the same semantics as a selected photo tile`() {
+        setUiContent {
+            androidx.compose.foundation.layout.Column {
+                PhotoGridItem(remoteVideo, 1, 5, null, true, {}, {})
+                PhotoGridItem(remoteImage, 2, 5, "https://example.org/t.jpg", true, {}, {})
+            }
+        }
+
+        val tiles = composeTestRule.onAllNodes(clickable).fetchSemanticsNodes()
+        assertEquals(2, tiles.size)
+        val (video, photo) = tiles.map { tile -> tile.config.map { it.key.name }.toSet() }
+        assertEquals(photo, video)
+        assertEquals(listOf("Video 1 of 5", "Photo 2 of 5"), allDescriptions())
     }
 
     private val videoName = "VID_20260501_123456.mp4"

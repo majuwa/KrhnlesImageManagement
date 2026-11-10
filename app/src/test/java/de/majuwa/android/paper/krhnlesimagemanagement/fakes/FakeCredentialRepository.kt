@@ -2,8 +2,11 @@ package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveException
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +35,76 @@ class FakeCredentialRepository(
     override suspend fun saveVerifyByDownload(enabled: Boolean) {
         verifyByDownloadSaveFailure?.let { throw it }
         verifyByDownloadState.value = enabled
+    }
+
+    private val reminderState = MutableStateFlow(NewPhotosReminderSettings())
+
+    override val newPhotosReminder: Flow<NewPhotosReminderSettings> = reminderState
+
+    /** The clock [saveNewPhotosReminder] stamps `since` with. */
+    var reminderClock: () -> Long = { System.currentTimeMillis() }
+
+    /** Every `(enabled, interval)` passed to [saveNewPhotosReminder], in order (also failed ones). */
+    val savedReminders = mutableListOf<Pair<Boolean, ReminderInterval>>()
+
+    /** When non-null, [saveNewPhotosReminder] throws this instead of storing anything. */
+    var reminderSaveFailure: Throwable? = null
+
+    override suspend fun saveNewPhotosReminder(
+        enabled: Boolean,
+        interval: ReminderInterval,
+    ) {
+        savedReminders += enabled to interval
+        reminderSaveFailure?.let { throw it }
+        val current = reminderState.value
+        reminderState.value =
+            if (enabled && !current.enabled) {
+                NewPhotosReminderSettings(true, interval, reminderClock(), 0L)
+            } else {
+                current.copy(enabled = enabled, interval = interval)
+            }
+    }
+
+    override suspend fun markNewPhotosReminderShown(
+        atMillis: Long,
+        expectedSinceMillis: Long,
+    ) {
+        val current = reminderState.value
+        if (current.enabled && current.sinceMillis == expectedSinceMillis) {
+            reminderState.value = current.copy(lastShownMillis = atMillis)
+        }
+    }
+
+    /** Test helper: the current stored reminder setting. */
+    fun newPhotosReminderValue(): NewPhotosReminderSettings = reminderState.value
+
+    /** Test helper: replaces the stored reminder setting. */
+    fun setReminder(settings: NewPhotosReminderSettings) {
+        reminderState.value = settings
+    }
+
+    private val albumSortState = MutableStateFlow(AlbumSort.DEFAULT)
+
+    override val albumSort: Flow<AlbumSort> = albumSortState
+
+    /** Test helper to read the current album sort synchronously. */
+    fun albumSortValue(): AlbumSort = albumSortState.value
+
+    /** When non-null, [saveAlbumSort] throws this instead of storing anything. */
+    var albumSortSaveFailure: Throwable? = null
+
+    /** When non-null, [saveAlbumSort] suspends until it completes (simulates a slow disk write). */
+    var albumSortSaveGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun saveAlbumSort(sort: AlbumSort) {
+        albumSortSaveGate?.await()
+        albumSortSaveFailure?.let { throw it }
+        albumSortState.value = sort
+    }
+
+    /** Test helper: emits a stored sort without a save (e.g. a change from another screen). */
+    fun emitStoredAlbumSort(sort: AlbumSort) {
+        albumSortState.value = sort
     }
 
     private val blurSensitivityState = MutableStateFlow(initialBlurSensitivity)
@@ -130,6 +203,8 @@ class FakeCredentialRepository(
         autoDateFoldersState.value = false
         verifyByDownloadState.value = false
         blurSensitivityState.value = BlurSensitivity.MEDIUM
+        albumSortState.value = AlbumSort.DEFAULT
+        reminderState.value = NewPhotosReminderSettings()
     }
 
     /** Test helper: replaces the stored configuration (e.g. a change on another screen). */

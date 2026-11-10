@@ -18,6 +18,7 @@ import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialReposi
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeMediaStoreProvider
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.withFakeTrustedCertificates
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.worker.UploadWorker
@@ -243,7 +244,7 @@ class UploadWorkerVerificationTest {
                         history,
                         { false },
                         verified,
-                    )
+                    ).withFakeTrustedCertificates()
                 },
             ).build()
     }
@@ -737,5 +738,181 @@ class UploadWorkerVerificationTest {
         assertEquals(0 to 1, counts(result))
         assertNull(FakeMediaStoreProvider.itemQueries[photo.uri])
         assertTrue(methods("PUT").isEmpty())
+    }
+
+    // --- Chunked uploads (issue #69): the final MOVE carries X-Hash, chunk PUTs never do. ---
+
+    /** Runs [block] against a Nextcloud-like chunked server (threshold 20 bytes, chunks of 10). */
+    private fun chunked(block: ChunkedUploadHarness.() -> Unit) {
+        val harness = ChunkedUploadHarness()
+        harness.setUp(grantLocation = true)
+        try {
+            harness.block()
+        } finally {
+            harness.tearDown()
+        }
+    }
+
+    private val video = ChunkedUploadHarness.bytes(25, seed = 11)
+
+    private fun ChunkedUploadHarness.record(): VerifiedUpload? = verified.current.singleOrNull { it.id == 1L }
+
+    @Test
+    fun chunked_moveWithMatchingServerHash_recordsWithoutDownload_andChunksCarryNoHashHeader() =
+        chunked {
+            assertTrue(run(queueFile(video(1, video))) is ListenableWorker.Result.Success)
+
+            assertEquals("sha256", of("MOVE").single().headers["X-Hash"])
+            assertEquals(3, chunkPuts().size)
+            assertTrue(chunkPuts().all { it.headers["X-Hash"] == null })
+            assertTrue(of("GET").isEmpty())
+            val record = record()!!
+            assertEquals(25L, record.size)
+            assertEquals(config().url, record.serverUrl)
+            assertEquals("Trip", record.folder)
+            assertEquals("clip1.mp4", record.fileName)
+            assertEquals(setOf(1L), uploadedIds())
+        }
+
+    @Test
+    fun chunked_differingServerHash_isAVerificationFailure() =
+        chunked {
+            hashOf = { ChunkedUploadHarness.sha256("something else".toByteArray()) }
+
+            run(queueFile(video(1, video)))
+
+            assertNull(record())
+            assertTrue(uploadedIds().isEmpty())
+            assertTrue(of("GET").isEmpty())
+            val text = text(resultNotifications().single())
+            assertTrue(text, text.contains(context.getString(R.string.upload_failure_verification)))
+            assertEquals(1, retryFiles().size)
+        }
+
+    @Test
+    fun chunked_noServerHash_withDownloadOn_verifiesByGet() =
+        chunked {
+            serverHash = false
+            verifyByDownload = true
+
+            run(queueFile(video(1, video)))
+
+            assertEquals(1, of("GET").size)
+            assertEquals(25L, record()!!.size)
+        }
+
+    @Test
+    fun chunked_noServerHash_withDownloadOff_isUnverified() =
+        chunked {
+            serverHash = false
+
+            run(queueFile(video(1, video)))
+
+            assertTrue(of("GET").isEmpty())
+            assertNull(record())
+            assertEquals(setOf(1L), uploadedIds())
+        }
+
+    @Test
+    fun chunked_resumedTransfer_recordCoversTheWholeFile() =
+        chunked {
+            val queue = queueFile(video(1, video))
+            foregroundFailsFrom = 1
+            assertTrue(run(queue) is ListenableWorker.Result.Retry)
+            foregroundFailsFrom = null
+            requests.clear()
+
+            assertTrue(run(queue) is ListenableWorker.Result.Success)
+
+            // Only chunks 2 and 3 were sent again; the server hash of all 25 bytes matched the local one.
+            assertEquals(listOf("00002", "00003"), chunkPuts().map { it.name })
+            assertEquals("sha256", of("MOVE").single().headers["X-Hash"])
+            assertEquals(25L, record()!!.size)
+        }
+
+    @Test
+    fun chunked_plainSource_hasNoHashHeaderAndNoRecord() =
+        chunked {
+            shadowOf(context as android.app.Application).denyPermissions(Manifest.permission.ACCESS_MEDIA_LOCATION)
+
+            run(queueFile(video(1, video)))
+
+            assertNull(of("MOVE").single().headers["X-Hash"])
+            assertNull(record())
+            assertEquals(setOf(1L), uploadedIds())
+        }
+
+    @Test
+    fun chunked_permissionGrantedBetweenRuns_restartsFromChunk1WithTheOriginal() =
+        chunked {
+            val app = shadowOf(context as android.app.Application)
+            app.denyPermissions(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            val queue = queueFile(video(1, video))
+            foregroundFailsFrom = 1
+            run(queue)
+            val oldId = ChunkedUploadHarness.chunkedOf(queue.readText())!!.getString("transferId")
+            app.grantPermissions(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            foregroundFailsFrom = null
+            requests.clear()
+
+            assertTrue(run(queue) is ListenableWorker.Result.Success)
+
+            assertEquals(oldId, of("DELETE").single().transferId)
+            assertEquals(listOf("00001", "00002", "00003"), chunkPuts().map { it.name })
+            assertTrue(chunkPuts().all { it.transferId != oldId })
+            assertEquals("sha256", of("MOVE").single().headers["X-Hash"])
+            assertEquals(25L, record()!!.size)
+        }
+
+    @Test
+    fun chunked_recordsAtTheTargetAreDroppedBeforeTheMkcolOfEveryAttempt() =
+        chunked {
+            val other =
+                VerifiedUpload(
+                    id = 99L,
+                    uri = "content://media/external/video/media/99",
+                    size = 25L,
+                    dateModified = 1L,
+                    serverUrl = config().url,
+                    folder = "Trip",
+                    fileName = "clip1.mp4",
+                    verifiedAt = 1L,
+                )
+            val recording = RecordingApply(FakeVerifiedUploadsRepository(listOf(other))) { uploadRequests().size }
+            verifiedOverride = recording
+            override =
+                {
+                    if (it.method == "MKCOL" &&
+                        it.path.startsWith(ChunkedUploadHarness.UPLOADS_PREFIX)
+                    ) {
+                        ChunkedUploadHarness.code(503)
+                    } else {
+                        null
+                    }
+                }
+
+            run(queueFile(video(1, video)))
+
+            // Three attempts, each dropping the records at the target before its own MKCOL.
+            assertEquals(3, uploadRequests().count { it.method == "MKCOL" })
+            assertEquals(listOf(0, 1, 2), recording.requestsAtApply.take(3))
+            assertTrue(recording.delegate.current.none { it.id == 99L })
+        }
+}
+
+/** Records how many requests the server had seen at every [applyUpload]. */
+private class RecordingApply(
+    val delegate: FakeVerifiedUploadsRepository,
+    private val requestCount: () -> Int,
+) : de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUploadsRepositoryContract by delegate {
+    val requestsAtApply = Collections.synchronizedList(mutableListOf<Int>())
+
+    override suspend fun applyUpload(
+        target: de.majuwa.android.paper.krhnlesimagemanagement.data.UploadTarget,
+        record: VerifiedUpload?,
+        forgetIds: Set<Long>,
+    ) {
+        requestsAtApply += requestCount()
+        delegate.applyUpload(target, record, forgetIds)
     }
 }

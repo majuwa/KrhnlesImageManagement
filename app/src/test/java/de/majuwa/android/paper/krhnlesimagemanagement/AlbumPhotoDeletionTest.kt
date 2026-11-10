@@ -2,8 +2,11 @@ package de.majuwa.android.paper.krhnlesimagemanagement
 
 import android.app.Application
 import de.majuwa.android.paper.krhnlesimagemanagement.data.AlbumsRepositoryContract
+import de.majuwa.android.paper.krhnlesimagemanagement.data.tls.PinnedCertificate
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeAlbumsRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.MediaKind
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.albums.AlbumDetailViewModel
@@ -71,19 +74,22 @@ class AlbumPhotoDeletionTest(
             ),
         )
 
-    private fun createViewModel(repoFactory: (WebDavConfig) -> AlbumsRepositoryContract): AlbumDetailViewModel =
+    private fun createViewModel(
+        repoFactory: (WebDavConfig, PinnedCertificate?) -> AlbumsRepositoryContract,
+    ): AlbumDetailViewModel =
         AlbumDetailViewModel(
             application = app,
             credentialRepo = credentials,
             repoFactory = repoFactory,
             backgroundDispatcher = testDispatcher,
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeRepo = FakeAlbumsRepository().apply { photos = Result.success(allPhotos) }
-        viewModel = createViewModel { fakeRepo }
+        viewModel = createViewModel { _, _ -> fakeRepo }
         duplicatesViewModel = DuplicatesViewModel(analysisDispatcher = testDispatcher)
         blurViewModel = BlurViewModel(analysisDispatcher = testDispatcher)
     }
@@ -260,7 +266,7 @@ class AlbumPhotoDeletionTest(
     @Test
     fun `failure to create the repository reports every photo as failed instead of crashing`() =
         runTest(testDispatcher) {
-            viewModel = createViewModel { throw IllegalArgumentException("Invalid WebDAV URL") }
+            viewModel = createViewModel { _, _ -> throw IllegalArgumentException("Invalid WebDAV URL") }
 
             delete(listOf(photoA, photoB))
             advanceUntilIdle()
@@ -367,5 +373,52 @@ class AlbumPhotoDeletionTest(
             assertEquals(listOf(photoA), fakeRepo.deletedPhotos)
             assertEquals(PhotoDeletionOutcome(1), outcome())
             assertEquals(listOf(photoB.href, photoC.href), remainingHrefs())
+        }
+
+    private val video = RemotePhoto("v.mp4", "/Album/v.mp4", "7", "video/mp4", MediaKind.Video)
+
+    private fun TestScope.loadAlbumWithVideo() {
+        fakeRepo.photos = Result.success(allPhotos + video)
+        viewModel.loadAlbum("/Album/")
+        advanceUntilIdle()
+        assertEquals(allPhotos.size + 1, viewModel.detailState.value.photos.size)
+    }
+
+    @Test
+    fun `a video in the album is deleted only by the selection path`() =
+        runTest(testDispatcher) {
+            loadAlbumWithVideo()
+
+            if (path == DeletePath.SELECTION) {
+                assertTrue(delete(listOf(photoA, video)))
+                advanceUntilIdle()
+                assertEquals(listOf(photoA, video), fakeRepo.deletedPhotos)
+                assertEquals(listOf(photoB.href, photoC.href), remainingHrefs())
+                assertFalse(thumbnailHrefs().contains(video.href))
+            } else {
+                // Review results never contain videos: a review deletion leaves the video alone.
+                assertTrue(delete(listOf(photoA)))
+                advanceUntilIdle()
+                assertEquals(listOf(photoA), fakeRepo.deletedPhotos)
+                assertTrue(video.href in remainingHrefs())
+                assertTrue(video.href in thumbnailHrefs())
+            }
+            assertEquals(PhotoDeletionOutcome(0), outcome())
+            assertIdle()
+        }
+
+    @Test
+    fun `a rejected video deletion stays visible and counts one failure`() =
+        runTest(testDispatcher) {
+            // Every path ends in the shared launcher, so the rejection is checked for all of them.
+            loadAlbumWithVideo()
+            fakeRepo.deletePhotoResults = mapOf(video.href to Result.failure(RuntimeException("403")))
+
+            assertTrue(delete(listOf(video, photoA)))
+            advanceUntilIdle()
+
+            assertEquals(PhotoDeletionOutcome(1), outcome())
+            assertTrue(video.href in remainingHrefs())
+            assertFalse(photoA.href in remainingHrefs())
         }
 }

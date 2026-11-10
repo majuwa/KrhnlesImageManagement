@@ -1,13 +1,17 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.fakes
 
 import android.content.ContentProvider
+import android.content.ContentResolver
 import android.content.ContentValues
+import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
+import java.io.File
 
 /**
  * A `media` authority provider for Robolectric tests of `MediaRepository`: one [MatrixCursor] per
@@ -25,6 +29,7 @@ class FakeMediaStoreProvider : ContentProvider() {
         sortOrder: String?,
     ): Cursor? {
         itemRows[uri.toString()]?.let { row -> return itemCursor(uri, projection, row) }
+        inserted[uri.toString()]?.let { return itemCursor(uri, projection, it.toRow()) }
         val rows =
             when (uri) {
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI -> {
@@ -58,9 +63,107 @@ class FakeMediaStoreProvider : ContentProvider() {
         queryArgs: Bundle?,
         cancellationSignal: CancellationSignal?,
     ): Cursor? {
-        val row = itemRows[uri.toString()] ?: return super.query(uri, projection, queryArgs, cancellationSignal)
+        if (queryArgs?.containsKey(ContentResolver.QUERY_ARG_SQL_SELECTION) == true &&
+            (uri == MediaStore.Images.Media.EXTERNAL_CONTENT_URI || uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        ) {
+            return collectionQuery(uri, projection, queryArgs, cancellationSignal)
+        }
+        val row =
+            itemRows[uri.toString()] ?: inserted[uri.toString()]?.toRow()
+                ?: return super.query(uri, projection, queryArgs, cancellationSignal)
         return itemCursor(uri, projection, row)
     }
+
+    /**
+     * A collection query with a selection (the new-photos reminder): the configured [newMediaImageRows] /
+     * [newMediaVideoRows] are loaded into an in-memory SQLite table with the MediaStore column names and the
+     * recorded selection, args, sort order and limit are evaluated by SQLite itself, NULLs included.
+     * Projection, query args and signal are recorded; [blockQueries] holds the call until released.
+     */
+    private fun collectionQuery(
+        uri: Uri,
+        projection: Array<String>?,
+        queryArgs: Bundle,
+        signal: CancellationSignal?,
+    ): Cursor? {
+        collectionQueries += CollectionQuery(uri, projection?.toList(), Bundle(queryArgs), signal)
+        blockQueries?.let { latch ->
+            while (!latch.await(BLOCK_POLL_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (signal?.isCanceled == true) throw android.os.OperationCanceledException()
+            }
+        }
+        if (uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI) videoFailure?.let { throw it }
+        val rows = if (uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI) newMediaVideoRows else newMediaImageRows
+        val db =
+            android.database.sqlite.SQLiteDatabase
+                .create(null)
+        try {
+            loadMediaTable(db, rows)
+            val limit = queryArgs.getInt(ContentResolver.QUERY_ARG_LIMIT, -1).takeIf { it >= 0 }?.toString()
+            val result =
+                android.database.sqlite.SQLiteQueryBuilder().apply { tables = "media" }.query(
+                    db,
+                    projection,
+                    queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SELECTION),
+                    queryArgs.getStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS),
+                    null,
+                    null,
+                    queryArgs.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER),
+                    limit,
+                )
+            return result.use(::copyOut)
+        } finally {
+            db.close()
+        }
+    }
+
+    private fun loadMediaTable(
+        db: android.database.sqlite.SQLiteDatabase,
+        rows: List<Map<String, Any?>>,
+    ) {
+        db.execSQL(
+            "CREATE TABLE media (_id INTEGER, date_added INTEGER, is_pending INTEGER, is_trashed INTEGER, " +
+                "owner_package_name TEXT, relative_path TEXT, _display_name TEXT, _size INTEGER, _data TEXT)",
+        )
+        rows.forEach { row ->
+            db.execSQL(
+                "INSERT INTO media VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf(
+                    row["_id"],
+                    row["date_added"],
+                    row["is_pending"] ?: 0,
+                    row["is_trashed"] ?: 0,
+                    row["owner_package_name"],
+                    row["relative_path"],
+                    row["_display_name"],
+                    row["_size"],
+                    row["_data"],
+                ),
+            )
+        }
+    }
+
+    /** Copies the rows out so the in-memory database can be closed. */
+    private fun copyOut(result: Cursor): Cursor {
+        val columns = result.columnNames
+        return MatrixCursor(columns).also { copy ->
+            while (result.moveToNext()) {
+                copy.addRow(columns.indices.map { i -> if (result.isNull(i)) null else result.getString(i) })
+            }
+        }
+    }
+
+    private fun InsertedItem.toRow(): Map<String, Any?> =
+        mapOf(
+            MediaStore.MediaColumns.SIZE to file.length(),
+            MediaStore.MediaColumns.DATE_MODIFIED to 1L,
+            MediaStore.MediaColumns.IS_TRASHED to 0,
+            MediaStore.MediaColumns.IS_PENDING to if (pending) 1 else 0,
+            MediaStore.MediaColumns.OWNER_PACKAGE_NAME to owner,
+            MediaStore.MediaColumns.DISPLAY_NAME to displayName,
+            MediaStore.MediaColumns.RELATIVE_PATH to relativePath,
+            MediaStore.MediaColumns.MIME_TYPE to mimeType,
+        )
 
     private fun itemCursor(
         uri: Uri,
@@ -73,27 +176,135 @@ class FakeMediaStoreProvider : ContentProvider() {
         return MatrixCursor(columns).apply { addRow(columns.map { row[it] }.toTypedArray()) }
     }
 
+    /**
+     * Serves the bytes of [files] (keyed by the uri without its query, so the `requireOriginal`
+     * variant gets the same content) with their real length, like the platform's descriptor. Other
+     * uris keep the default behaviour (not openable through the provider).
+     */
+    override fun openAssetFile(
+        uri: Uri,
+        mode: String,
+    ): AssetFileDescriptor? {
+        val content =
+            files[
+                uri
+                    .buildUpon()
+                    .clearQuery()
+                    .build()
+                    .toString(),
+            ] ?: return super.openAssetFile(uri, mode)
+        val file = File.createTempFile("media", ".bin").apply { deleteOnExit() }
+        file.writeBytes(content)
+        val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return AssetFileDescriptor(pfd, 0, content.size.toLong())
+    }
+
     override fun getType(uri: Uri): String? = null
 
+    /**
+     * Inserts into `images/media` like MediaProvider: records the values, owns the item by this
+     * app's package and gives a taken `RELATIVE_PATH` + `DISPLAY_NAME` a ` (1)`, ` (2)` suffix.
+     * [insertFailure] makes the insert fail.
+     */
     override fun insert(
         uri: Uri,
         values: ContentValues?,
-    ): Uri? = null
+    ): Uri? {
+        if (values == null || uri.path?.endsWith("/images/media") != true) return null
+        insertFailure?.let { throw it }
+        val relativePath = values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH).orEmpty()
+        val name = uniqueName(relativePath, values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME).orEmpty())
+        val id = nextId.getAndIncrement()
+        val itemUri = Uri.parse("content://$AUTHORITY/${uri.pathSegments.first()}/images/media/$id")
+        inserted[itemUri.toString()] =
+            InsertedItem(
+                relativePath = relativePath,
+                displayName = name,
+                mimeType = values.getAsString(MediaStore.MediaColumns.MIME_TYPE),
+                pending = values.getAsInteger(MediaStore.MediaColumns.IS_PENDING) == 1,
+                owner = ownerPackage ?: context?.packageName.orEmpty(),
+                file = File.createTempFile("saved", ".bin").apply { deleteOnExit() },
+            )
+        return itemUri
+    }
 
     override fun delete(
         uri: Uri,
         selection: String?,
         selectionArgs: Array<String>?,
-    ) = 0
+    ): Int {
+        deleteFailure?.let { throw it }
+        val item = inserted.remove(uri.toString()) ?: return 0
+        item.file.delete()
+        deletes += uri.toString()
+        return 1
+    }
 
     override fun update(
         uri: Uri,
         values: ContentValues?,
         selection: String?,
         selectionArgs: Array<String>?,
-    ) = 0
+    ): Int {
+        val item = inserted[uri.toString()] ?: return 0
+        updateFailure?.let { throw it }
+        values?.getAsInteger(MediaStore.MediaColumns.IS_PENDING)?.let { item.pending = it == 1 }
+        return 1
+    }
+
+    /** Write access to an inserted item's backing file; failure injection via [openFailure]. */
+    override fun openFile(
+        uri: Uri,
+        mode: String,
+    ): ParcelFileDescriptor? {
+        val item = inserted[uri.toString()] ?: return super.openFile(uri, mode)
+        openFailure?.let { throw it }
+        return ParcelFileDescriptor.open(
+            item.file,
+            ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_CREATE or
+                ParcelFileDescriptor.MODE_TRUNCATE,
+        )
+    }
+
+    private fun uniqueName(
+        relativePath: String,
+        requested: String,
+    ): String {
+        val taken =
+            inserted.values
+                .filter { it.relativePath == relativePath }
+                .map { it.displayName.lowercase() }
+                .toSet()
+        val stem = requested.substringBeforeLast('.', requested)
+        val extension = requested.substring(stem.length)
+        return generateSequence(0) { it + 1 }
+            .map { if (it == 0) requested else "$stem ($it)$extension" }
+            .first { it.lowercase() !in taken }
+    }
+
+    /** One item inserted through [insert]. */
+    class InsertedItem(
+        val relativePath: String,
+        val displayName: String,
+        val mimeType: String?,
+        var pending: Boolean,
+        val owner: String,
+        val file: File,
+    ) {
+        val bytes: ByteArray get() = file.readBytes()
+    }
+
+    /** One recorded collection query with a selection. */
+    class CollectionQuery(
+        val uri: Uri,
+        val projection: List<String>?,
+        val args: Bundle,
+        val signal: CancellationSignal?,
+    )
 
     companion object {
+        private const val BLOCK_POLL_MS = 10L
+
         const val AUTHORITY = MediaStore.AUTHORITY
 
         private val ALL_COLUMNS =
@@ -106,8 +317,37 @@ class FakeMediaStoreProvider : ContentProvider() {
                 MediaStore.Video.VideoColumns.DURATION,
             )
 
+        /** File contents by uri string (without query), opened with their length by [openAssetFile]. */
+        val files = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+
         /** MediaStore item rows by uri string (`content://media/external/images/media/<id>`). */
         val itemRows = java.util.concurrent.ConcurrentHashMap<String, Map<String, Any?>>()
+
+        /** Items inserted through [insert] by uri string. */
+        val inserted = java.util.concurrent.ConcurrentHashMap<String, InsertedItem>()
+
+        /** Uris deleted through [delete], in order. */
+        val deletes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+        private val nextId =
+            java.util.concurrent.atomic
+                .AtomicLong(1000L)
+
+        @Volatile
+        var insertFailure: RuntimeException? = null
+
+        @Volatile
+        var updateFailure: RuntimeException? = null
+
+        @Volatile
+        var openFailure: java.io.FileNotFoundException? = null
+
+        @Volatile
+        var deleteFailure: RuntimeException? = null
+
+        /** Owner of newly inserted items; null = this app's package. */
+        @Volatile
+        var ownerPackage: String? = null
 
         @Volatile
         var imageRows: List<Map<String, Any?>> = emptyList()
@@ -118,6 +358,38 @@ class FakeMediaStoreProvider : ContentProvider() {
         @Volatile
         var videoFailure: RuntimeException? = null
 
+        /** Rows for collection queries with a selection (keys are MediaStore column names). */
+        @Volatile
+        var newMediaImageRows: List<Map<String, Any?>> = emptyList()
+
+        @Volatile
+        var newMediaVideoRows: List<Map<String, Any?>> = emptyList()
+
+        /** Collection queries with a selection, in order. */
+        val collectionQueries: MutableList<CollectionQuery> = java.util.Collections.synchronizedList(mutableListOf())
+
+        /** While non-null, collection queries with a selection block until it is counted down. */
+        @Volatile
+        var blockQueries: java.util.concurrent.CountDownLatch? = null
+
+        /** A new-media row for [newMediaImageRows] / [newMediaVideoRows]. */
+        fun newMediaRow(
+            id: Long,
+            dateAddedSeconds: Long?,
+            owner: String? = null,
+            relativePath: String? = null,
+            pending: Boolean = false,
+            trashed: Boolean = false,
+        ): Map<String, Any?> =
+            mapOf(
+                "_id" to id,
+                "date_added" to dateAddedSeconds,
+                "is_pending" to if (pending) 1 else 0,
+                "is_trashed" to if (trashed) 1 else 0,
+                "owner_package_name" to owner,
+                "relative_path" to relativePath,
+            )
+
         /** Thrown by the item query of a uri (e.g. a crashed provider for one item). */
         val itemFailures = java.util.concurrent.ConcurrentHashMap<String, RuntimeException>()
 
@@ -126,11 +398,24 @@ class FakeMediaStoreProvider : ContentProvider() {
 
         fun reset() {
             itemRows.clear()
+            files.clear()
             itemFailures.clear()
             itemQueries.clear()
+            inserted.clear()
+            deletes.clear()
+            insertFailure = null
+            updateFailure = null
+            openFailure = null
+            deleteFailure = null
+            ownerPackage = null
             imageRows = emptyList()
             videoRows = emptyList()
             videoFailure = null
+            newMediaImageRows = emptyList()
+            newMediaVideoRows = emptyList()
+            collectionQueries.clear()
+            blockQueries?.countDown()
+            blockQueries = null
         }
 
         /** The per-item row for [itemRows]: the values the upload / removal checks read. */

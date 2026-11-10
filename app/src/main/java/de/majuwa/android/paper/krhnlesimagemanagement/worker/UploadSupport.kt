@@ -93,6 +93,9 @@ internal fun uploadFailureMessage(
             resources.getString(R.string.upload_failure_too_large).takeIf { UploadFailure.TooLarge in failures },
             resources.getString(R.string.upload_failure_storage_full).takeIf { UploadFailure.StorageFull in failures },
             resources.getString(R.string.upload_failure_verification).takeIf { UploadFailure.Verification in failures },
+            resources
+                .getString(R.string.upload_failure_certificate_changed)
+                .takeIf { UploadFailure.CertificateChanged in failures },
         ),
     )
 

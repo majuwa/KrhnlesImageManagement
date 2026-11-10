@@ -6,13 +6,18 @@ import de.majuwa.android.paper.krhnlesimagemanagement.data.CredentialSaveExcepti
 import de.majuwa.android.paper.krhnlesimagemanagement.data.VerifiedUpload
 import de.majuwa.android.paper.krhnlesimagemanagement.data.WebDavHttpException
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeCredentialRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeTrustedCertificateRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeUploadedPhotosRepository
 import de.majuwa.android.paper.krhnlesimagemanagement.fakes.FakeVerifiedUploadsRepository
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialCorruption
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.ConnectionTestResult
+import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsError
 import de.majuwa.android.paper.krhnlesimagemanagement.ui.settings.SettingsViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +77,7 @@ class SettingsViewModelTest {
                 credentialStore = fakeCredentials,
                 uploadedPhotosRepository = fakeUploadedPhotos,
                 verifiedUploadsRepository = fakeVerifiedUploads,
+                trustedCertificates = FakeTrustedCertificateRepository(),
             )
     }
 
@@ -106,7 +112,7 @@ class SettingsViewModelTest {
             viewModel.startLoginFlow()
             advanceUntilIdle()
 
-            assertEquals("Server URL is required", viewModel.uiState.value.error)
+            assertEquals(SettingsError.ServerUrlRequired, viewModel.uiState.value.error)
         }
 
     @Test
@@ -145,7 +151,7 @@ class SettingsViewModelTest {
             viewModel.saveManualConfig()
             advanceUntilIdle()
 
-            assertEquals("Please fill in all fields.", viewModel.uiState.value.error)
+            assertEquals(SettingsError.FillAllFields, viewModel.uiState.value.error)
         }
 
     @Test
@@ -197,7 +203,8 @@ class SettingsViewModelTest {
     ) = SettingsViewModel(
         application = RuntimeEnvironment.getApplication() as Application,
         credentialStore = credentials,
-        connectionTester = tester,
+        connectionTester = { config, _ -> tester(config) },
+        trustedCertificates = FakeTrustedCertificateRepository(),
     )
 
     @Test
@@ -327,7 +334,8 @@ class SettingsViewModelTest {
             credentialStore = fakeCredentials,
             uploadedPhotosRepository = fakeUploadedPhotos,
             verifiedUploadsRepository = fakeVerifiedUploads,
-            connectionTester = tester,
+            connectionTester = { config, _ -> tester(config) },
+            trustedCertificates = FakeTrustedCertificateRepository(),
         )
 
     @Test
@@ -706,8 +714,7 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             val state = viewModel.uiState.value
-            val expected = RuntimeEnvironment.getApplication().getString(R.string.error_credentials_save_failed)
-            assertEquals(expected, state.error)
+            assertEquals(SettingsError.CredentialsSaveFailed, state.error)
             assertFalse(state.isLoggedIn)
 
             // Retrying after the failure is possible and succeeds once the store works again.
@@ -730,6 +737,7 @@ class SettingsViewModelTest {
                     credentialStore = lagging,
                     uploadedPhotosRepository = fakeUploadedPhotos,
                     verifiedUploadsRepository = fakeVerifiedUploads,
+                    trustedCertificates = FakeTrustedCertificateRepository(),
                 )
             advanceUntilIdle()
             assertEquals(CredentialCorruption.KEY_INVALIDATED, vm.uiState.value.credentialProblem)
@@ -799,6 +807,10 @@ class SettingsViewModelTest {
 
         override val blurSensitivity: Flow<BlurSensitivity> = flow { emit(BlurSensitivity.MEDIUM) }
 
+        override val albumSort: Flow<AlbumSort> = flow { emit(AlbumSort.DEFAULT) }
+
+        override val newPhotosReminder: Flow<NewPhotosReminderSettings> = flow { emit(NewPhotosReminderSettings()) }
+
         override val isConfigured: Flow<Boolean> =
             flow {
                 emit(false)
@@ -828,6 +840,18 @@ class SettingsViewModelTest {
         override suspend fun saveVerifyByDownload(enabled: Boolean) = Unit
 
         override suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity) = Unit
+
+        override suspend fun saveAlbumSort(sort: AlbumSort) = Unit
+
+        override suspend fun saveNewPhotosReminder(
+            enabled: Boolean,
+            interval: ReminderInterval,
+        ) = Unit
+
+        override suspend fun markNewPhotosReminderShown(
+            atMillis: Long,
+            expectedSinceMillis: Long,
+        ) = Unit
 
         override suspend fun clear() = Unit
     }

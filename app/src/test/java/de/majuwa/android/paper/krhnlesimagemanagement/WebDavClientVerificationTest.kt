@@ -43,6 +43,7 @@ class WebDavClientVerificationTest {
                     username = "testuser",
                     password = "testpass",
                 ),
+                null,
             )
     }
 

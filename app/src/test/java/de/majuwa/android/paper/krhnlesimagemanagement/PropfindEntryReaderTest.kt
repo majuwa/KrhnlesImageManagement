@@ -394,4 +394,49 @@ class PropfindEntryReaderTest {
             }
         }
     }
+
+    @Test
+    fun `getlastmodified is captured trimmed and absent is null`() {
+        val items =
+            readAll(
+                multistatus(
+                    response(
+                        "/a/1.jpg",
+                        extra = "<d:getlastmodified> Tue, 15 Nov 1994 08:12:31 GMT </d:getlastmodified>",
+                    ),
+                    response("/a/2.jpg"),
+                ),
+            )
+
+        assertEquals("Tue, 15 Nov 1994 08:12:31 GMT", (items[0] as PropfindItem.Entry).entry.lastModified)
+        assertNull((items[1] as PropfindItem.Entry).entry.lastModified)
+    }
+
+    @Test
+    fun `empty getlastmodified in a 404 propstat reads as null`() {
+        val xml =
+            multistatus(
+                "<d:response><d:href>/a/1/</d:href><d:propstat><d:prop>" +
+                    "<d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat>" +
+                    "<d:propstat><d:prop><d:getlastmodified/></d:prop>" +
+                    "<d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>",
+            )
+
+        assertNull((readAll(xml).single() as PropfindItem.Entry).entry.lastModified)
+    }
+
+    @Test
+    fun `oversized getlastmodified skips only that entry`() {
+        val items =
+            readAll(
+                multistatus(
+                    response("/a/1.jpg", extra = "<d:getlastmodified>" + "x".repeat(200) + "</d:getlastmodified>"),
+                    response("/a/ok.jpg"),
+                ),
+                PropfindEntryLimits(maxTextLength = 100),
+            )
+
+        assertEquals(PropfindItem.Skipped, items[0])
+        assertEquals("/a/ok.jpg", (items[1] as PropfindItem.Entry).entry.href)
+    }
 }

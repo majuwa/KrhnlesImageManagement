@@ -16,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import de.majuwa.android.paper.krhnlesimagemanagement.R
 import de.majuwa.android.paper.krhnlesimagemanagement.util.MAX_SHARED_PHOTOS
 
@@ -28,6 +29,7 @@ fun ShareRoute(
     viewModel: ShareViewModel,
     onFinished: (ShareFinish) -> Unit,
     onOpenApp: () -> Unit,
+    suggestionsViewModel: OccasionSuggestionsViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val finish by viewModel.finish.collectAsStateWithLifecycle()
@@ -37,8 +39,12 @@ fun ShareRoute(
             onFinished(it)
         }
     }
+    val isReady = state is ShareUiState.Ready
+    LaunchedEffect(isReady) { if (isReady) suggestionsViewModel.load() }
+    val suggestions by suggestionsViewModel.candidates.collectAsStateWithLifecycle()
     ShareReceiverScreen(
         state = state,
+        occasionSuggestions = suggestions,
         onConfirm = viewModel::confirm,
         onCancel = viewModel::cancel,
         onOpenApp = {
@@ -59,10 +65,11 @@ fun ShareReceiverScreen(
     onConfirm: (String) -> Unit,
     onCancel: () -> Unit,
     onOpenApp: () -> Unit,
+    occasionSuggestions: List<String> = emptyList(),
 ) {
     when (state) {
         ShareUiState.Preparing -> ReadingDialog(onCancel)
-        is ShareUiState.Ready -> ShareOccasionDialog(state, onConfirm, onCancel)
+        is ShareUiState.Ready -> ShareOccasionDialog(state, onConfirm, onCancel, occasionSuggestions)
         is ShareUiState.Copying -> CopyingDialog(state, onCancel)
         ShareUiState.NotConfigured -> NotConfiguredDialog(onOpenApp, onCancel)
         else -> Unit
@@ -74,6 +81,7 @@ private fun ShareOccasionDialog(
     state: ShareUiState.Ready,
     onConfirm: (String) -> Unit,
     onCancel: () -> Unit,
+    suggestions: List<String>,
 ) {
     val lines =
         buildList {
@@ -97,6 +105,7 @@ private fun ShareOccasionDialog(
         message = lines.joinToString("\n\n"),
         onDismiss = onCancel,
         onConfirm = onConfirm,
+        suggestions = suggestions,
     )
 }
 

@@ -1,16 +1,48 @@
 package de.majuwa.android.paper.krhnlesimagemanagement.data
 
 import android.graphics.Bitmap
+import de.majuwa.android.paper.krhnlesimagemanagement.model.AlbumSort
 import de.majuwa.android.paper.krhnlesimagemanagement.model.BlurSensitivity
 import de.majuwa.android.paper.krhnlesimagemanagement.model.CredentialState
+import de.majuwa.android.paper.krhnlesimagemanagement.model.NewPhotosReminderSettings
 import de.majuwa.android.paper.krhnlesimagemanagement.model.Photo
+import de.majuwa.android.paper.krhnlesimagemanagement.model.ReminderInterval
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemoteAlbum
 import de.majuwa.android.paper.krhnlesimagemanagement.model.RemotePhoto
 import de.majuwa.android.paper.krhnlesimagemanagement.model.UploadHistoryEntry
 import de.majuwa.android.paper.krhnlesimagemanagement.model.WebDavConfig
 import kotlinx.coroutines.flow.Flow
+import okhttp3.Call
 
-interface CredentialRepository {
+/**
+ * The new-photos reminder setting, stored next to the other non-credential preferences. Kept separate from
+ * the credential members so the reminder worker can be given exactly this and nothing credential-related.
+ */
+interface NewPhotosReminderRepository {
+    /** The setting; off / Weekly while unset or unreadable. */
+    val newPhotosReminder: Flow<NewPhotosReminderSettings>
+
+    /**
+     * Stores the reminder setting. Turning it on from off also records the time (`since`) and forgets the
+     * last reminder in the same edit; an interval change keeps both.
+     */
+    suspend fun saveNewPhotosReminder(
+        enabled: Boolean,
+        interval: ReminderInterval,
+    )
+
+    /**
+     * Records when the last reminder was posted, but only if the reminder is still on and still the one that
+     * started at [expectedSinceMillis] (one edit): a worker that finishes after a logout or a switch off / on
+     * writes nothing.
+     */
+    suspend fun markNewPhotosReminderShown(
+        atMillis: Long,
+        expectedSinceMillis: Long,
+    )
+}
+
+interface CredentialRepository : NewPhotosReminderRepository {
     val autoDateFoldersEnabled: Flow<Boolean>
     val isConfigured: Flow<Boolean>
 
@@ -24,6 +56,9 @@ interface CredentialRepository {
 
     /** Chosen blur sensitivity; Medium while unset or when the stored value is unreadable. */
     val blurSensitivity: Flow<BlurSensitivity>
+
+    /** Chosen album sort; Name A-Z while unset or when the stored value is unreadable. */
+    val albumSort: Flow<AlbumSort>
 
     fun password(): String?
 
@@ -46,6 +81,8 @@ interface CredentialRepository {
 
     suspend fun saveBlurSensitivity(sensitivity: BlurSensitivity)
 
+    suspend fun saveAlbumSort(sort: AlbumSort)
+
     suspend fun clear()
 }
 
@@ -62,7 +99,22 @@ class CredentialSaveException(
     cause: Throwable,
 ) : Exception("Saving credentials failed: ${cause.javaClass.simpleName}", cause)
 
-interface AlbumsRepositoryContract {
+/** What the player needs from an album flow's repository. */
+interface VideoStreamSource {
+    /**
+     * WebDAV URL of a video for playback — the only place a video file URL is handed out, used by
+     * the player after a tap. `null` for an image or an href outside the base folder.
+     */
+    fun videoStreamUrl(photo: RemotePhoto): String?
+
+    /**
+     * The client that streams videos: no redirects, own dispatcher, `GET` only below the base
+     * folder, credentials for the configured origin only; closed with the repository.
+     */
+    fun videoCallFactory(): Call.Factory
+}
+
+interface AlbumsRepositoryContract : VideoStreamSource {
     suspend fun listAlbums(): Result<List<RemoteAlbum>>
 
     /**
@@ -80,15 +132,25 @@ interface AlbumsRepositoryContract {
         newName: String,
     ): Result<RemoteAlbum>
 
-    suspend fun thumbnailUrl(photo: RemotePhoto): String
+    /** Thumbnail URL; `null` only for a video without a server preview (never the video's own URL). */
+    suspend fun thumbnailUrl(photo: RemotePhoto): String?
 
-    fun fullImageUrl(photo: RemotePhoto): String
+    /** Full-screen image URL; `null` only for a video without a server preview. */
+    fun fullImageUrl(photo: RemotePhoto): String?
 
     suspend fun downloadBitmapForHash(url: String): Bitmap
 
     suspend fun deletePhoto(photo: RemotePhoto): Result<Unit>
 
     suspend fun deleteAlbum(album: RemoteAlbum): Result<Unit>
+
+    /**
+     * The decoded folder name of [album] if it can be typed as an occasion name (exactly one level
+     * below the base folder, valid occasion name, within the name limit, no leading / trailing
+     * whitespace), else `null`. The only source of a remote folder name for uploads;
+     * [RemoteAlbum.displayName] is never used as one.
+     */
+    fun folderNameOf(album: RemoteAlbum): String?
 
     /** Releases background work (e.g. retries) of a repository that is dropped; no-op by default. */
     fun close() {}
