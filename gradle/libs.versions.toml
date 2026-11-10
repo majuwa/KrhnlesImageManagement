@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.0"
+agp = "9.5.1"
 kotlin = "2.4.21"
 coreKtx = "1.19.1"
 junit = "4.13.2"
@@ -17,12 +17,12 @@ workmanager = "2.12.0"
 okhttp = "5.5.1"
 datastorePreferences = "1.3.0"
 coroutines = "1.11.0"
-spotless = "8.10.4"
+spotless = "8.11.0"
 detekt = "1.23.8"
 securityCrypto = "1.1.0"
 turbine = "1.2.1"
 robolectric = "4.17"
-mockk = "1.14.11"
+mockk = "1.14.12"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
