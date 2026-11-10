@@ -77,7 +77,7 @@ class ErrorLocalizationUiTest {
         )
 
     @androidx.compose.runtime.Composable
-    private fun showGrid(viewModel: PhotoGridViewModel) =
+    private fun ShowGrid(viewModel: PhotoGridViewModel) =
         PhotoGridScreen(viewModel, onNavigateToSettings = {}, onNavigateToUploadHistory = {}, onStartUpload = {})
 
     private fun settingsViewModel() =
@@ -94,7 +94,7 @@ class ErrorLocalizationUiTest {
         var locale by mutableStateOf(Locale.ENGLISH)
         composeTestRule.setContent {
             CompositionLocalProvider(LocalResources provides resources(locale)) {
-                showGrid(viewModel)
+                ShowGrid(viewModel)
             }
         }
         viewModel.loadPhotos()
@@ -117,7 +117,7 @@ class ErrorLocalizationUiTest {
         media.shouldThrow = RuntimeException("disk error")
         val viewModel = photoGridViewModel()
         composeTestRule.setContent {
-            showGrid(viewModel)
+            ShowGrid(viewModel)
         }
         viewModel.loadPhotos()
         composeTestRule.waitForIdle()
@@ -137,7 +137,7 @@ class ErrorLocalizationUiTest {
     fun `a failed refresh leaves a retry that recovers`() {
         val viewModel = photoGridViewModel()
         composeTestRule.setContent {
-            showGrid(viewModel)
+            ShowGrid(viewModel)
         }
         viewModel.loadPhotos()
         composeTestRule.waitForIdle()
