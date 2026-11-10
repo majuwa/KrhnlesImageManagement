@@ -19,7 +19,7 @@ This change runs **last**, after `nextcloud-chunked-upload` (#69), `cancel-runni
 - **README roadmap:** replace both stale "Blurry/Bad Photo Detection" lines with the two features that are still genuinely open and documented as deferred follow-ups: browsing sub-folders of an album (nested auto date folders, `docs/architecture.md` "Album search & sort") and the Nextcloud login for servers with a self-signed certificate (`docs/architecture.md` D11, needs a `login-flow-nextcloud` library change). Open GitHub issues #69 – #77 are implemented on this branch (they close on merge of #80) and are not roadmap items. Manual device checks are verification debt, not features: they go into the PR description, not the README.
 - **README Features:** add a "Blurry Photo Review" entry next to "Cloud Duplicate Detector".
 - **README corrections:** Setup steps 1 – 2 (submodule, Android Studio version), Permissions (`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC`, wider `POST_NOTIFICATIONS` purpose), Tech Stack (Media3 ExoPlayer, ML Kit with its metrics disclosure).
-- **docs/requirements.md:** fix G-001, G-002, P-003, U-003 and S-003 in place; append 16 rows (P-006 – P-008, U-010 – U-015, A-009 – A-011, S-007 – S-009, N-008) with the exact text in design.md Decision 4. Existing IDs are never renumbered or reused.
+- **docs/requirements.md:** fix G-001, G-002, P-003, U-003, U-014 and S-003 in place; append 17 rows (P-006 – P-008, U-010 – U-015, A-009 – A-012, S-007 – S-009, N-008) with the exact text in design.md Decision 4. Existing IDs are never renumbered or reused.
 - No code, test, resource, Gradle or CLAUDE.md change. Only `README.md` and `docs/requirements.md` are edited. No German README exists, so none is created or edited.
 
 ## Capabilities
@@ -34,7 +34,7 @@ This is a documentation-only change and no app behaviour changes, so the change 
 
 ## Impact
 
-- **Docs:** `README.md` (Future Roadmap, Features, Tech Stack, Setup, Permissions) and `docs/requirements.md` (5 fixed rows, 16 new rows).
+- **Docs:** `README.md` (Future Roadmap, Features, Tech Stack, Setup, Permissions) and `docs/requirements.md` (6 fixed rows, 17 new rows).
 - **Code / tests / resources:** none. Following CLAUDE.md, `./gradlew test spotlessCheck` is still run once as a sanity check of the documented tree. Detekt, lint and coverage are unaffected because no Kotlin or resource file changes.
 - **Ordering dependency:** all nine siblings are implemented. Archiving `cancel-running-upload` is a separate workflow step outside this change's files; until it is archived, the capability check uses `openspec/changes/cancel-running-upload/specs/upload-cancellation/spec.md`.
 - **Out of scope (follow-ups, listed in the PR description):** removing the unused `security-crypto` catalog entry (`gradle/libs.versions.toml`, `securityCrypto` + `security-crypto`); deciding whether to keep ML Kit (a code / dependency decision, this change only discloses it); archiving `cancel-running-upload`; the open manual device checks of the archived changes; `docs/architecture.md`, which already describes the Keystore approach and the two deferred follow-ups correctly.
